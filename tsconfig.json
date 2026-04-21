@@ -1,15 +1,15 @@
 {
 	"compilerOptions": {
-		"baseUrl": "src",
 		"inlineSourceMap": true,
 		"inlineSources": true,
+		"ignoreDeprecations": "5.0",
 		"module": "ESNext",
 		"target": "ES6",
 		"allowJs": true,
 		"noImplicitAny": true,
 		"noImplicitThis": true,
 		"noImplicitReturns": true,
-		"moduleResolution": "node",
+		"moduleResolution": "bundler",
 		"importHelpers": true,
 		"noUncheckedIndexedAccess": true,
 		"isolatedModules": true,

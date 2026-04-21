@@ -1,17 +1,17 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "obsidian-scholarium",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "A scholarly electronic lab notebook plugin for Obsidian",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"build": "npx tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"lint": "eslint ."
 	},
 	"keywords": [],
-	"license": "0-BSD",
+	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^16.11.6",
 		"esbuild": "0.25.5",
@@ -24,6 +24,7 @@
 		"jiti": "2.6.1"
 	},
 	"dependencies": {
-		"obsidian": "latest"
+		"obsidian": "latest",
+		"smiles-drawer": "^2.2.1"
 	}
 }

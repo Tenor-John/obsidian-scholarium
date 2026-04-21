@@ -1,11 +1,10 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "obsidian-scholarium",
+	"name": "Scholarium",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"description": "A scholarly electronic lab notebook for researchers at every stage. Features AI-assisted record creation, a research canvas with manual connections, a material library with cloud sync, and a full productivity workspace for undergrads, masters, PhD students, and advisors.",
+	"author": "Tao Jiang",
+	"authorUrl": "https://github.com/Tenor-John",
 	"isDesktopOnly": false
 }
