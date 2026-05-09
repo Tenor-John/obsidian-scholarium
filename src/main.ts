@@ -5,6 +5,7 @@ import type { ChemELNSettings } from './settings';
 import { AIAssistantModal } from './ai-assistant-modal';
 import type { ExperimentContext } from './ai-assistant-modal';
 import { CloudSyncManager, buildSyncConfig } from './cloud-sync';
+import { AIChatModal } from './ai-chat-modal';
 
 export default class ChemELNPlugin extends Plugin {
     settings: ChemELNSettings;
@@ -16,6 +17,13 @@ export default class ChemELNPlugin extends Plugin {
         if (existing) existing.remove();
 
         const { themeAccent, themeGradient, themeAlpha } = this.settings;
+        const fontScaleMap: Record<string, number> = {
+            small: 0.92,
+            medium: 1,
+            large: 1.12,
+            xlarge: 1.24,
+        };
+        const fontScale = fontScaleMap[this.settings.fontSize] ?? 1;
 
         const hexRgb = (hex: string): string => {
             const c = hex.replace('#', '');
@@ -52,6 +60,9 @@ export default class ChemELNPlugin extends Plugin {
     --celn-accent-dark-rgb:   ${hexRgb(themeGradient)};
     --celn-accent-deeper:     ${deeper};
     --celn-alpha:             ${themeAlpha};
+    --scholarium-font-scale:  ${fontScale};
+    --scholarium-font-size:   ${14 * fontScale}px;
+    --scholarium-space-scale: ${Math.max(1, fontScale)};
 }`;
         document.head.appendChild(style);
     }
@@ -90,6 +101,12 @@ export default class ChemELNPlugin extends Plugin {
             id: 'open-ai-assistant',
             name: '打开 AI 实验助理',
             callback: () => this.openAIAssistant(),
+        });
+
+        this.addCommand({
+            id: 'image-to-experiment',
+            name: '图片识别生成实验记录',
+            callback: () => this.openImageLab(),
         });
 
         // 设置页
@@ -155,6 +172,10 @@ export default class ChemELNPlugin extends Plugin {
 
     openAIAssistant(context?: ExperimentContext) {
         new AIAssistantModal(this, context).open();
+    }
+
+    openImageLab() {
+        new AIChatModal(this.app, this, undefined, undefined, true).open();
     }
 
     refreshDashboards() {
