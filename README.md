@@ -71,7 +71,7 @@ Included modules: Focus timer · Task manager · Daily schedule · Habit tracker
 
 ### Manual Installation
 1. Download `main.js`, `styles.css`, and `manifest.json` from the [latest release](../../releases/latest)
-2. Copy the three files into `<your vault>/.obsidian/plugins/obsidian-scholarium/`
+2. Copy the three files into `<your vault>/.obsidian/plugins/scholarium/`
 3. Reload Obsidian and enable the plugin in **Settings → Community plugins**
 
 ---
@@ -181,7 +181,7 @@ Issues and pull requests are welcome. Please open an issue before submitting lar
 
 ### 手动安装
 1. 从 [Releases 页面](../../releases/latest) 下载 `main.js`、`styles.css`、`manifest.json`
-2. 复制到 `<库路径>/.obsidian/plugins/obsidian-scholarium/`
+2. 复制到 `<库路径>/.obsidian/plugins/scholarium/`
 3. 在 Obsidian 中重载并启用插件
 
 ## 隐私说明

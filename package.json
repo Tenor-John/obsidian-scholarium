@@ -1,5 +1,5 @@
 {
-	"name": "obsidian-scholarium",
+	"name": "scholarium",
 	"version": "1.0.0",
 	"description": "A scholarly electronic lab notebook plugin for Obsidian",
 	"main": "main.js",
