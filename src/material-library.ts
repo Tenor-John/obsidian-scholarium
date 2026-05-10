@@ -117,6 +117,27 @@ export class MaterialLibrary {
         container.empty();
         container.addClass('mat-root');
 
+        // ── 公开版 Hero（标题 + 统计药丸） ──
+        const hero = container.createDiv({ cls: 'xl-hero' });
+        const heroRow = hero.createDiv({ cls: 'xl-hero-row' });
+        const heroLeft = heroRow.createDiv();
+        heroLeft.createEl('h2', { text: '🗂️ 素材库', cls: 'xl-hero-title' });
+        heroLeft.createEl('div', { text: '集中管理 PDF / 图片 / 协议文件，随云端同步', cls: 'xl-hero-sub' });
+        const chips = heroRow.createDiv({ cls: 'xl-hero-chips' });
+        const totalCount = this.data.items.length;
+        const imgCount = this.data.items.filter(it => getKind(it.path) === 'image').length;
+        const pdfCount = this.data.items.filter(it => getKind(it.path) === 'pdf').length;
+        const totalChip = chips.createSpan({ cls: 'xl-stat-chip accent' });
+        totalChip.createSpan({ text: '📦 共 ' });
+        totalChip.createSpan({ text: String(totalCount), cls: 'xl-stat-chip-num' });
+        totalChip.createSpan({ text: ' 项' });
+        const imgChip = chips.createSpan({ cls: 'xl-stat-chip' });
+        imgChip.createSpan({ text: '🖼 ' });
+        imgChip.createSpan({ text: String(imgCount), cls: 'xl-stat-chip-num' });
+        const pdfChip = chips.createSpan({ cls: 'xl-stat-chip' });
+        pdfChip.createSpan({ text: '📄 ' });
+        pdfChip.createSpan({ text: String(pdfCount), cls: 'xl-stat-chip-num' });
+
         // ── 顶部工具栏 ──
         const toolbar = container.createDiv({ cls: 'mat-toolbar' });
         const searchWrap = toolbar.createDiv({ cls: 'mat-search-wrap' });
@@ -721,30 +742,20 @@ class MaterialLightboxModal extends Modal {
 
         // 导航
         if (this.items.length > 1) {
-            const prev = contentEl.createEl('button', { text: '‹', cls: 'mat-lb-nav mat-lb-prev' });
-            const next = contentEl.createEl('button', { text: '›', cls: 'mat-lb-nav mat-lb-next' });
-            prev.onclick = () => { this.idx = (this.idx - 1 + this.items.length) % this.items.length; this.update(counter); };
-            next.onclick = () => { this.idx = (this.idx + 1) % this.items.length; this.update(counter); };
+            const prev = contentEl.createEl('button', { text: '◀', cls: 'mat-lb-nav mat-lb-prev' });
+            const next = contentEl.createEl('button', { text: '▶', cls: 'mat-lb-nav mat-lb-next' });
+            prev.onclick = () => { this.idx = (this.idx - 1 + this.items.length) % this.items.length; this.refresh(); };
+            next.onclick = () => { this.idx = (this.idx + 1) % this.items.length; this.refresh(); };
         }
-
-        // 键盘导航
-        this.scope.register([], 'ArrowLeft',  () => { if (this.items.length > 1) { this.idx = (this.idx - 1 + this.items.length) % this.items.length; this.update(counter); } });
-        this.scope.register([], 'ArrowRight', () => { if (this.items.length > 1) { this.idx = (this.idx + 1) % this.items.length; this.update(counter); } });
-
-        this.update(counter);
     }
 
-    private update(counter: HTMLElement): void {
-        const item = this.items[this.idx];
-        if (!item) return;
-        const vf = this.app.vault.getAbstractFileByPath(item.path);
-        if (vf instanceof TFile && this.lbImg) {
-            this.lbImg.src = this.app.vault.getResourcePath(vf);
-        }
-        if (this.lbTitle) this.lbTitle.textContent = item.name;
-        if (this.lbMeta)  this.lbMeta.textContent  = `${item.category || '未分类'} · ${item.addedAt.slice(0, 10)}`;
-        counter.textContent = this.items.length > 1 ? `${this.idx + 1} / ${this.items.length}` : '';
+    private refresh(): void {
+        const it = this.items[this.idx];
+        if (!it || !this.lbImg || !this.lbTitle || !this.lbMeta) return;
+        this.lbImg.setAttribute('src', (it as any).src || '');
+        this.lbTitle.setText(it.name || '');
+        this.lbMeta.setText('');
     }
 
-    onClose(): void { this.contentEl.empty(); }
+    onClose() { this.contentEl.empty(); }
 }

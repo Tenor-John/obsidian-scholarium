@@ -1,6 +1,14 @@
 # Scholarium — Obsidian Plugin
 
-**Scholarium** is a fully-featured electronic lab notebook (ELN) for [Obsidian](https://obsidian.md). Designed for researchers at every stage — undergraduate, master's, PhD, and faculty — it brings together experiment records, AI-assisted writing, a research canvas, a material library, and a personal productivity workspace, all in one plugin.
+*Scholarium* (from Latin *scholaris*, "of scholars") is your all-in-one research workspace inside Obsidian.
+
+Most researchers juggle a dozen disconnected tools — a spreadsheet for experiments, a reference manager for literature, a notes app for tasks, a cloud drive for files. **Scholarium brings it all into one place**, built on top of the vault you already use and the plain Markdown files you already own.
+
+At its core is a structured **electronic lab notebook** that lets you capture, search, and review every experiment you run. Layer on an **AI writing assistant** that turns rough spoken notes into formatted records in seconds. Open the **research canvas** to drag your literature notes onto a spatial map and draw the connections that matter. Store protocols, images, and PDFs in the **material library**, synced to whatever cloud storage you use. And when you need to manage the rest of your research life — focus sessions, tasks, habits, submissions — the built-in **productivity workspace** has a module for each.
+
+Scholarium adapts to where you are in your career. Choose a preset for undergraduate, master's, PhD, or faculty work, or rename every label to suit your own discipline and workflow. Nothing is locked to chemistry, biology, or any single field.
+
+Your notes stay in plain Markdown. Your files stay in your vault. No subscription, no server, no lock-in.
 
 > 📖 **中文简介** 见下方 / Chinese documentation below.
 
@@ -47,9 +55,10 @@ A complete personal workspace that adapts to your role:
 Included modules: Focus timer · Task manager · Daily schedule · Habit tracker · Mood journal · Food diary · Phone screen-time log · Submission tracker · Data dashboard
 
 ### 🎨 Theme Customisation
-- Six built-in colour presets (orange-red, academic blue, green, lavender, cyan, rose)
+- Eight built-in colour presets (orange-red, academic blue, green, lavender, cyan, rose, plus 囍樂咖 / 囍樂青 from the public 囍樂 design system)
 - Custom accent colour, gradient end colour, and background transparency via colour pickers
 - Live preview in settings; changes apply instantly without restarting Obsidian
+- **囍樂 Joyful Layer** — every panel (experiment list, AI dialog, canvas, library, productivity workspace) shares unified rounded cards, soft shadows, refined scrollbars, and a Weekly (WK) dashboard widget on the overview page
 
 ---
 
@@ -62,7 +71,7 @@ Included modules: Focus timer · Task manager · Daily schedule · Habit tracker
 
 ### Manual Installation
 1. Download `main.js`, `styles.css`, and `manifest.json` from the [latest release](../../releases/latest)
-2. Copy the three files into `<your vault>/.obsidian/plugins/obsidian-scholarium/`
+2. Copy the three files into `<your vault>/.obsidian/plugins/scholarium/`
 3. Reload Obsidian and enable the plugin in **Settings → Community plugins**
 
 ---
@@ -126,9 +135,15 @@ Issues and pull requests are welcome. Please open an issue before submitting lar
 ---
 ---
 
-# 中文文档 · Scholarium 电子实验记录本
+# 中文文档 · Scholarium
 
-**Scholarium** 是一款适用于 [Obsidian](https://obsidian.md) 的全功能电子实验记录本（ELN）插件，面向本科生、硕士、博士研究生与导师群体。集实验记录管理、AI 辅助撰写、研究画布、素材库与个人工作台于一体。
+**Scholarium**（拉丁语"学者之所"）是一款运行于 [Obsidian](https://obsidian.md) 的全能科研工作台。
+
+大多数研究者需要在十几个工具之间来回切换——表格记实验、文献管理器整理论文、任务软件管进度、网盘存文件。Scholarium 把这一切整合进你已经在用的 Obsidian vault，所有数据以标准 Markdown 存储，完全属于你自己。
+
+核心是一本结构化的**电子实验记录本**，配以 **AI 写作助手**（口述即可生成规范记录）、可拖拽连线的**研究画布**、带云同步的**素材库**，以及涵盖专注计时、任务管理、习惯打卡、投稿跟踪的**个人工作台**。支持本科 / 硕士 / 博士 / 导师四种角色预设，不限专业，标签完全可自定义。
+
+本地存储，无订阅，无服务器，数据永远在你手里。
 
 ## 核心功能
 
@@ -166,7 +181,7 @@ Issues and pull requests are welcome. Please open an issue before submitting lar
 
 ### 手动安装
 1. 从 [Releases 页面](../../releases/latest) 下载 `main.js`、`styles.css`、`manifest.json`
-2. 复制到 `<库路径>/.obsidian/plugins/obsidian-scholarium/`
+2. 复制到 `<库路径>/.obsidian/plugins/scholarium/`
 3. 在 Obsidian 中重载并启用插件
 
 ## 隐私说明

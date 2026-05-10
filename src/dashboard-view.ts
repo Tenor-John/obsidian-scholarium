@@ -93,24 +93,47 @@ export class DashboardView extends ItemView {
         container.empty();
         container.addClass('scholarium-dashboard');
 
-        // ===== 顶部标题栏 =====
-        const header = container.createDiv({ cls: 'scholarium-header' });
-        header.createEl('div', {
+        // ===== 顶部标题栏（公开版 Hero 风格）=====
+        const header = container.createDiv({ cls: 'scholarium-header xl-hero' });
+
+        const heroRow = header.createDiv({ cls: 'xl-hero-row' });
+
+        // 左：插件名 + 问候 + 日期 + WK
+        const leftWrap = heroRow.createDiv();
+        leftWrap.createEl('h2', {
             text: this.plugin.settings.pluginDisplayName || '🧪 实验记录本',
-            cls: 'scholarium-logo'
+            cls: 'scholarium-logo xl-hero-title'
         });
 
-        const infoBar = header.createDiv({ cls: 'scholarium-info-bar' });
-        const clockEl = infoBar.createEl('span', { cls: 'scholarium-clock' });
-        clockEl.id = 'scholarium-clock';
+        // 副标题：问候 + 日期 + WK
+        const now = new Date();
+        const hr = now.getHours();
+        const greet = hr < 6 ? '深夜好' : hr < 12 ? '早上好' : hr < 14 ? '中午好'
+            : hr < 18 ? '下午好' : hr < 22 ? '晚上好' : '夜深了';
+        const isoWk = (d: Date): number => {
+            const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+            let n = t.getUTCDay(); if (n === 0) n = 7;
+            t.setUTCDate(t.getUTCDate() + 4 - n);
+            const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+            return Math.ceil((((+t - +y0) / 86400000) + 1) / 7);
+        };
+        const wkStr = isoWk(now).toString().padStart(2, '0');
+        const dayCh = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][now.getDay()] || '';
+        const subText = `${greet} · ${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${dayCh} · WK${wkStr}`;
+        leftWrap.createEl('div', { text: subText, cls: 'xl-hero-sub' });
+
+        // 右：信息条 chips（时钟 / 天气 / 统计）
+        const infoBar = heroRow.createDiv({ cls: 'scholarium-info-bar xl-hero-chips' });
+        const clockChip = infoBar.createEl('span', { cls: 'xl-stat-chip accent scholarium-clock' });
+        clockChip.id = 'scholarium-clock';
         this.updateClock();
 
-        const weatherEl = infoBar.createEl('span', { text: '🌡 获取天气中...', cls: 'scholarium-weather' });
-        weatherEl.id = 'scholarium-weather';
+        const weatherChip = infoBar.createEl('span', { text: '🌡 获取天气中…', cls: 'xl-stat-chip scholarium-weather' });
+        weatherChip.id = 'scholarium-weather';
         this.fetchWeather();
 
-        const statsEl = infoBar.createEl('span', { cls: 'scholarium-stats' });
-        statsEl.id = 'scholarium-stats';
+        const statsChip = infoBar.createEl('span', { cls: 'xl-stat-chip scholarium-stats' });
+        statsChip.id = 'scholarium-stats';
 
         // ===== 面板切换栏（实验记录 | 工作台 | 素材库 | 研究画布）=====
         // 根据角色设置生成工作台标签
@@ -201,13 +224,21 @@ export class DashboardView extends ItemView {
             const searchInput = leftPanel.createDiv({ cls: 'exp-search-wrap' })
                 .createEl('input', { cls: 'exp-search-input', attr: { placeholder: '🔍 搜索标题、试剂…', type: 'text' } });
             searchInput.value = this.filterText;
-            searchInput.addEventListener('input', () => { this.filterText = searchInput.value; this.renderExpList(); });
+            searchInput.addEventListener('input', () => {
+                this.filterText = searchInput.value;
+                this.selectedExperiment = null;
+                this.renderExpList();
+                if (this.detailPanel) void this.renderExperimentDashboard(this.detailPanel, this.getFilteredExperiments());
+            });
 
             // 状态过滤标签
             const filterTabs = leftPanel.createDiv({ cls: 'filter-tabs' });
             const tabDefs: Array<[string, string, string]> = [
-                ['all', '全部', '全部实验'], ['in-progress', '🔄', '进行中'],
-                ['completed', '✅', '已完成'], ['planned', '📋', '计划中'], ['failed', '❌', '未成功'],
+                ['all', '全部', '全部实验'],
+                ['in-progress', '🔄 进行中', '进行中'],
+                ['completed', '✅ 已完成', '已完成'],
+                ['planned', '📋 计划中', '计划中'],
+                ['failed', '❌ 未成功', '未成功'],
             ];
             for (const [val, label, title] of tabDefs) {
                 const tab = filterTabs.createEl('button', { text: label, attr: { title } });
@@ -215,9 +246,11 @@ export class DashboardView extends ItemView {
                 if (this.filterStatus === val) tab.addClass('active');
                 tab.onclick = () => {
                     this.filterStatus = val;
+                    this.selectedExperiment = null;
                     filterTabs.querySelectorAll('.filter-tab').forEach(t => t.removeClass('active'));
                     tab.addClass('active');
                     this.renderExpList();
+                    if (this.detailPanel) void this.renderExperimentDashboard(this.detailPanel, this.getFilteredExperiments());
                 };
             }
 
@@ -231,12 +264,11 @@ export class DashboardView extends ItemView {
             // ── 右栏 ──
             const rightPanel = main.createDiv({ cls: 'scholarium-panel right-panel' });
             this.detailPanel = rightPanel;
+            this.selectedExperiment = null;
+            await this.renderExperimentDashboard(rightPanel, this.getFilteredExperiments());
+            return;
+            if (false) {
 
-            const firstExp = this.allExperiments[0];
-            if (firstExp) {
-                this.selectedExperiment = firstExp;
-                this.showDetail(rightPanel, firstExp);
-            } else {
                 rightPanel.createEl('div', { text: '← 点击左侧实验记录查看详情，或点击"＋ 新建实验"开始。', cls: 'scholarium-placeholder' });
             }
         }
@@ -259,16 +291,7 @@ export class DashboardView extends ItemView {
         if (!this.expListContainer) return;
         this.expListContainer.empty();
 
-        let filtered = this.allExperiments;
-        if (this.filterStatus !== 'all') filtered = filtered.filter(e => e.status === this.filterStatus);
-        if (this.filterText.trim()) {
-            const q = this.filterText.trim().toLowerCase();
-            filtered = filtered.filter(e =>
-                e.title.toLowerCase().includes(q) ||
-                e.reagents.some(r => r.toLowerCase().includes(q)) ||
-                e.results.toLowerCase().includes(q)
-            );
-        }
+        const filtered = this.getFilteredExperiments();
 
         if (!filtered.length) {
             this.expListContainer.createEl('div', {
@@ -287,6 +310,179 @@ export class DashboardView extends ItemView {
             dh.createEl('span', { text: `${exps.length} 条`, cls: 'exp-day-count' });
             for (const exp of exps) this.renderExpListItem(listEl, exp);
         }
+    }
+
+    getFilteredExperiments(): ExperimentNote[] {
+        let filtered = this.allExperiments;
+        if (this.filterStatus !== 'all') filtered = filtered.filter(e => e.status === this.filterStatus);
+        if (this.filterText.trim()) {
+            const q = this.filterText.trim().toLowerCase();
+            filtered = filtered.filter(e =>
+                e.title.toLowerCase().includes(q) ||
+                e.reagents.some(r => r.toLowerCase().includes(q)) ||
+                e.results.toLowerCase().includes(q) ||
+                e.date.toLowerCase().includes(q)
+            );
+        }
+        return filtered;
+    }
+
+    async renderExperimentDashboard(panel: HTMLElement, experiments: ExperimentNote[]) {
+        panel.empty();
+        panel.addClass('exp-dashboard-panel');
+
+        const header = panel.createDiv({ cls: 'exp-board-header' });
+        const titleWrap = header.createDiv();
+        titleWrap.createEl('h2', { text: '实验记录看板', cls: 'detail-title exp-board-title' });
+        titleWrap.createEl('div', {
+            text: experiments.length ? `共 ${experiments.length} 条记录，卡片内可滚动浏览。` : '还没有符合条件的实验记录。',
+            cls: 'exp-board-subtitle',
+        });
+
+        const tools = header.createDiv({ cls: 'exp-board-tools' });
+        tools.createEl('button', { text: '＋ 新建实验', cls: 'scholarium-btn primary' })
+            .onclick = () => this.createNewExperiment();
+        tools.createEl('button', { text: 'AI 助手', cls: 'scholarium-btn ai-btn' })
+            .onclick = () => new AIChatModal(this.app, this.plugin).open();
+
+        if (!experiments.length) {
+            const empty = panel.createDiv({ cls: 'exp-board-empty' });
+            empty.createEl('div', { text: '暂无实验记录', cls: 'exp-board-empty-title' });
+            empty.createEl('div', { text: '可以新建一条实验，或调整左侧筛选条件。', cls: 'exp-board-empty-text' });
+            return;
+        }
+
+        const stats = panel.createDiv({ cls: 'exp-board-stats' });
+        this.renderBoardStat(stats, '全部记录', String(experiments.length));
+        this.renderBoardStat(stats, '已完成', String(experiments.filter(e => e.status === 'completed').length));
+        this.renderBoardStat(stats, '进行中', String(experiments.filter(e => e.status === 'in-progress').length));
+        this.renderBoardStat(stats, '计划中', String(experiments.filter(e => e.status === 'planned').length));
+
+        const grid = panel.createDiv({ cls: 'exp-card-dashboard' });
+        for (const exp of experiments) {
+            const card = grid.createDiv({ cls: 'exp-note-card' });
+            if (exp.bookmarked) card.addClass('is-bookmarked');
+            await this.renderExperimentCard(card, exp);
+        }
+    }
+
+    private renderBoardStat(container: HTMLElement, label: string, value: string) {
+        const item = container.createDiv({ cls: 'exp-board-stat' });
+        item.createEl('span', { text: value, cls: 'exp-board-stat-value' });
+        item.createEl('span', { text: label, cls: 'exp-board-stat-label' });
+    }
+
+    private async renderExperimentCard(card: HTMLElement, exp: ExperimentNote) {
+        card.empty();
+
+        const top = card.createDiv({ cls: 'exp-note-card-top' });
+        top.createEl('span', { text: this.statusLabel(exp.status), cls: `status-badge status-${exp.status}` });
+        top.createEl('span', { text: exp.date, cls: 'exp-note-card-date' });
+
+        const body = card.createDiv({ cls: 'exp-note-card-scroll' });
+        body.createEl('h3', { text: exp.title, cls: 'exp-note-card-title' });
+
+        const meta = body.createDiv({ cls: 'exp-note-card-meta' });
+        const mt = new Date(exp.file.stat.mtime);
+        meta.createEl('span', { text: `修改 ${mt.getHours().toString().padStart(2, '0')}:${mt.getMinutes().toString().padStart(2, '0')}` });
+        if (exp.bookmarked) meta.createEl('span', { text: '收藏' });
+
+        let noteBody = '';
+        try { noteBody = await this.app.vault.read(exp.file); } catch { /* ignore */ }
+
+        const images = this.extractMarkdownImages(noteBody).slice(0, 3);
+        if (images.length) {
+            const imageRow = body.createDiv({ cls: 'exp-note-card-images' });
+            for (const img of images) {
+                const imageEl = imageRow.createEl('img', { attr: { src: img.src, alt: img.alt } });
+                imageEl.onclick = (e) => {
+                    e.stopPropagation();
+                    this.showImageLightbox(images, 0);
+                };
+            }
+        }
+
+        const rawSmiles = exp.reaction_smiles || exp.smiles;
+        const smilesStr = (rawSmiles || '').replace(/^["']|["']$/g, '').trim();
+        if (smilesStr && smilesStr !== '""') {
+            const sec = body.createDiv({ cls: 'exp-note-card-section' });
+            sec.createEl('h4', { text: exp.reaction_smiles ? '反应式' : '化学结构' });
+            sec.createEl('code', { text: smilesStr, cls: 'smiles-text' });
+        }
+
+        if (exp.reagents?.length) {
+            const sec = body.createDiv({ cls: 'exp-note-card-section' });
+            sec.createEl('h4', { text: '试剂与原料' });
+            const ul = sec.createEl('ul', { cls: 'reagent-list' });
+            exp.reagents.forEach(r => ul.createEl('li', { text: r }));
+        }
+
+        const resultsStr = (exp.results || '').replace(/^["']|["']$/g, '').trim();
+        if (resultsStr) {
+            const sec = body.createDiv({ cls: 'exp-note-card-section' });
+            sec.createEl('h4', { text: '实验结果' });
+            sec.createEl('p', { text: resultsStr, cls: 'results-text' });
+        }
+
+        const sections = this.extractNoteSections(noteBody);
+        for (const heading of ['实验目的', '目的', '实验步骤', '步骤', '观察与现象', '下一步计划', '注意事项', '备注', '参考文献']) {
+            const content = sections.get(heading);
+            if (!content || content.length < 2) continue;
+            const sec = body.createDiv({ cls: 'exp-note-card-section' });
+            sec.createEl('h4', { text: heading });
+            const div = sec.createDiv({ cls: 'exp-note-card-text' });
+            div.innerHTML = this.formatPlainMarkdown(content);
+        }
+
+        const footer = card.createDiv({ cls: 'exp-note-card-footer' });
+        footer.createEl('button', { text: '查看详情', cls: 'scholarium-btn' }).onclick = (e) => {
+            e.stopPropagation();
+            this.selectedExperiment = exp;
+            if (this.detailPanel) void this.showDetail(this.detailPanel, exp);
+        };
+        footer.createEl('button', { text: '打开笔记', cls: 'scholarium-btn' }).onclick = (e) => {
+            e.stopPropagation();
+            void this.app.workspace.getLeaf(false).openFile(exp.file);
+        };
+
+        card.onclick = () => {
+            this.selectedExperiment = exp;
+            if (this.detailPanel) void this.showDetail(this.detailPanel, exp);
+        };
+    }
+
+    private statusLabel(status: string): string {
+        const labelMap: Record<string, string> = {
+            completed: '已完成',
+            'in-progress': '进行中',
+            planned: '计划中',
+            failed: '未成功',
+        };
+        return labelMap[status] ?? status;
+    }
+
+    private extractNoteSections(content: string): Map<string, string> {
+        const bodyMatch = content.match(/^---[\s\S]*?---\s*([\s\S]*)$/);
+        const body = bodyMatch ? (bodyMatch[1] ?? '') : content;
+        const map = new Map<string, string>();
+        const re = /^##\s+(.+?)\s*\n([\s\S]*?)(?=^##\s+|\s*$)/gm;
+        let match: RegExpExecArray | null;
+        while ((match = re.exec(body)) !== null) {
+            const heading = (match[1] ?? '').trim();
+            const value = (match[2] ?? '').trim();
+            if (heading && value) map.set(heading, value);
+        }
+        return map;
+    }
+
+    private formatPlainMarkdown(content: string): string {
+        return content
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/^(\d+\.\s+)/gm, '<span class="step-num">$1</span>')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\n/g, '<br>');
     }
 
     groupByDate(exps: ExperimentNote[]): Map<string, ExperimentNote[]> {
@@ -391,6 +587,11 @@ export class DashboardView extends ItemView {
         const dh = panel.createDiv({ cls: 'detail-header' });
         dh.createEl('h2', { text: exp.title, cls: 'detail-title' });
         const btnGroup = dh.createDiv({ cls: 'detail-btn-group' });
+        btnGroup.createEl('button', { text: '返回看板', cls: 'scholarium-btn' })
+            .onclick = () => {
+                this.selectedExperiment = null;
+                void this.renderExperimentDashboard(panel, this.getFilteredExperiments());
+            };
 
         // 收藏按钮
         const starBtn = btnGroup.createEl('button', {
@@ -624,6 +825,33 @@ export class DashboardView extends ItemView {
     }
 
     // ───── 实验图片（从笔记正文读取，优先展示）─────
+    private extractMarkdownImages(noteContent: string): Array<{ src: string; alt: string }> {
+        const wikiMatches = [...noteContent.matchAll(/!\[\[([^\]]+\.(png|jpg|jpeg|gif|svg|webp|bmp))[^\]]*\]\]/gi)];
+        const mdMatches = [...noteContent.matchAll(/!\[([^\]]*)\]\(([^)]+\.(png|jpg|jpeg|gif|svg|webp|bmp))\)/gi)];
+        const validImgs: Array<{ src: string; alt: string }> = [];
+
+        for (const m of wikiMatches.slice(0, 8)) {
+            const imgPath = ((m[1] ?? '').split('|')[0] ?? '').trim();
+            const imgFile = this.app.vault.getAbstractFileByPath(imgPath)
+                ?? this.app.metadataCache.getFirstLinkpathDest(imgPath, '');
+            if (imgFile instanceof TFile) {
+                validImgs.push({ src: this.app.vault.getResourcePath(imgFile), alt: imgPath });
+            }
+        }
+
+        for (const m of mdMatches.slice(0, 8)) {
+            if (validImgs.length >= 8) break;
+            const imgPath = (m[2] ?? '').trim();
+            const imgFile = this.app.vault.getAbstractFileByPath(imgPath)
+                ?? this.app.metadataCache.getFirstLinkpathDest(imgPath, '');
+            if (imgFile instanceof TFile) {
+                validImgs.push({ src: this.app.vault.getResourcePath(imgFile), alt: m[1] || '实验图片' });
+            }
+        }
+
+        return validImgs;
+    }
+
     async renderImages(panel: HTMLElement, noteContent: string) {
         // 匹配 Obsidian 嵌入图片: ![[文件名]] 和标准 MD 图片: ![alt](path)
         const wikiMatches = [...noteContent.matchAll(/!\[\[([^\]]+\.(png|jpg|jpeg|gif|svg|webp|bmp))[^\]]*\]\]/gi)];
@@ -1089,6 +1317,52 @@ export class DashboardView extends ItemView {
     }
 
     // ───── 获取所有实验（日期严格按 frontmatter.date 或文件名，不用 mtime）─────
+    /** 公开版风格：直接在 vault 中新建一份带标准 frontmatter 的实验记录笔记 */
+    async createNewExperiment(): Promise<void> {
+        const today = new Date().toISOString().split('T')[0]!;
+        const folder = (this.plugin.settings as { experimentFolder?: string }).experimentFolder || 'Experiments';
+        try {
+            if (!this.app.vault.getAbstractFileByPath(folder)) {
+                await this.app.vault.createFolder(folder);
+            }
+        } catch { /* ignore */ }
+        const baseName = `${today}-实验记录`;
+        let path = `${folder}/${baseName}.md`;
+        let i = 1;
+        while (this.app.vault.getAbstractFileByPath(path)) {
+            path = `${folder}/${baseName}-${++i}.md`;
+        }
+        const tpl = `---
+type: experiment
+title: 新实验记录
+date: ${today}
+status: planned
+reagents: []
+smiles: ""
+reaction_smiles: ""
+results: ""
+---
+
+## 目的
+
+
+## 步骤
+
+
+## 结果
+
+
+## 备注
+
+`;
+        try {
+            const f = await this.app.vault.create(path, tpl);
+            await this.app.workspace.getLeaf(false).openFile(f);
+        } catch (e) {
+            new Notice('创建失败：' + (e as Error).message);
+        }
+    }
+
     async getExperiments(): Promise<ExperimentNote[]> {
         const results: ExperimentNote[] = [];
         for (const file of this.app.vault.getMarkdownFiles()) {
@@ -1153,55 +1427,20 @@ export class DashboardView extends ItemView {
         } catch { el.setText('🌡 天气暂不可用'); }
     }
 
-    weatherIcon(c: number) { return c === 0 ? '☀️' : c <= 3 ? '⛅' : c <= 49 ? '🌫' : c <= 67 ? '🌧' : c <= 77 ? '❄️' : c <= 82 ? '🌦' : '⛈'; }
-    weatherDesc(c: number) { return c === 0 ? '晴' : c <= 3 ? '多云' : c <= 49 ? '有雾' : c <= 67 ? '有雨' : c <= 77 ? '有雪' : c <= 82 ? '阵雨' : '雷雨'; }
-
-    // ───── 新建实验 ─────
-    async createNewExperiment() {
-        const folder = this.plugin.settings.experimentsFolder;
-        const date = new Date().toISOString().split('T')[0];
-        const ts = new Date().toTimeString().slice(0, 8).replace(/:/g, '');
-        const path = `${folder ? folder + '/' : ''}实验记录_${date}_${ts}.md`;
-        const tpl = `---
-type: experiment
-title: 新实验_${date}
-date: ${date}
-status: in-progress
-smiles: ""
-reaction_smiles: ""
-reagents:
-  - 试剂A
-  - 试剂B
-results: ""
-bookmarked: false
-excalidraw: ""
-tags: [experiment]
----
-
-# 新实验
-
-## 实验目的
-
-
-## 实验步骤
-
-1. 步骤一
-2. 步骤二
-
-## 实验结果
-
-
-## 实验图片
-
-（在此粘贴截图，格式：![[图片文件名.png]]）
-
-## 注意事项
-
-`;
-        try {
-            if (folder && !this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
-            const f = await this.app.vault.create(path, tpl);
-            await this.app.workspace.getLeaf(false).openFile(f);
-        } catch (e) { console.error('[ChemELN] 创建实验笔记失败:', e); }
+    weatherIcon(c: number) {
+        if (c === 0) return '☀';
+        if (c <= 3) return '⛅';
+        if (c >= 51 && c <= 67) return '🌧️';
+        if (c >= 71 && c <= 86) return '❄️';
+        if (c >= 95) return '⛈';
+        return '☁️';
+    }
+    weatherDesc(c: number) {
+        if (c === 0) return '晴';
+        if (c <= 3) return '多云';
+        if (c >= 51 && c <= 67) return '雨';
+        if (c >= 71 && c <= 86) return '雪';
+        if (c >= 95) return '雷暴';
+        return '阴';
     }
 }

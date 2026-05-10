@@ -1,9 +1,9 @@
 {
-	"id": "obsidian-scholarium",
+	"id": "scholarium",
 	"name": "Scholarium",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "A scholarly electronic lab notebook for researchers at every stage. Features AI-assisted record creation, a research canvas with manual connections, a material library with cloud sync, and a full productivity workspace for undergrads, masters, PhD students, and advisors.",
+	"description": "An all-in-one scholarly workspace with AI-assisted writing, literature management, notes, and productivity tools.",
 	"author": "Tao Jiang",
 	"authorUrl": "https://github.com/Tenor-John",
 	"isDesktopOnly": false

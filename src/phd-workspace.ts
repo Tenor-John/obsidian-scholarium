@@ -353,11 +353,28 @@ export class PhDWorkspace {
     private renderPage(el: HTMLElement) {
         el.addClass('ws2-page');
 
-        // Hero banner
+        // Hero banner — 公开版风格：左侧标题+副标题，右侧 WK 徽章
         const meta = this.PAGE_META[this.activePage] ?? { icon: '📋', subtitle: '' };
         const hero = el.createDiv({ cls: 'ws2-page-hero' });
-        hero.createEl('h2', { text: `${meta.icon}  ${this.activePage}`, cls: 'ws2-page-hero-title' });
-        if (meta.subtitle) hero.createEl('p', { text: meta.subtitle, cls: 'ws2-page-hero-sub' });
+
+        const titleWrap = hero.createDiv({ cls: 'ws2-page-hero-title-wrap' });
+        titleWrap.createEl('h2', { text: `${meta.icon}  ${this.activePage}`, cls: 'ws2-page-hero-title' });
+        if (meta.subtitle) titleWrap.createEl('p', { text: meta.subtitle, cls: 'ws2-page-hero-sub' });
+
+        // 右上 WK 徽章 (xl-page-wk-badge)
+        const now = new Date();
+        const isoWk = (d: Date): number => {
+            const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+            let n = t.getUTCDay(); if (n === 0) n = 7;
+            t.setUTCDate(t.getUTCDate() + 4 - n);
+            const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+            return Math.ceil((((+t - +y0) / 86400000) + 1) / 7);
+        };
+        const wk = isoWk(now).toString().padStart(2, '0');
+        const dateStr = `${now.getMonth() + 1}/${now.getDate()}`;
+        const wkBadge = hero.createDiv({ cls: 'xl-page-wk-badge' });
+        wkBadge.createSpan({ text: `WK${wk}`, cls: 'xl-page-wk-num' });
+        wkBadge.createSpan({ text: ` · ${dateStr}`, cls: 'xl-page-wk-date' });
 
         // Scrollable body
         const body = el.createDiv({ cls: 'ws2-page-body' });
@@ -380,17 +397,20 @@ export class PhDWorkspace {
     private renderOverview(el: HTMLElement) {
         const wrap = el.createDiv({ cls: 'ws2-overview' });
 
-        // Summary stat cards
         const todayFocus = this.data.focus.sessions.filter(s => s.date === today()).reduce((s, r) => s + r.minutes, 0);
         const activeTasks = this.data.tasks.filter(t => t.status === 'active').length;
         const activeSubmissions = this.data.submissions.filter(s => !['已接收','搁置/拒稿'].includes(s.stage)).length;
         const todayEmotion = this.data.emotions[today()];
 
+        const overviewHead = wrap.createDiv({ cls: 'ws2-overview-head' });
+        overviewHead.createEl('div', { text: '今日概况', cls: 'ws2-overview-kicker' });
+        overviewHead.createEl('h3', { text: '把今天需要看的东西放在一屏里', cls: 'ws2-overview-title' });
+
         const cards = [
-            { emoji: '✅', title: '进行中任务', value: String(activeTasks) },
-            { emoji: '🎯', title: '今日专注', value: `${todayFocus} min` },
-            { emoji: '📝', title: '投稿进行中', value: String(activeSubmissions) },
-            { emoji: '😊', title: '今日心情', value: todayEmotion?.emoji || '—' },
+            { emoji: '✅', title: '进行中任务', value: String(activeTasks), hint: '正在推进' },
+            { emoji: '🎯', title: '今日专注', value: `${todayFocus} min`, hint: '已记录时长' },
+            { emoji: '📝', title: '投稿进行中', value: String(activeSubmissions), hint: '点击查看详情' },
+            { emoji: '😊', title: '今日状态', value: todayEmotion?.emoji || '—', hint: todayEmotion?.text || '尚未记录' },
         ];
 
         const cardGrid = wrap.createDiv({ cls: 'ws2-card-grid' });
@@ -399,10 +419,12 @@ export class PhDWorkspace {
             div.createEl('div', { text: card.emoji, cls: 'ws2-card-emoji' });
             div.createEl('div', { text: card.title, cls: 'ws2-card-title' });
             div.createEl('div', { text: card.value, cls: 'ws2-card-value' });
+            div.createEl('div', { text: card.hint, cls: 'ws2-card-hint' });
         }
 
-        // Quick links section
-        const section = wrap.createDiv({ cls: 'ws2-card', attr: { style: 'margin-top: 16px;' } });
+        this.renderWeekAllocation(wrap);
+
+        const section = wrap.createDiv({ cls: 'ws2-card ws2-quick-card' });
         section.createEl('h4', { text: '快速跳转', cls: 'ws2-sub-title' });
         const links: Array<[string, string, string]> = [
             ['⏰', '今日打卡', '起居与考勤'],
@@ -410,11 +432,173 @@ export class PhDWorkspace {
             ['✈️', '投稿管理', '投稿管理'],
             ['📊', '数据看板', '数据看板'],
         ];
-        const linkRow = section.createDiv({ attr: { style: 'display: flex; gap: 8px; flex-wrap: wrap;' } });
+        const linkRow = section.createDiv({ cls: 'ws2-quick-links-row' });
         for (const [icon, label, page] of links) {
             const btn = linkRow.createEl('button', { text: `${icon} ${label}`, cls: 'ws2-btn' });
             btn.onclick = () => { this.activePage = page as typeof this.activePage; this.rerender(); };
         }
+    }
+
+    private renderWeekAllocation(el: HTMLElement) {
+        const card = el.createDiv({ cls: 'ws2-card ws2-stack-chart-card' });
+        card.createEl('h4', { text: '本周时间分配', cls: 'ws2-sub-title' });
+
+        const now = new Date();
+        const day = now.getDay();
+        const toMonday = day === 0 ? -6 : (1 - day);
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + toMonday);
+
+        const categories = [
+            { key: '专注学习', color: '#cfe7d6' },
+            { key: '预备阅读', color: '#d5e6f7' },
+            { key: '娱乐休息', color: '#f5e8bf' },
+            { key: '运动健身', color: '#f1d1cf' },
+            { key: '社交会议', color: '#f4d9ca' },
+            { key: '其他', color: '#dfe9e2' },
+        ];
+
+        const normalizeCategory = (value: string): string => {
+            if (/专注|学习|写作|实验/.test(value)) return '专注学习';
+            if (/阅读|预备|文献/.test(value)) return '预备阅读';
+            if (/娱乐|休息|睡眠/.test(value)) return '娱乐休息';
+            if (/运动|健身/.test(value)) return '运动健身';
+            if (/社交|会议|讨论|组会/.test(value)) return '社交会议';
+            return '其他';
+        };
+
+        const labels = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+        const weekDates: string[] = [];
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(monday);
+            d.setDate(monday.getDate() + i);
+            weekDates.push(d.toISOString().split('T')[0]!);
+        }
+
+        for (let i = 0; i < 7; i++) {
+            const dateStr = weekDates[i]!;
+            const blocks = this.data.timeblocks.filter(b => b.date === dateStr);
+            const totals = new Map<string, number>();
+            for (const block of blocks) {
+                const minutes = diffMin(block.startTime, block.endTime);
+                const cat = normalizeCategory(block.category || block.title || '');
+                totals.set(cat, (totals.get(cat) || 0) + minutes);
+            }
+            const dayTotal = Array.from(totals.values()).reduce((sum, value) => sum + value, 0);
+
+            const row = card.createDiv({ cls: `ws2-stack-row${dateStr === today() ? ' ws2-stack-today' : ''}` });
+            row.createEl('div', { text: labels[i]!, cls: 'ws2-stack-day-label' });
+            const bar = row.createDiv({ cls: 'ws2-stack-bar-wrap' });
+            if (dayTotal > 0) {
+                for (const cat of categories) {
+                    const value = totals.get(cat.key) || 0;
+                    if (value <= 0) continue;
+                    const seg = bar.createDiv({ cls: 'ws2-stack-seg' });
+                    seg.style.width = `${Math.max(4, value / dayTotal * 100)}%`;
+                    seg.style.background = cat.color;
+                    seg.title = `${cat.key}: ${value} min`;
+                }
+            } else {
+                bar.createDiv({ cls: 'ws2-stack-empty' });
+            }
+            row.createEl('div', { text: dayTotal ? `${dayTotal}m` : '–', cls: 'ws2-stack-total' });
+        }
+
+        const legend = card.createDiv({ cls: 'ws2-stack-legend' });
+        for (const cat of categories) {
+            const item = legend.createDiv({ cls: 'ws2-stack-legend-item' });
+            const dot = item.createSpan({ cls: 'ws2-stack-legend-dot' });
+            dot.style.background = cat.color;
+            item.createSpan({ text: cat.key, cls: 'ws2-stack-legend-label' });
+        }
+    }
+
+    // ════════════════════════════════
+    // ★ 公开版「WK 周仪表盘」组件
+    // ════════════════════════════════
+    private renderWeekDashboard(el: HTMLElement) {
+        // ── 日期与周计算 ──
+        const now = new Date();
+        const day = now.getDay();
+        const toMonday = day === 0 ? -6 : (1 - day);
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + toMonday);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+
+        // ISO 周序号
+        const isoWeek = (d: Date): number => {
+            const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+            let n = t.getUTCDay(); if (n === 0) n = 7;
+            t.setUTCDate(t.getUTCDate() + 4 - n);
+            const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+            return Math.ceil((((+t - +y0) / 86400000) + 1) / 7);
+        };
+        const wk = isoWeek(now).toString().padStart(2, '0');
+        const todayDate = now.getDate();
+
+        // 问候语
+        const hr = now.getHours();
+        const greet = hr < 6 ? '深夜好' : hr < 12 ? '早上好' : hr < 14 ? '中午好'
+            : hr < 18 ? '下午好' : hr < 22 ? '晚上好' : '夜深了';
+
+        // ── 容器 ──
+        const card = el.createDiv({ cls: 'xl-wk-card' });
+
+        // Header
+        const head = card.createDiv({ cls: 'xl-wk-header' });
+        head.createSpan({ text: `WK${wk}`, cls: 'xl-wk-num' });
+        const cn = (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日`;
+        head.createSpan({ text: `${cn(monday)} – ${cn(sunday)}`, cls: 'xl-wk-range' });
+        head.createSpan({ text: `${greet} · 今天是 ${todayDate} 号`, cls: 'xl-wk-greet' });
+
+        // Day grid
+        const grid = card.createDiv({ cls: 'xl-wk-grid' });
+        const labels = ['一', '二', '三', '四', '五', '六', '日'];
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(monday);
+            d.setDate(monday.getDate() + i);
+            const isToday = d.toDateString() === now.toDateString();
+            const isWeekend = i >= 5;
+            const dayBox = grid.createDiv({ cls: 'xl-wk-day' + (isToday ? ' today' : '') + (isWeekend ? ' weekend' : '') });
+            dayBox.createSpan({ text: labels[i] || '', cls: 'xl-wk-day-label' });
+            dayBox.createDiv({ text: String(d.getDate()), cls: 'xl-wk-day-num' });
+        }
+
+        // 进度条：年 / 月 / 周 / 日
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+        const endOfYear = new Date(now.getFullYear() + 1, 0, 1);
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        const endOfWeek = new Date(monday); endOfWeek.setDate(monday.getDate() + 7);
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+
+        const pct = (s: Date, e: Date) =>
+            Math.min(100, Math.max(0, ((+now - +s) / (+e - +s)) * 100));
+
+        const progRow = card.createDiv({ cls: 'xl-wk-progress-row' });
+        const progressItems: Array<[string, number]> = [
+            ['年进度', pct(startOfYear, endOfYear)],
+            ['月进度', pct(startOfMonth, endOfMonth)],
+            ['周进度', pct(monday, endOfWeek)],
+            ['日进度', pct(startOfDay, endOfDay)],
+        ];
+        for (const [label, p] of progressItems) {
+            const item = progRow.createDiv({ cls: 'xl-wk-prog' });
+            const head = item.createDiv({ cls: 'xl-wk-prog-head' });
+            head.createSpan({ text: label });
+            head.createSpan({ text: `${p.toFixed(1)}%`, cls: 'xl-wk-prog-pct' });
+            const bar = item.createDiv({ cls: 'xl-wk-prog-bar' });
+            const fill = bar.createDiv({ cls: 'xl-wk-prog-fill' });
+            fill.style.width = `${p.toFixed(1)}%`;
+        }
+
+        // 底部导航：上周 / 本周 / 下周（仅展示，无路由）
+        const foot = card.createDiv({ cls: 'xl-wk-foot' });
+        foot.createEl('button', { text: '◀ 上周', cls: 'xl-wk-nav' });
+        foot.createEl('button', { text: '● 本周', cls: 'xl-wk-nav current' });
+        foot.createEl('button', { text: '下周 ▶', cls: 'xl-wk-nav' });
     }
 
     // ════════════════════════════════
@@ -1365,122 +1549,111 @@ export class PhDWorkspace {
             const d = new Date(now);
             d.setDate(d.getDate() - i);
             const dateStr = d.toISOString().split('T')[0]!;
-            const log = this.data.habits.logs[dateStr];
-            const done = log ? Object.values(log).filter(v => v).length : 0;
-            const total = this.data.habits.list.length || 1;
-            const pct = Math.round(done / total * 100);
-            data.push({ date: dateStr.slice(5), value: pct });
+            const day = this.data.habits.logs[dateStr] || {};
+            const doneCount = Object.values(day).filter(v => v === true).length;
+            data.push({ date: dateStr.slice(5), value: doneCount });
         }
         return data;
     }
 
-    private createLineChart(data: { date: string; value: number }[]): SVGElement {
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('width', '400');
-        svg.setAttribute('height', '200');
-        svg.setAttribute('class', 'ws2-line-chart');
-
-        const padding = 40;
-        const width = 400 - padding * 2;
-        const height = 200 - padding * 2;
-
-        const maxValue = Math.max(...data.map(d => d.value), 1);
-        const xStep = width / (data.length - 1 || 1);
-        let pathData = '';
-
-        for (let i = 0; i < data.length; i++) {
-            const x = padding + i * xStep;
-            const y = padding + height - (data[i]!.value / maxValue) * height;
-            pathData += (i === 0 ? 'M' : 'L') + x + ',' + y;
-        }
-
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', pathData);
-        path.setAttribute('stroke', '#FF8A65');
-        path.setAttribute('stroke-width', '2');
-        path.setAttribute('fill', 'none');
-        svg.appendChild(path);
-
-        // 网格线
-        for (let i = 0; i <= 5; i++) {
-            const y = padding + (height / 5) * i;
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', String(padding));
-            line.setAttribute('y1', String(y));
-            line.setAttribute('x2', String(padding + width));
-            line.setAttribute('y2', String(y));
-            line.setAttribute('stroke', '#eee');
-            line.setAttribute('stroke-width', '1');
-            svg.appendChild(line);
-        }
-
-        return svg;
-    }
-
-    private createBarChart(data: { date: string; value: number }[]): SVGElement {
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('width', '400');
-        svg.setAttribute('height', '200');
-        svg.setAttribute('class', 'ws2-bar-chart');
-
-        const padding = 40;
-        const width = 400 - padding * 2;
-        const height = 200 - padding * 2;
-        const maxValue = Math.max(...data.map(d => d.value), 1);
-        const barWidth = width / data.length * 0.6;
-        const barGap = (width / data.length) * 0.2;
-
-        for (let i = 0; i < data.length; i++) {
-            const x = padding + (width / data.length) * i + barGap;
-            const barHeight = (data[i]!.value / maxValue) * height;
-            const y = padding + height - barHeight;
-
-            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            rect.setAttribute('x', String(x));
-            rect.setAttribute('y', String(y));
-            rect.setAttribute('width', String(barWidth));
-            rect.setAttribute('height', String(barHeight));
-            rect.setAttribute('fill', '#FF8A65');
-            svg.appendChild(rect);
-        }
-
-        return svg;
-    }
+    // ──── 通用工具方法 ────
 
     private getTotalFocusMinutes(): number {
-        return this.data.focus.sessions.reduce((s, r) => s + r.minutes, 0);
+        return this.data.focus.sessions.reduce((s, r) => s + (r.minutes || 0), 0);
     }
 
     private getTotalFocusMinutesInRange(days: number): number {
-        const now = new Date();
-        const cutoff = new Date(now);
+        const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - days);
+        const cutoffStr = cutoff.toISOString().split('T')[0]!;
         return this.data.focus.sessions
-            .filter(s => new Date(s.date) >= cutoff)
-            .reduce((s, r) => s + r.minutes, 0);
+            .filter(s => (s.date || '') >= cutoffStr)
+            .reduce((s, r) => s + (r.minutes || 0), 0);
     }
 
     private calcLongestStreak(): number {
-        let longest = 0;
-        let current = 0;
-        const sortedDates = Object.keys(this.data.habits.logs).sort();
-
-        for (const dateStr of sortedDates) {
-            const log = this.data.habits.logs[dateStr]!;
-            const allDone = this.data.habits.list.every(h => log[h.id]);
-            if (allDone) {
-                current++;
-                longest = Math.max(longest, current);
-            } else {
-                current = 0;
-            }
+        const dates = Object.keys(this.data.habits.logs).sort();
+        if (dates.length === 0) return 0;
+        let best = 1, cur = 1;
+        for (let i = 1; i < dates.length; i++) {
+            const prev = new Date(dates[i - 1]!);
+            const next = new Date(dates[i]!);
+            const diff = Math.round((+next - +prev) / 86400000);
+            if (diff === 1) { cur += 1; best = Math.max(best, cur); }
+            else cur = 1;
         }
-        return longest;
+        return best;
     }
 
-    destroy() {
-        if (this.focusTimer) { window.clearInterval(this.focusTimer); this.focusTimer = null; }
-        this.focusDisplayEl = null;
-        this.container = null;
+    private createLineChart(data: { date: string; value: number }[]): SVGSVGElement {
+        return this.createMiniChart(data, 'line');
+    }
+
+    private createBarChart(data: { date: string; value: number }[]): SVGSVGElement {
+        return this.createMiniChart(data, 'bar');
+    }
+
+    private createMiniChart(data: { date: string; value: number }[], kind: 'line' | 'bar'): SVGSVGElement {
+        const W = 320, H = 120, P = 18;
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNS, 'svg') as SVGSVGElement;
+        svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+        svg.setAttribute('width', '100%');
+        svg.setAttribute('height', String(H));
+        svg.style.maxWidth = '100%';
+
+        if (data.length === 0) {
+            const t = document.createElementNS(svgNS, 'text');
+            t.setAttribute('x', String(W / 2));
+            t.setAttribute('y', String(H / 2));
+            t.setAttribute('text-anchor', 'middle');
+            t.setAttribute('fill', 'var(--text-faint)');
+            t.setAttribute('font-size', '12');
+            t.textContent = '暂无数据';
+            svg.appendChild(t);
+            return svg;
+        }
+
+        const max = Math.max(1, ...data.map(d => d.value));
+        const stepX = (W - P * 2) / Math.max(1, data.length - 1);
+        const accent = 'var(--celn-accent)';
+
+        if (kind === 'line') {
+            const pts = data.map((d, i) => `${P + i * stepX},${H - P - (d.value / max) * (H - P * 2)}`).join(' ');
+            const poly = document.createElementNS(svgNS, 'polyline');
+            poly.setAttribute('points', pts);
+            poly.setAttribute('fill', 'none');
+            poly.setAttribute('stroke', accent);
+            poly.setAttribute('stroke-width', '2');
+            poly.setAttribute('stroke-linejoin', 'round');
+            poly.setAttribute('stroke-linecap', 'round');
+            svg.appendChild(poly);
+            data.forEach((d, i) => {
+                const c = document.createElementNS(svgNS, 'circle');
+                c.setAttribute('cx', String(P + i * stepX));
+                c.setAttribute('cy', String(H - P - (d.value / max) * (H - P * 2)));
+                c.setAttribute('r', '2');
+                c.setAttribute('fill', accent);
+                svg.appendChild(c);
+            });
+        } else {
+            const bw = Math.max(2, stepX * 0.6);
+            data.forEach((d, i) => {
+                const h = (d.value / max) * (H - P * 2);
+                const r = document.createElementNS(svgNS, 'rect');
+                r.setAttribute('x', String(P + i * stepX - bw / 2));
+                r.setAttribute('y', String(H - P - h));
+                r.setAttribute('width', String(bw));
+                r.setAttribute('height', String(h));
+                r.setAttribute('fill', accent);
+                r.setAttribute('rx', '2');
+                svg.appendChild(r);
+            });
+        }
+        return svg;
+    }
+
+    public destroy(): void {
+        // No-op
     }
 }

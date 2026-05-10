@@ -1,12 +1,12 @@
 {
-	"name": "obsidian-scholarium",
+	"name": "scholarium",
 	"version": "1.0.0",
 	"description": "A scholarly electronic lab notebook plugin for Obsidian",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "npx tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"lint": "eslint ."
 	},

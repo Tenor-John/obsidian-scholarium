@@ -2,11 +2,13 @@ import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import ChemELNPlugin from './main';
 import type { CloudProviderType } from './cloud-sync';
 import { CloudSyncManager, buildSyncConfig } from './cloud-sync';
+import type { WritingProvider } from './vision-writer';
 
 export type AIProvider = 'claude' | 'openai' | 'kimi' | 'deepseek' | 'minimax' | 'custom';
 
 // 工作台角色预设
 export type WorkspaceRole = 'undergraduate' | 'master' | 'phd' | 'advisor' | 'custom';
+export type PluginFontSize = 'small' | 'medium' | 'large' | 'xlarge';
 export const WORKSPACE_ROLE_LABELS: Record<WorkspaceRole, string> = {
     undergraduate: '本科工作台',
     master:        '硕士工作台',
@@ -35,6 +37,11 @@ export interface ChemELNSettings {
     aiSystemPrompt: string;   // 可自定义的系统提示词，{{date}} 会被替换为今日日期
     aiTemperature: number;    // AI 温度参数（0~1）
     // 云盘同步设置
+    mineruApiKey: string;
+    writingProvider: WritingProvider;
+    writingApiKey: string;
+    writingModel: string;
+    writingCustomEndpoint: string;
     cloudProvider: CloudProviderType;
     cloudWebdavUrl: string;
     cloudWebdavUser: string;
@@ -59,6 +66,7 @@ export interface ChemELNSettings {
     pluginDisplayName:  string;         // 顶部 Logo 显示名称
     notebookLabel:      string;         // 实验记录/笔记栏标签（自定义时使用）
     workspaceTabLabel:  string;         // 工作台 Tab 自定义标签（仅 custom 模式）
+    fontSize:           PluginFontSize; // 插件界面字号
 }
 
 // 默认系统提示词（{{date}} 在运行时被替换为今日日期）
@@ -100,6 +108,11 @@ export const DEFAULT_SETTINGS: ChemELNSettings = {
     aiCustomEndpoint: '',
     aiSystemPrompt: DEFAULT_AI_SYSTEM_PROMPT,
     aiTemperature: 0.7,
+    mineruApiKey: '',
+    writingProvider: 'deepseek',
+    writingApiKey: '',
+    writingModel: '',
+    writingCustomEndpoint: '',
     cloudProvider: 'none',
     cloudWebdavUrl: '',
     cloudWebdavUser: '',
@@ -121,6 +134,7 @@ export const DEFAULT_SETTINGS: ChemELNSettings = {
     pluginDisplayName:  '🧪 实验记录本',
     notebookLabel:      '实验记录',
     workspaceTabLabel:  '工作台',
+    fontSize:           'medium',
 };
 
 // 各服务商配置（端点、默认模型、Key 格式提示、文档链接）
@@ -219,6 +233,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
     display(): void {
         const { containerEl } = this;
         containerEl.empty();
+        containerEl.addClass('scholarium-settings');
 
         const s = this.plugin.settings;
         const roleIcon  = WORKSPACE_ROLE_ICONS[s.workspaceRole] ?? '⚙️';
@@ -308,6 +323,20 @@ export class ChemELNSettingTab extends PluginSettingTab {
                 .onChange(async v => {
                     s.workspaceTabLabel = v;
                     s.workspaceRole     = 'custom';
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('界面字号')
+            .setDesc('调整本插件面板、工作台、素材库和研究画布的整体字号。布局会随字号自动放宽。')
+            .addDropdown(d => d
+                .addOption('small', '小')
+                .addOption('medium', '中')
+                .addOption('large', '大')
+                .addOption('xlarge', '特大')
+                .setValue(s.fontSize)
+                .onChange(async v => {
+                    s.fontSize = v as PluginFontSize;
                     await this.plugin.saveSettings();
                 }));
 
@@ -431,6 +460,78 @@ export class ChemELNSettingTab extends PluginSettingTab {
         });
 
         // 提示词编辑框
+        containerEl.createEl('h3', { text: '图片识别实验记录' });
+        containerEl.createEl('p', {
+            text: '双阶段流程：MinerU 负责 OCR 提取，AI 重写模型负责整理为实验记录。选择 DeepSeek 时可复用上方主 AI Key。',
+            cls: 'setting-item-description'
+        });
+
+        new Setting(containerEl)
+            .setName('MinerU API Key')
+            .setDesc('用于阶段 1：从图片中提取文字、表格和公式。')
+            .addText(t => {
+                t.inputEl.type = 'password';
+                return t.setPlaceholder('MinerU API Key')
+                    .setValue(this.plugin.settings.mineruApiKey)
+                    .onChange(async v => {
+                        this.plugin.settings.mineruApiKey = v;
+                        await this.plugin.saveSettings();
+                    });
+            });
+
+        new Setting(containerEl)
+            .setName('AI 重写模型')
+            .setDesc('用于阶段 2：把 OCR 文本整理成实验记录。')
+            .addDropdown(d => d
+                .addOption('deepseek', 'DeepSeek（可复用主 Key）')
+                .addOption('claude', 'Claude')
+                .addOption('openai', 'OpenAI / GPT')
+                .addOption('gemini', 'Gemini')
+                .addOption('custom', '自定义 OpenAI 兼容端点')
+                .setValue(this.plugin.settings.writingProvider)
+                .onChange(async v => {
+                    this.plugin.settings.writingProvider = v as WritingProvider;
+                    await this.plugin.saveSettings();
+                    this.display();
+                }));
+
+        new Setting(containerEl)
+            .setName('重写模型 API Key')
+            .setDesc('留空且选择 DeepSeek 时，会自动复用上方主 AI Key。')
+            .addText(t => {
+                t.inputEl.type = 'password';
+                return t.setPlaceholder('留空 = 复用 DeepSeek 主 Key')
+                    .setValue(this.plugin.settings.writingApiKey)
+                    .onChange(async v => {
+                        this.plugin.settings.writingApiKey = v;
+                        await this.plugin.saveSettings();
+                    });
+            });
+
+        new Setting(containerEl)
+            .setName('重写模型型号')
+            .setDesc('留空则使用默认模型，如 deepseek-chat / gpt-4.1 / gemini-2.5-pro。')
+            .addText(t => t
+                .setPlaceholder('留空 = 默认')
+                .setValue(this.plugin.settings.writingModel)
+                .onChange(async v => {
+                    this.plugin.settings.writingModel = v;
+                    await this.plugin.saveSettings();
+                }));
+
+        if (this.plugin.settings.writingProvider === 'custom') {
+            new Setting(containerEl)
+                .setName('重写模型自定义端点')
+                .setDesc('OpenAI Chat Completions 兼容端点。')
+                .addText(t => t
+                    .setPlaceholder('https://example.com/v1/chat/completions')
+                    .setValue(this.plugin.settings.writingCustomEndpoint)
+                    .onChange(async v => {
+                        this.plugin.settings.writingCustomEndpoint = v;
+                        await this.plugin.saveSettings();
+                    }));
+        }
+
         const promptWrap = containerEl.createDiv({ cls: 'scholarium-prompt-wrap' });
         const promptTextarea = promptWrap.createEl('textarea', { cls: 'scholarium-prompt-textarea' });
         promptTextarea.value = this.plugin.settings.aiSystemPrompt || DEFAULT_AI_SYSTEM_PROMPT;
@@ -577,7 +678,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
 
             new Setting(containerEl)
                 .setName('Access Key')
-                .addText(t => t.setPlaceholder('AKIAIOSFODNN7EXAMPLE')
+                .addText(t => t.setPlaceholder('your-access-key-id')
                     .setValue(this.plugin.settings.cloudS3AccessKey)
                     .onChange(async v => { this.plugin.settings.cloudS3AccessKey = v; await this.plugin.saveSettings(); }));
 
@@ -652,6 +753,8 @@ export class ChemELNSettingTab extends PluginSettingTab {
             { label: '🟣 薰衣草',       accent: '#7B1FA2', gradient: '#4A148C', alpha: 0.10 },
             { label: '🩵 青色',         accent: '#00838F', gradient: '#006064', alpha: 0.10 },
             { label: '🌸 玫瑰粉',       accent: '#C2185B', gradient: '#880E4F', alpha: 0.10 },
+            { label: '🤎 囍樂咖（公开版）', accent: '#6B5B4D', gradient: '#3E342B', alpha: 0.10 },
+            { label: '💚 囍樂青（公开版）', accent: '#008080', gradient: '#005454', alpha: 0.10 },
         ];
 
         const presetWrap = containerEl.createDiv({ attr: { style: 'display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;' } });
