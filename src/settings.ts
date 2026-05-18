@@ -795,8 +795,8 @@ export class ChemELNSettingTab extends PluginSettingTab {
             { label: '🟣 薰衣草',       accent: '#7B1FA2', gradient: '#4A148C', alpha: 0.10 },
             { label: '🩵 青色',         accent: '#00838F', gradient: '#006064', alpha: 0.10 },
             { label: '🌸 玫瑰粉',       accent: '#C2185B', gradient: '#880E4F', alpha: 0.10 },
-            { label: '🤎 囍樂咖（公开版）', accent: '#6B5B4D', gradient: '#3E342B', alpha: 0.10 },
-            { label: '💚 囍樂青（公开版）', accent: '#008080', gradient: '#005454', alpha: 0.10 },
+            { label: '🤎 岩棕（公开版）', accent: '#6B5B4D', gradient: '#3E342B', alpha: 0.10 },
+            { label: '💚 松石青（公开版）', accent: '#008080', gradient: '#005454', alpha: 0.10 },
         ];
 
         const presetWrap = containerEl.createDiv({ attr: { style: 'display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;' } });

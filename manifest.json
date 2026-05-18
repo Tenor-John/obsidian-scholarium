@@ -1,7 +1,7 @@
 {
 	"id": "scholarium",
 	"name": "Scholarium",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"minAppVersion": "0.15.0",
 	"description": "An all-in-one scholarly workspace with AI-assisted writing, literature management, notes, and productivity tools.",
 	"author": "Tao Jiang",
