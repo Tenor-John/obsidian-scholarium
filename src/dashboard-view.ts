@@ -4,7 +4,7 @@ import { WORKSPACE_ROLE_LABELS, WORKSPACE_ROLE_ICONS } from './settings';
 import { AIChatModal } from './ai-chat-modal';
 import { PhDWorkspace } from './phd-workspace';
 import { MaterialLibrary } from './material-library';
-import { ResearchCanvas } from './research-canvas';
+import { ResearchToolLibrary } from './research-tool-library';
 import type { CloudSyncManager } from './cloud-sync';
 
 // 本地打包 smiles-drawer（兼容 esbuild 的 ESM→CJS 转换）
@@ -41,9 +41,9 @@ export class DashboardView extends ItemView {
     private workspace: PhDWorkspace | null = null;
     // 素材库
     private materialLib: MaterialLibrary | null = null;
-    // 研究画布
-    private researchCanvas: ResearchCanvas | null = null;
-    private activePanel: 'lab' | 'workspace' | 'materials' | 'canvas' = 'lab';
+    // 科研库
+    private researchToolLib: ResearchToolLibrary | null = null;
+    private activePanel: 'lab' | 'workspace' | 'materials' | 'tools' = 'lab';
 
     constructor(leaf: WorkspaceLeaf, plugin: ChemELNPlugin) {
         super(leaf);
@@ -68,9 +68,9 @@ export class DashboardView extends ItemView {
             // 初始化素材库
             this.materialLib = new MaterialLibrary(this.app, this.plugin);
             await this.materialLib.load();
-            // 初始化研究画布
-            this.researchCanvas = new ResearchCanvas(this.app, this.plugin);
-            await this.researchCanvas.load();
+            // 初始化科研库
+            this.researchToolLib = new ResearchToolLibrary(this.app, this.plugin);
+            await this.researchToolLib.load();
             await this.render();
             this.clockInterval = window.setInterval(() => this.updateClock(), 60000);
         } catch (e) {
@@ -85,7 +85,7 @@ export class DashboardView extends ItemView {
         if (this.clockInterval !== null) window.clearInterval(this.clockInterval);
         this.workspace?.destroy();
         this.materialLib?.destroy();
-        this.researchCanvas?.destroy();
+        this.researchToolLib?.destroy();
     }
 
     async render() {
@@ -135,7 +135,7 @@ export class DashboardView extends ItemView {
         const statsChip = infoBar.createEl('span', { cls: 'xl-stat-chip scholarium-stats' });
         statsChip.id = 'scholarium-stats';
 
-        // ===== 面板切换栏（实验记录 | 工作台 | 素材库 | 研究画布）=====
+        // ===== 面板切换栏（实验记录 | 工作台 | 素材库 | 科研库）=====
         // 根据角色设置生成工作台标签
         const { workspaceRole, notebookLabel, workspaceTabLabel } = this.plugin.settings;
         const wsTabLabel = workspaceRole !== 'custom'
@@ -156,9 +156,9 @@ export class DashboardView extends ItemView {
             text: '🗂️ 素材库',
             cls: `scholarium-switch-btn${this.activePanel === 'materials' ? ' active' : ''}`
         });
-        const canvasBtn = panelSwitch.createEl('button', {
-            text: '🗺️ 研究画布',
-            cls: `scholarium-switch-btn${this.activePanel === 'canvas' ? ' active' : ''}`
+        const toolsBtn = panelSwitch.createEl('button', {
+            text: '🧰 科研库',
+            cls: `scholarium-switch-btn${this.activePanel === 'tools' ? ' active' : ''}`
         });
 
         // ===== 操作栏 =====
@@ -186,7 +186,7 @@ export class DashboardView extends ItemView {
             labBtn.onclick = () => { this.activePanel = 'lab'; this.render(); };
             wsBtn.onclick  = () => {};
             matBtn.onclick = () => { this.activePanel = 'materials'; this.render(); };
-            canvasBtn.onclick = () => { this.activePanel = 'canvas'; this.render(); };
+            toolsBtn.onclick = () => { this.activePanel = 'tools'; this.render(); };
         } else if (this.activePanel === 'materials') {
             // ── 素材库（全宽）──
             const matPanel = main.createDiv({ cls: 'scholarium-panel mat-full-panel' });
@@ -195,26 +195,22 @@ export class DashboardView extends ItemView {
             labBtn.onclick = () => { this.activePanel = 'lab'; this.render(); };
             wsBtn.onclick  = () => { this.activePanel = 'workspace'; this.render(); };
             matBtn.onclick = () => {};
-            canvasBtn.onclick = () => { this.activePanel = 'canvas'; this.render(); };
-        } else if (this.activePanel === 'canvas') {
-            // ── 研究画布（全宽）──
-            const canvasPanel = main.createDiv({ cls: 'scholarium-panel rc-full-panel' });
-            if (this.researchCanvas) {
-                const folder = this.plugin.settings.literatureFolder || '';
-                await this.researchCanvas.loadNotes(folder);
-                this.researchCanvas.render(canvasPanel);
-            }
+            toolsBtn.onclick = () => { this.activePanel = 'tools'; this.render(); };
+        } else if (this.activePanel === 'tools') {
+            // ── 科研库（全宽）──
+            const toolsPanel = main.createDiv({ cls: 'scholarium-panel rtl-full-panel' });
+            if (this.researchToolLib) this.researchToolLib.render(toolsPanel);
 
             labBtn.onclick = () => { this.activePanel = 'lab'; this.render(); };
             wsBtn.onclick  = () => { this.activePanel = 'workspace'; this.render(); };
             matBtn.onclick = () => { this.activePanel = 'materials'; this.render(); };
-            canvasBtn.onclick = () => {};
+            toolsBtn.onclick = () => {};
         } else {
             // ── 实验记录（左右两栏）──
             labBtn.onclick = () => {};
             wsBtn.onclick  = () => { this.activePanel = 'workspace'; this.render(); };
             matBtn.onclick = () => { this.activePanel = 'materials'; this.render(); };
-            canvasBtn.onclick = () => { this.activePanel = 'canvas'; this.render(); };
+            toolsBtn.onclick = () => { this.activePanel = 'tools'; this.render(); };
 
             // ── 左栏 ──
             const leftPanel = main.createDiv({ cls: 'scholarium-panel left-panel' });
