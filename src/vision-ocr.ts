@@ -1,4 +1,4 @@
-import { requestUrl } from 'obsidian';
+import { requestUrlWithTimeout } from './utils/network';
 
 export interface MinerUResult {
     text: string;
@@ -56,7 +56,7 @@ export async function extractTextWithMinerU(
     }
 
     try {
-        await requestUrl({
+        await requestUrlWithTimeout({
             url: createTask.data.file_url,
             method: 'PUT',
             body: base64ToArrayBuffer(base64),
@@ -73,7 +73,7 @@ export async function extractTextWithMinerU(
 
     let markdownResponse;
     try {
-        markdownResponse = await requestUrl({
+        markdownResponse = await requestUrlWithTimeout({
             url: result.data.markdown_url,
             method: 'GET',
         });
@@ -113,7 +113,7 @@ async function requestJson<T>(options: {
     body?: string | ArrayBuffer;
 }, stage = '请求'): Promise<T> {
     try {
-        const response = await requestUrl(options);
+        const response = await requestUrlWithTimeout(options);
         return response.json as T;
     } catch (err) {
         throw new Error(`MinerU ${stage}失败：${formatRequestError(err)}`);

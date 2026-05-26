@@ -99,9 +99,9 @@ export class MaterialLibrary {
 
     async save(): Promise<void> {
         try {
-            const pluginData = ((await this.plugin.loadData()) as Record<string, unknown>) || {};
-            pluginData.materialLibrary = this.data;
-            await this.plugin.saveData(pluginData);
+            await this.plugin.updateData((pluginData) => {
+                pluginData.materialLibrary = this.data;
+            });
         } catch (e) {
             console.error('[MaterialLibrary] 保存失败:', e);
         }

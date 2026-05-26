@@ -2,16 +2,28 @@ import { Plugin, WorkspaceLeaf } from 'obsidian';
 import { DASHBOARD_VIEW_TYPE, DashboardView } from './dashboard-view';
 import { ChemELNSettingTab, DEFAULT_SETTINGS } from './settings';
 import type { ChemELNSettings } from './settings';
-import { AIAssistantModal } from './ai-assistant-modal';
 import type { ExperimentContext } from './ai-assistant-modal';
 import { CloudSyncManager, buildSyncConfig } from './cloud-sync';
 import { AIChatModal } from './ai-chat-modal';
+import { scholariumThemeCss } from './theme/tokens';
 
 export default class ChemELNPlugin extends Plugin {
     settings: ChemELNSettings;
     syncManager: CloudSyncManager | null = null;
+    private saveQueue: Promise<void> = Promise.resolve();
 
-    // ─── CSS 主题变量注入 ─────────────────────────────────
+    updateData(mutator: (data: Record<string, unknown>) => void): Promise<void> {
+        const run = this.saveQueue.then(async () => {
+            const raw = ((await this.loadData()) as Record<string, unknown> | null) ?? {};
+            mutator(raw);
+            await this.saveData(raw);
+        });
+        this.saveQueue = run.catch((error) => {
+            console.error('[Scholarium] Failed to persist plugin data:', error);
+        });
+        return run;
+    }
+
     injectThemeVars(): void {
         const existing = document.getElementById('scholarium-theme-vars');
         if (existing) existing.remove();
@@ -42,7 +54,7 @@ export default class ChemELNPlugin extends Plugin {
             `#${[r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')}`;
 
         const ac = hexComp(themeAccent);
-        const light  = toHex(ac.r + (255 - ac.r) * 0.22, ac.g + (255 - ac.g) * 0.22, ac.b + (255 - ac.b) * 0.22);
+        const light = toHex(ac.r + (255 - ac.r) * 0.22, ac.g + (255 - ac.g) * 0.22, ac.b + (255 - ac.b) * 0.22);
         const medium = toHex(ac.r * 0.90, ac.g * 0.90, ac.b * 0.90);
         const deeper = toHex(ac.r * 0.70, ac.g * 0.70, ac.b * 0.70);
 
@@ -63,7 +75,8 @@ export default class ChemELNPlugin extends Plugin {
     --scholarium-font-scale:  ${fontScale};
     --scholarium-font-size:   ${14 * fontScale}px;
     --scholarium-space-scale: ${Math.max(1, fontScale)};
-}`;
+}
+${scholariumThemeCss(this.settings.theme, this.settings.accent, this.settings.density, this.settings.themeAccent)}`;
         document.head.appendChild(style);
     }
 
@@ -71,22 +84,19 @@ export default class ChemELNPlugin extends Plugin {
         await this.loadSettings();
         this.injectThemeVars();
 
-        // 注册仪表盘视图
         this.registerView(
             DASHBOARD_VIEW_TYPE,
             (leaf) => new DashboardView(leaf, this)
         );
 
-        // 左侧栏按钮：点击打开仪表盘
-        this.addRibbonIcon('flask-conical', '打开化学实验记录本', () => {
-            this.activateDashboard();
+        this.addRibbonIcon('flask-conical', '打开 Scholarium', () => {
+            void this.activateDashboard();
         });
 
-        // 命令面板命令
         this.addCommand({
             id: 'open-chem-dashboard',
-            name: '打开化学实验仪表盘',
-            callback: () => this.activateDashboard(),
+            name: '打开 Scholarium',
+            callback: () => void this.activateDashboard(),
         });
 
         this.addCommand({
@@ -99,7 +109,7 @@ export default class ChemELNPlugin extends Plugin {
 
         this.addCommand({
             id: 'open-ai-assistant',
-            name: '打开 AI 实验助理',
+            name: '打开 AI 实验助手',
             callback: () => this.openAIAssistant(),
         });
 
@@ -109,15 +119,11 @@ export default class ChemELNPlugin extends Plugin {
             callback: () => this.openImageLab(),
         });
 
-        // 设置页
         this.addSettingTab(new ChemELNSettingTab(this.app, this));
-
-        // 初始化云同步
         this.initCloudSync();
 
-        // 启动时自动打开
         if (this.settings.openOnStartup) {
-            this.app.workspace.onLayoutReady(() => this.activateDashboard());
+            this.app.workspace.onLayoutReady(() => void this.activateDashboard());
         }
     }
 
@@ -154,6 +160,7 @@ export default class ChemELNPlugin extends Plugin {
             if (leaf) workspace.revealLeaf(leaf);
             return;
         }
+
         const leaf: WorkspaceLeaf = workspace.getLeaf(false);
         await leaf.setViewState({ type: DASHBOARD_VIEW_TYPE, active: true });
         workspace.revealLeaf(leaf);
@@ -164,14 +171,20 @@ export default class ChemELNPlugin extends Plugin {
     }
 
     async saveSettings() {
-        await this.saveData(this.settings);
-        this.injectThemeVars();       // 颜色变化立即生效
+        await this.updateData((data) => {
+            Object.assign(data, this.settings);
+        });
+        this.injectThemeVars();
         this.initCloudSync();
-        this.refreshDashboards();     // 重渲染所有面板
+        this.refreshDashboards();
     }
 
-    openAIAssistant(context?: ExperimentContext) {
-        new AIAssistantModal(this, context).open();
+    async openAIAssistant(context?: ExperimentContext) {
+        const targetFile = context
+            ? this.app.vault.getMarkdownFiles().find((file) => file.path === context.filePath)
+            : undefined;
+        const noteContent = targetFile ? await this.app.vault.read(targetFile) : undefined;
+        new AIChatModal(this.app, this, targetFile, noteContent).open();
     }
 
     openImageLab() {

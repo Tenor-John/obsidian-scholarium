@@ -1,5 +1,11 @@
-import { App, Notice } from 'obsidian';
+import { App, Notice, Modal } from 'obsidian';
 import ChemELNPlugin from './main';
+import { t } from './i18n';
+import { iconSvg } from './icons';
+import { card as uiCard, sectionHeader, pill, button as uiButton, input as uiInput, metric as uiMetric, insetBlock } from './components/ui';
+import { PROVIDER_CONFIG } from './settings';
+import type { AIProvider } from './settings';
+import { requestUrlWithTimeout, safeParseJson } from './utils/network';
 
 // ─────────── 数据结构 ───────────
 
@@ -22,12 +28,31 @@ interface TimeBlock {
     note: string;
 }
 
+interface AIScheduleBlock {
+    date?: string;
+    startTime: string;
+    endTime: string;
+    category?: string;
+    title: string;
+    note?: string;
+}
+
 interface Task {
     id: string;
     title: string;
     status: 'active' | 'done';
     createdAt: string;
     completedAt?: string;
+}
+
+type CaptureKind = 'task' | 'idea' | 'contact' | 'experiment';
+
+interface QuickCapture {
+    id: string;
+    kind: CaptureKind;
+    content: string;
+    date: string;
+    time: string;
 }
 
 interface FocusSession {
@@ -104,10 +129,13 @@ interface LeaveRecord {
     reason: string;
 }
 
+type TimelineRange = 'day' | 'week' | 'month';
+
 export interface WorkspaceData {
     checkin: Record<string, CheckinDay>;
     timeblocks: TimeBlock[];
     tasks: Task[];
+    captures: QuickCapture[];
     focus: { sessions: FocusSession[]; active: ActiveFocus | null };
     habits: { list: HabitItem[]; logs: Record<string, Record<string, boolean>> };
     food: { entries: FoodEntry[] };
@@ -137,7 +165,7 @@ const DEFAULT_HABITS: HabitItem[] = [
     { id: 'h6', name: '观心记录', icon: '🧘', color: '#EC407A' },
 ];
 
-type PageId = '总览首页' | '起居与考勤' | '时间块日历' | '专注与任务' | '习惯与饮食' | '情绪与观心' | '手机克制与成就' | '投稿管理' | '设置/数据管理' | '数据看板';
+type PageId = '今日' | '总览首页' | '起居与考勤' | '时间块日历' | '专注与任务' | '习惯与饮食' | '情绪与观心' | '手机克制与成就' | '投稿管理' | '设置/数据管理' | '数据看板';
 
 // ─────────── 辅助函数 ───────────
 
@@ -176,9 +204,11 @@ export class PhDWorkspace {
     private plugin: ChemELNPlugin;
     data: WorkspaceData = this.blank();
     private container: HTMLElement | null = null;
-    private activePage: PageId = '总览首页';
+    private activePage: PageId = '今日';
     private focusTimer: number | null = null;
     private focusDisplayEl: HTMLElement | null = null;
+    private todayTimer: number | null = null;
+    private timelineRange: TimelineRange = 'day';
     private calendarMonth: { year: number; month: number } = (() => {
         const now = new Date();
         return { year: now.getFullYear(), month: now.getMonth() };
@@ -195,6 +225,7 @@ export class PhDWorkspace {
             checkin: {},
             timeblocks: [],
             tasks: [],
+            captures: [],
             focus: { sessions: [], active: null },
             habits: { list: DEFAULT_HABITS.map(h => ({ ...h })), logs: {} },
             food: { entries: [] },
@@ -214,6 +245,7 @@ export class PhDWorkspace {
         if (!this.data.checkin)     this.data.checkin     = {};
         if (!this.data.timeblocks)  this.data.timeblocks  = [];
         if (!this.data.tasks)       this.data.tasks       = [];
+        if (!this.data.captures)    this.data.captures    = [];
         if (!this.data.focus)       this.data.focus       = { sessions: [], active: null };
         if (!this.data.habits)      this.data.habits      = { list: DEFAULT_HABITS.map(h => ({ ...h })), logs: {} };
         if (!this.data.food)        this.data.food        = { entries: [] };
@@ -225,9 +257,9 @@ export class PhDWorkspace {
     }
 
     async save() {
-        const raw = ((await this.plugin.loadData()) as Record<string, unknown> | null) ?? {};
-        raw.workspace = this.data;
-        await this.plugin.saveData(raw);
+        await this.plugin.updateData((data) => {
+            data.workspace = this.data;
+        });
     }
 
     private rerender() {
@@ -237,6 +269,7 @@ export class PhDWorkspace {
     // ──── 主渲染 ────
     render(container: HTMLElement) {
         if (this.focusTimer) { window.clearInterval(this.focusTimer); this.focusTimer = null; }
+        if (this.todayTimer) { window.clearInterval(this.todayTimer); this.todayTimer = null; }
         this.focusDisplayEl = null;
 
         this.container = container;
@@ -283,30 +316,64 @@ export class PhDWorkspace {
             cls: 'ws2-logo-datetime'
         });
 
-        const navItems: Array<[PageId, string]> = [
-            ['总览首页', '🏠'],
-            ['起居与考勤', '⏰'],
-            ['时间块日历', '📅'],
-            ['专注与任务', '🎯'],
-            ['习惯与饮食', '🌿'],
-            ['情绪与观心', '❤️'],
-            ['手机克制与成就', '🛡️'],
-            ['投稿管理', '✈️'],
-            ['设置/数据管理', '≡'],
-            ['数据看板', '📊'],
+        // ── 分组子导航（重设计 M3：今日 / 项目与论文 / 健康与心灵 / 数据与回顾）──
+        const lang = s.language;
+        type NavItem = { page: PageId; icon: string; labelKey?: string; label?: { zh: string; en: string } };
+        const groups: Array<{ key: string; items: NavItem[] }> = [
+            { key: 'group_today', items: [
+                { page: '今日',       icon: 'today',    labelKey: 'ws_today' },
+                { page: '总览首页',   icon: 'panel',    label: { zh: '总览', en: 'Overview' } },
+                { page: '起居与考勤', icon: 'clock',    labelKey: 'checkin' },
+            ] },
+            { key: 'group_work', items: [
+                { page: '专注与任务', icon: 'bolt',     label: { zh: '专注与任务', en: 'Focus & Tasks' } },
+                { page: '时间块日历', icon: 'calendar', label: { zh: '时间块', en: 'Time blocks' } },
+                { page: '投稿管理',   icon: 'submit',   labelKey: 'ws_submit' },
+            ] },
+            { key: 'group_self', items: [
+                { page: '习惯与饮食',     icon: 'habit',  labelKey: 'ws_habit' },
+                { page: '情绪与观心',     icon: 'mind',   labelKey: 'ws_mind' },
+                { page: '手机克制与成就', icon: 'trophy', labelKey: 'ws_achv' },
+            ] },
+            { key: 'group_data', items: [
+                { page: '数据看板',      icon: 'chart',    labelKey: 'ws_analytics' },
+                { page: '设置/数据管理', icon: 'database', label: { zh: '数据管理', en: 'Data' } },
+            ] },
         ];
 
-        const nav = el.createDiv({ cls: 'ws2-nav' });
-        for (const [pageId, emoji] of navItems) {
-            const item = nav.createDiv({
-                cls: `ws2-nav-item${this.activePage === pageId ? ' active' : ''}`
+        const nav = el.createDiv({ cls: 'ws2-nav sch-subnav' });
+        for (const group of groups) {
+            const groupEl = nav.createDiv();
+            groupEl.style.marginBottom = '14px';
+            const head = groupEl.createDiv({ text: t(group.key, lang) });
+            Object.assign(head.style, {
+                fontSize: '10.5px', fontWeight: '700', letterSpacing: '.12em',
+                textTransform: 'uppercase', color: 'var(--sch-mute)',
+                padding: '0 10px', marginBottom: '4px',
             });
-            item.createEl('span', { text: emoji, cls: 'ws2-nav-emoji' });
-            item.createEl('span', { text: pageId, cls: 'ws2-nav-label' });
-            item.onclick = () => {
-                this.activePage = pageId;
-                this.rerender();
-            };
+            for (const it of group.items) {
+                const label = it.labelKey ? t(it.labelKey, lang) : (it.label ? it.label[lang] : it.page);
+                const active = this.activePage === it.page;
+                const item = groupEl.createDiv();
+                Object.assign(item.style, {
+                    display: 'flex', alignItems: 'center', gap: '9px',
+                    padding: '7px 10px', borderRadius: '9px', cursor: 'pointer',
+                    color: active ? 'var(--sch-accent-ink)' : 'var(--sch-ink2)',
+                    background: active ? 'var(--sch-accent-soft)' : 'transparent',
+                    fontWeight: active ? '600' : '500', fontSize: '13px',
+                    transition: 'all .15s ease',
+                });
+                const ic = iconSvg(it.icon, { size: 16 });
+                ic.style.color = active ? 'var(--sch-accent-ink)' : 'var(--sch-mute)';
+                ic.style.flexShrink = '0';
+                item.appendChild(ic);
+                item.appendChild(document.createTextNode(label));
+                if (!active) {
+                    item.addEventListener('mouseenter', () => { item.style.background = 'var(--sch-surface2)'; });
+                    item.addEventListener('mouseleave', () => { item.style.background = 'transparent'; });
+                }
+                item.onclick = () => { this.activePage = it.page; this.rerender(); };
+            }
         }
 
         // 今日快照
@@ -338,6 +405,7 @@ export class PhDWorkspace {
 
     // ──── 页面路由 ────
     private readonly PAGE_META: Record<string, { icon: string; subtitle: string }> = {
+        '今日':           { icon: '🗓️', subtitle: '一条时间主线，串起今天' },
         '总览首页':       { icon: '🏠', subtitle: '今日概况一览' },
         '起居与考勤':     { icon: '⏰', subtitle: '记录作息，追踪出勤' },
         '时间块日历':     { icon: '📅', subtitle: '规划每日日程' },
@@ -353,33 +421,37 @@ export class PhDWorkspace {
     private renderPage(el: HTMLElement) {
         el.addClass('ws2-page');
 
-        // Hero banner — 公开版风格：左侧标题+副标题，右侧 WK 徽章
-        const meta = this.PAGE_META[this.activePage] ?? { icon: '📋', subtitle: '' };
-        const hero = el.createDiv({ cls: 'ws2-page-hero' });
+        // 今日页（重设计）有自己的头卡，跳过通用 hero
+        if (this.activePage !== '今日') {
+            // Hero banner — 公开版风格：左侧标题+副标题，右侧 WK 徽章
+            const meta = this.PAGE_META[this.activePage] ?? { icon: '📋', subtitle: '' };
+            const hero = el.createDiv({ cls: 'ws2-page-hero' });
 
-        const titleWrap = hero.createDiv({ cls: 'ws2-page-hero-title-wrap' });
-        titleWrap.createEl('h2', { text: `${meta.icon}  ${this.activePage}`, cls: 'ws2-page-hero-title' });
-        if (meta.subtitle) titleWrap.createEl('p', { text: meta.subtitle, cls: 'ws2-page-hero-sub' });
+            const titleWrap = hero.createDiv({ cls: 'ws2-page-hero-title-wrap' });
+            titleWrap.createEl('h2', { text: `${meta.icon}  ${this.activePage}`, cls: 'ws2-page-hero-title' });
+            if (meta.subtitle) titleWrap.createEl('p', { text: meta.subtitle, cls: 'ws2-page-hero-sub' });
 
-        // 右上 WK 徽章 (xl-page-wk-badge)
-        const now = new Date();
-        const isoWk = (d: Date): number => {
-            const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-            let n = t.getUTCDay(); if (n === 0) n = 7;
-            t.setUTCDate(t.getUTCDate() + 4 - n);
-            const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
-            return Math.ceil((((+t - +y0) / 86400000) + 1) / 7);
-        };
-        const wk = isoWk(now).toString().padStart(2, '0');
-        const dateStr = `${now.getMonth() + 1}/${now.getDate()}`;
-        const wkBadge = hero.createDiv({ cls: 'xl-page-wk-badge' });
-        wkBadge.createSpan({ text: `WK${wk}`, cls: 'xl-page-wk-num' });
-        wkBadge.createSpan({ text: ` · ${dateStr}`, cls: 'xl-page-wk-date' });
+            // 右上 WK 徽章 (xl-page-wk-badge)
+            const now = new Date();
+            const isoWk = (d: Date): number => {
+                const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+                let n = t.getUTCDay(); if (n === 0) n = 7;
+                t.setUTCDate(t.getUTCDate() + 4 - n);
+                const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+                return Math.ceil((((+t - +y0) / 86400000) + 1) / 7);
+            };
+            const wk = isoWk(now).toString().padStart(2, '0');
+            const dateStr = `${now.getMonth() + 1}/${now.getDate()}`;
+            const wkBadge = hero.createDiv({ cls: 'xl-page-wk-badge' });
+            wkBadge.createSpan({ text: `WK${wk}`, cls: 'xl-page-wk-num' });
+            wkBadge.createSpan({ text: ` · ${dateStr}`, cls: 'xl-page-wk-date' });
+        }
 
         // Scrollable body
         const body = el.createDiv({ cls: 'ws2-page-body' });
 
-        if (this.activePage === '总览首页') this.renderOverview(body);
+        if (this.activePage === '今日') this.renderToday(body);
+        else if (this.activePage === '总览首页') this.renderOverview(body);
         else if (this.activePage === '起居与考勤') this.renderCheckin(body);
         else if (this.activePage === '时间块日历') this.renderTimeblock(body);
         else if (this.activePage === '专注与任务') this.renderFocus(body);
@@ -389,6 +461,931 @@ export class PhDWorkspace {
         else if (this.activePage === '投稿管理') this.renderSubmission(body);
         else if (this.activePage === '设置/数据管理') this.renderSettings(body);
         else if (this.activePage === '数据看板') this.renderDashboard(body);
+    }
+
+    // ════════════════════════════════
+    // 今日（重设计 M4：时间轴）
+    // ════════════════════════════════
+    private renderToday(el: HTMLElement) {
+        const lang = this.plugin.settings.language;
+        const td = this.getToday();
+        const dnow = new Date();
+
+        const root = el.createDiv();
+        Object.assign(root.style, {
+            display: 'flex', flexDirection: 'column', gap: 'calc(var(--sch-gap) * 1.4)',
+            padding: 'calc(var(--sch-pad) * 0.4)',
+        });
+
+        // ── 统计 ──
+        const focusMins = this.data.focus.sessions.filter(s => s.date === today()).reduce((s, r) => s + r.minutes, 0);
+        const activeTasksArr = this.data.tasks.filter(t => t.status === 'active');
+        const doneToday = this.data.tasks.filter(t => t.status === 'done' && t.completedAt === today()).length;
+        const totalTasks = this.data.tasks.length;
+        const todayEmotion = this.data.emotions[today()];
+        const fh = Math.floor(focusMins / 60), fm = focusMins % 60;
+
+        // ── 头卡：日期 + 问候 + 概述 + 4 指标 ──
+        const header = uiCard(root);
+        const hRow = header.createDiv();
+        Object.assign(hRow.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px', flexWrap: 'wrap' });
+        const hLeft = hRow.createDiv();
+        const hr = dnow.getHours();
+        const greetKey = hr < 11 ? 'greeting_morning' : hr < 14 ? 'greeting_noon' : hr < 18 ? 'greeting_afternoon' : hr < 22 ? 'greeting_evening' : 'greeting_night';
+        const dayCh = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][dnow.getDay()] || '';
+        const isoWk = (d: Date): number => {
+            const x = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+            let n = x.getUTCDay(); if (n === 0) n = 7;
+            x.setUTCDate(x.getUTCDate() + 4 - n);
+            const y0 = new Date(Date.UTC(x.getUTCFullYear(), 0, 1));
+            return Math.ceil((((+x - +y0) / 86400000) + 1) / 7);
+        };
+        const dateLabel = lang === 'zh'
+            ? `${dnow.getFullYear()} 年 ${dnow.getMonth() + 1} 月 ${dnow.getDate()} 日 · ${dayCh} · 第 ${isoWk(dnow)} 周`
+            : `${dnow.toDateString()} · Week ${isoWk(dnow)}`;
+        const eb = hLeft.createDiv({ text: dateLabel });
+        Object.assign(eb.style, { fontSize: '11.5px', color: 'var(--sch-mute)', fontWeight: '700', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: '6px' });
+        const userName = (this.plugin.settings.pluginDisplayName || '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
+        const greet = hLeft.createDiv({ text: t(greetKey, lang) + (userName ? `，${userName}` : '') });
+        Object.assign(greet.style, { fontFamily: 'var(--sch-font-serif)', fontSize: 'var(--sch-h1)', fontWeight: '500', color: 'var(--sch-ink)', letterSpacing: '-.02em', lineHeight: '1.1' });
+        const summary = hLeft.createDiv();
+        Object.assign(summary.style, { marginTop: '6px', fontSize: '13px', color: 'var(--sch-mute)', maxWidth: '580px', lineHeight: '1.55' });
+        const blocksToday = this.data.timeblocks.filter(b => b.date === today()).length;
+        summary.setText(lang === 'zh'
+            ? `今天 ${blocksToday} 个时间块、${activeTasksArr.length} 件待办，已专注 ${fh}h${fm}m。`
+            : `${blocksToday} blocks, ${activeTasksArr.length} open tasks, ${fh}h${fm}m focused so far.`);
+
+        const metrics = hRow.createDiv();
+        Object.assign(metrics.style, { display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '28px' });
+        uiMetric(metrics, { label: t('metric_focus', lang), value: `${fh}h${fm}` });
+        uiMetric(metrics, { label: t('metric_done', lang), value: String(doneToday), unit: `/${totalTasks}` });
+        uiMetric(metrics, { label: t('metric_energy', lang), value: focusMins > 0 ? Math.min(99, 40 + Math.round(focusMins / 6)) : 50, unit: '%' });
+        uiMetric(metrics, { label: t('metric_mood', lang), value: todayEmotion?.emoji || '◯', unit: todayEmotion?.text || '' });
+
+        // ── 两栏：时间轴 | 右侧操作 ──
+        const grid = root.createDiv();
+        Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 'calc(var(--sch-gap) * 1.4)', alignItems: 'start' });
+
+        // 时间轴卡
+        const spineCard = uiCard(grid, { pad: false });
+        const spineHead = spineCard.createDiv();
+        Object.assign(spineHead.style, { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', padding: 'var(--sch-pad)', borderBottom: '1px solid var(--sch-line-soft)' });
+        const { right: shRight } = sectionHeader(spineHead, { eyebrow: t('today_spine', lang), title: lang === 'zh' ? '从早到晚，一条主线串起' : 'One thread, dawn to dusk', level: 2 });
+        // sectionHeader adds marginBottom; neutralize inside flex
+        (spineHead.firstElementChild as HTMLElement).style.marginBottom = '0';
+        pill(shRight, lang === 'zh' ? `专注 ${fh}h ${fm}m` : `${fh}h ${fm}m focus`, 'accent');
+        this.renderTimelineRangePicker(shRight, lang);
+        const spineBody = spineCard.createDiv();
+        spineBody.style.padding = 'var(--sch-pad)';
+        this.renderTimeSpine(spineBody, td, lang, this.timelineRange);
+
+        // 右栏
+        const rail = grid.createDiv();
+        Object.assign(rail.style, { display: 'flex', flexDirection: 'column', gap: 'var(--sch-gap)' });
+        this.renderCheckinCard(rail, td, lang);
+        this.renderFocusTimerCard(rail, lang);
+        this.renderAIScheduleCard(rail, lang);
+        this.renderQuickCaptureCard(rail, lang);
+        this.renderIdeaCalendarCard(rail, lang);
+        this.renderTodaysTasksCard(rail, activeTasksArr, lang);
+    }
+
+    private todayKindColor(kind: string): string {
+        switch (kind) {
+            case 'focus':   return 'var(--sch-accent)';
+            case 'meeting': return 'var(--sch-iris)';
+            case 'meal':    return 'var(--sch-moss)';
+            case 'review':  return 'var(--sch-iris)';
+            case 'checkin': return 'var(--sch-mute-soft)';
+            default:        return 'var(--sch-sky)'; // task
+        }
+    }
+
+    private renderTimelineRangePicker(host: HTMLElement, lang: 'zh' | 'en') {
+        const wrap = host.createDiv();
+        Object.assign(wrap.style, { display: 'inline-flex', gap: '3px', padding: '3px', borderRadius: '999px', background: 'var(--sch-surface2)', border: '1px solid var(--sch-line-soft)', marginLeft: '6px' });
+        const opts: Array<{ value: TimelineRange; zh: string; en: string }> = [
+            { value: 'day', zh: '今日', en: 'Day' },
+            { value: 'week', zh: '本周', en: 'Week' },
+            { value: 'month', zh: '本月', en: 'Month' },
+        ];
+        for (const opt of opts) {
+            const active = this.timelineRange === opt.value;
+            const btn = wrap.createEl('button', { text: lang === 'zh' ? opt.zh : opt.en });
+            Object.assign(btn.style, {
+                height: '24px',
+                padding: '0 9px',
+                border: '0',
+                borderRadius: '999px',
+                background: active ? 'var(--sch-surface)' : 'transparent',
+                color: active ? 'var(--sch-accent-ink)' : 'var(--sch-mute)',
+                fontSize: '11.5px',
+                fontWeight: '700',
+                cursor: 'pointer',
+            });
+            btn.addEventListener('click', () => {
+                this.timelineRange = opt.value;
+                this.rerender();
+            });
+        }
+    }
+
+    private renderTimeSpine(host: HTMLElement, td: CheckinDay, lang: 'zh' | 'en', range: TimelineRange = 'day') {
+        if (range !== 'day') {
+            this.renderRangeTimeline(host, range, lang);
+            return;
+        }
+        type Ev = { start: string; end?: string; kind: 'focus' | 'meeting' | 'meal' | 'task' | 'checkin'; title: string; tbId?: string };
+        const events: Ev[] = [];
+
+        // 专注 sessions
+        for (const s of this.data.focus.sessions.filter(s => s.date === today())) {
+            events.push({ start: s.start, end: s.end, kind: 'focus', title: s.title });
+        }
+        // 时间块
+        const catKind = (c: string): Ev['kind'] => {
+            if (/会议|讨论|组会|社交|周会/.test(c)) return 'meeting';
+            if (/用餐|午餐|晚餐|早餐|吃饭|餐|饭/.test(c)) return 'meal';
+            if (/专注|学习|写作|实验/.test(c)) return 'focus';
+            return 'task';
+        };
+        for (const b of this.data.timeblocks.filter(b => b.date === today())) {
+            events.push({ start: b.startTime, end: b.endTime, kind: catKind(b.category + b.title), title: b.title, tbId: b.id });
+        }
+        // 考勤时段（在岗）
+        const periodLabel: Record<string, string> = { morning: lang === 'zh' ? '在岗 · 上午' : 'On-site · AM', afternoon: lang === 'zh' ? '在岗 · 下午' : 'On-site · PM', evening: lang === 'zh' ? '在岗 · 晚上' : 'On-site · Eve' };
+        (['morning', 'afternoon', 'evening'] as const).forEach(pk => {
+            for (const seg of td[pk]) events.push({ start: seg.start, end: seg.end, kind: 'checkin', title: periodLabel[pk]! });
+        });
+        if (td.activePeriod) {
+            events.push({ start: td.activePeriod.since, end: nowHHMM(), kind: 'checkin', title: (lang === 'zh' ? '在岗（进行中）' : 'On-site (now)') });
+        }
+
+        // 起止小时
+        const ROW_H = 56;
+        let startHour = 8, endHour = 22;
+        if (events.length) {
+            const hours = events.flatMap(e => [parseInt(e.start.slice(0, 2), 10), e.end ? parseInt(e.end.slice(0, 2), 10) : parseInt(e.start.slice(0, 2), 10)]);
+            startHour = Math.max(6, Math.min(8, Math.min(...hours)));
+            endHour = Math.min(23, Math.max(22, Math.max(...hours) + 1));
+        }
+        const hourCount = endHour - startHour + 1;
+
+        const wrap = host.createDiv();
+        Object.assign(wrap.style, { display: 'grid', gridTemplateColumns: '60px 1fr', position: 'relative' });
+
+        // 时刻轨
+        const rail = wrap.createDiv();
+        for (let h = startHour; h <= endHour; h++) {
+            const row = rail.createDiv();
+            Object.assign(row.style, { height: ROW_H + 'px', position: 'relative', borderTop: h === startHour ? 'none' : '1px dashed var(--sch-line-soft)' });
+            const label = row.createSpan({ text: String(h).padStart(2, '0') + ':00' });
+            Object.assign(label.style, { position: 'absolute', top: '-7px', fontSize: '10.5px', fontFamily: 'var(--sch-font-mono)', color: 'var(--sch-mute)', fontWeight: '600', letterSpacing: '.04em', background: 'var(--sch-surface)', padding: '0 4px' });
+        }
+
+        // 事件列
+        const col = wrap.createDiv();
+        Object.assign(col.style, { position: 'relative' });
+        const spineLine = col.createDiv();
+        Object.assign(spineLine.style, { position: 'absolute', left: '16px', top: '0', bottom: '0', width: '2px', background: 'var(--sch-line-soft)', borderRadius: '2px' });
+
+        const kindText = (k: Ev['kind']): string => {
+            const m: Record<Ev['kind'], [string, string]> = { task: ['任务', 'TASK'], focus: ['专注', 'FOCUS'], meeting: ['会议', 'MEETING'], meal: ['用餐', 'MEAL'], checkin: ['考勤', 'CHECK-IN'] };
+            return lang === 'zh' ? m[k][0] : m[k][1];
+        };
+
+        // ── 碰撞分列布局：无重叠时占满整行，重叠时左右分列、各自变窄 ──
+        const toMin = (hhmm: string) => parseInt(hhmm.slice(0, 2), 10) * 60 + (parseInt(hhmm.slice(3, 5), 10) || 0);
+        const evs = events.map((e, i) => {
+            const s = toMin(e.start);
+            const e2 = e.end ? Math.max(toMin(e.end), s + 15) : s + 24;
+            return { ev: e, i, s, e2 };
+        }).sort((a, b) => a.s - b.s || a.e2 - b.e2);
+
+        // 贪心列分配：同一连通重叠组内列数一致
+        type Placed = { ev: Ev; i: number; col: number; cols: number };
+        const placed: Placed[] = [];
+        let group: Array<{ ev: Ev; i: number; s: number; e2: number; col: number }> = [];
+        let groupEnd = -1;
+        const flush = () => {
+            const cols = group.reduce((m, g) => Math.max(m, g.col + 1), 0);
+            for (const g of group) placed.push({ ev: g.ev, i: g.i, col: g.col, cols });
+            group = []; groupEnd = -1;
+        };
+        for (const item of evs) {
+            if (group.length && item.s >= groupEnd) flush();
+            const used = new Set(group.filter(g => g.e2 > item.s).map(g => g.col));
+            let cidx = 0; while (used.has(cidx)) cidx++;
+            group.push({ ev: item.ev, i: item.i, s: item.s, e2: item.e2, col: cidx });
+            groupEnd = Math.max(groupEnd, item.e2);
+        }
+        flush();
+
+        // 每个事件分配一个独立颜色（循环调色板）
+        const palette = ['var(--sch-accent)', 'var(--sch-iris)', 'var(--sch-moss)', 'var(--sch-sky)', 'var(--sch-coral)', 'var(--sch-sun)', 'var(--sch-rose)'];
+        const GUT_L = 38, GUT_R = 6, GAP = 4;
+
+        for (const p of placed) {
+            const ev = p.ev;
+            const sh = parseInt(ev.start.slice(0, 2), 10);
+            const sm = parseInt(ev.start.slice(3, 5), 10) || 0;
+            const startFrac = (sh - startHour) + sm / 60;
+            const eh = ev.end ? parseInt(ev.end.slice(0, 2), 10) : sh;
+            const em = ev.end ? (parseInt(ev.end.slice(3, 5), 10) || 0) : sm;
+            const endFrac = ev.end ? (eh - startHour) + em / 60 : startFrac + 0.4;
+            const top = startFrac * ROW_H;
+            const height = Math.max((endFrac - startFrac) * ROW_H, 26);
+            const color = palette[p.i % palette.length]!;
+            const colW = `calc((100% - ${GUT_L + GUT_R}px) / ${p.cols})`;
+            const leftCss = `calc(${GUT_L}px + ${p.col} * ${colW})`;
+            const widthCss = p.cols > 1 ? `calc(${colW} - ${GAP}px)` : colW;
+
+            const block = col.createDiv();
+            Object.assign(block.style, {
+                position: 'absolute', top: top + 'px', height: height + 'px',
+                left: leftCss, width: widthCss,
+                borderRadius: '10px',
+                background: `linear-gradient(135deg, color-mix(in oklch, ${color} 16%, var(--sch-surface)), color-mix(in oklch, ${color} 7%, var(--sch-surface)))`,
+                border: `1px solid color-mix(in oklch, ${color} 28%, var(--sch-line-soft))`,
+                borderLeft: `3px solid ${color}`,
+                padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: '2px',
+                overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.03)',
+                cursor: ev.tbId ? 'pointer' : 'default',
+            });
+            block.setAttribute('title', `${ev.start}${ev.end ? '–' + ev.end : ''} · ${kindText(ev.kind)}\n${ev.title}`);
+            const kh = block.createDiv();
+            Object.assign(kh.style, { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', fontFamily: 'var(--sch-font-mono)', fontWeight: '700', color, letterSpacing: '.04em', flexShrink: '0' });
+            const dot = kh.createSpan(); Object.assign(dot.style, { width: '6px', height: '6px', borderRadius: '50%', background: color, flexShrink: '0' });
+            kh.appendChild(document.createTextNode(`${ev.start}${ev.end ? '–' + ev.end : ''} · ${kindText(ev.kind)}`));
+            // 标题：在块高度内自动换行显示，不再固定单行省略
+            const ttl = block.createDiv({ text: ev.title });
+            Object.assign(ttl.style, { fontSize: '12.5px', fontWeight: '500', color: 'var(--sch-ink)', lineHeight: '1.3', whiteSpace: 'normal', wordBreak: 'break-word', overflow: 'hidden', flex: '1 1 auto', minHeight: '0' });
+            if (ev.tbId) block.addEventListener('click', () => this.openTimeBlockEditor(ev.tbId!));
+        }
+
+        if (events.length === 0) {
+            const empty = col.createDiv({ text: t('no_events', lang) });
+            Object.assign(empty.style, { position: 'absolute', left: '38px', top: '8px', color: 'var(--sch-mute)', fontSize: '13px' });
+        }
+
+        // NOW 指示线（每分钟更新）
+        const nowLine = col.createDiv();
+        Object.assign(nowLine.style, { position: 'absolute', left: '0', right: '0', height: '2px', background: 'var(--sch-accent)', boxShadow: '0 0 0 4px var(--sch-accent-soft)', borderRadius: '2px', zIndex: '5' });
+        const nowPill = nowLine.createSpan();
+        Object.assign(nowPill.style, { position: 'absolute', left: '8px', top: '-10px', fontSize: '10px', fontWeight: '700', color: 'var(--sch-accent-ink)', background: 'var(--sch-surface)', padding: '1px 6px', borderRadius: '999px', border: '1px solid var(--sch-accent-soft)', fontFamily: 'var(--sch-font-mono)' });
+        const updateNow = () => {
+            const n = new Date();
+            const frac = (n.getHours() - startHour) + n.getMinutes() / 60;
+            if (frac < 0 || frac > hourCount) { nowLine.style.display = 'none'; return; }
+            nowLine.style.display = 'block';
+            nowLine.style.top = (frac * ROW_H - 1) + 'px';
+            nowPill.setText(`${t('now', lang)} ${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`);
+        };
+        updateNow();
+        this.todayTimer = this.plugin.registerInterval(window.setInterval(updateNow, 30000));
+
+        // 撑高
+        const spacer = col.createDiv();
+        spacer.style.height = (hourCount * ROW_H) + 'px';
+    }
+
+    // 点击时间块事件 → 编辑（重设计：已添加的任务可修改）
+    private openTimeBlockEditor(id: string): void {
+        const block = this.data.timeblocks.find(b => b.id === id);
+        if (!block) return;
+        new TimeBlockEditModal(
+            this.app, block, this.plugin.settings.language,
+            async () => { await this.save(); this.rerender(); },
+            async () => { this.data.timeblocks = this.data.timeblocks.filter(b => b.id !== id); await this.save(); this.rerender(); },
+        ).open();
+    }
+
+    private renderRangeTimeline(host: HTMLElement, range: TimelineRange, lang: 'zh' | 'en') {
+        if (range === 'week') {
+            this.renderWeekCalendar(host, lang);
+            return;
+        }
+        if (range === 'month') {
+            this.renderMonthCalendar(host, lang);
+            return;
+        }
+        const dates = this.getTimelineDates(range);
+        const wrap = host.createDiv();
+        Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', gap: '10px' });
+        for (const date of dates) {
+            const blocks = this.data.timeblocks.filter(b => b.date === date).sort((a, b) => a.startTime.localeCompare(b.startTime));
+            const sessions = this.data.focus.sessions.filter(s => s.date === date).sort((a, b) => a.start.localeCompare(b.start));
+            const day = wrap.createDiv();
+            Object.assign(day.style, { border: '1px solid var(--sch-line-soft)', borderRadius: '12px', padding: '10px 12px', background: 'var(--sch-surface)' });
+            const head = day.createDiv();
+            Object.assign(head.style, { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' });
+            const title = head.createDiv({ text: this.formatTimelineDate(date, lang) });
+            Object.assign(title.style, { fontWeight: '700', color: 'var(--sch-ink)' });
+            pill(head, String(blocks.length + sessions.length), blocks.length + sessions.length ? 'accent' : 'mute');
+            if (!blocks.length && !sessions.length) {
+                const empty = day.createDiv({ text: lang === 'zh' ? '暂无安排' : 'No schedule' });
+                Object.assign(empty.style, { color: 'var(--sch-mute)', fontSize: '12.5px' });
+                continue;
+            }
+            const list = day.createDiv();
+            Object.assign(list.style, { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' });
+            for (const b of blocks) this.renderTimelineMiniItem(list, `${b.startTime}-${b.endTime}`, b.title, b.category || 'task', b.note);
+            for (const s of sessions) this.renderTimelineMiniItem(list, `${s.start}-${s.end}`, s.title, lang === 'zh' ? '专注' : 'Focus', `${s.minutes}m`);
+        }
+        if (!wrap.childElementCount) {
+            const empty = wrap.createDiv({ text: lang === 'zh' ? '这个范围还没有日程安排' : 'No schedule in this range' });
+            Object.assign(empty.style, { color: 'var(--sch-mute)', fontSize: '13px', padding: '12px' });
+        }
+    }
+
+    private renderWeekCalendar(host: HTMLElement, lang: 'zh' | 'en') {
+        const dates = this.getTimelineDates('week');
+        const ROW_H = 54;
+        const startHour = 1;
+        const endHour = 22;
+        const hours = endHour - startHour + 1;
+        const wrap = host.createDiv();
+        Object.assign(wrap.style, { border: '1px solid var(--sch-line-soft)', borderRadius: '14px', overflow: 'hidden', background: 'var(--sch-surface)', minWidth: '0' });
+
+        const head = wrap.createDiv();
+        Object.assign(head.style, { display: 'grid', gridTemplateColumns: '54px repeat(7, minmax(0, 1fr))', borderBottom: '1px solid var(--sch-line-soft)', minHeight: '58px' });
+        const tz = head.createDiv({ text: 'GMT+8' });
+        Object.assign(tz.style, { padding: '14px 10px', color: 'var(--sch-mute)', fontSize: '11px', fontWeight: '700' });
+        for (const date of dates) {
+            const d = new Date(date + 'T00:00:00');
+            const cell = head.createDiv();
+            Object.assign(cell.style, { padding: '10px 4px', textAlign: 'center', borderLeft: '1px solid var(--sch-line-soft)', minWidth: '0' });
+            const week = cell.createDiv({ text: this.weekdayLabel(d, lang) });
+            Object.assign(week.style, { fontSize: '12px', color: date === today() ? 'var(--sch-accent-ink)' : 'var(--sch-mute)', fontWeight: '700' });
+            const num = cell.createDiv({ text: String(d.getDate()) });
+            Object.assign(num.style, { fontSize: '20px', color: date === today() ? 'var(--sch-accent-ink)' : 'var(--sch-ink2)', fontWeight: '700', lineHeight: '1.1' });
+        }
+
+        const grid = wrap.createDiv();
+        Object.assign(grid.style, { display: 'grid', gridTemplateColumns: '54px repeat(7, minmax(0, 1fr))', position: 'relative' });
+        const rail = grid.createDiv();
+        for (let h = startHour; h <= endHour; h++) {
+            const r = rail.createDiv();
+            Object.assign(r.style, { height: ROW_H + 'px', borderTop: '1px solid var(--sch-line-soft)', position: 'relative' });
+            const label = r.createSpan({ text: String(h).padStart(2, '0') + ':00' });
+            Object.assign(label.style, { position: 'absolute', top: '-8px', left: '8px', fontSize: '11px', color: 'var(--sch-mute)', fontFamily: 'var(--sch-font-mono)' });
+        }
+        for (const date of dates) {
+            const col = grid.createDiv();
+            Object.assign(col.style, { position: 'relative', borderLeft: '1px solid var(--sch-line-soft)' });
+            for (let h = startHour; h <= endHour; h++) {
+                const row = col.createDiv();
+                Object.assign(row.style, { height: ROW_H + 'px', borderTop: '1px solid var(--sch-line-soft)' });
+            }
+            this.renderCalendarDayEvents(col, date, startHour, ROW_H);
+        }
+        if (dates.includes(today())) this.renderCalendarNowLine(grid, startHour, ROW_H, hours, dates.indexOf(today()));
+    }
+
+    private renderMonthCalendar(host: HTMLElement, lang: 'zh' | 'en') {
+        const base = new Date(today() + 'T00:00:00');
+        const year = base.getFullYear();
+        const month = base.getMonth();
+        const first = new Date(year, month, 1);
+        const mondayOffset = (first.getDay() + 6) % 7;
+        const start = new Date(first);
+        start.setDate(first.getDate() - mondayOffset);
+        const wrap = host.createDiv();
+        Object.assign(wrap.style, { border: '1px solid var(--sch-line-soft)', borderRadius: '14px', overflow: 'hidden', background: 'var(--sch-surface)' });
+        const weekHead = wrap.createDiv();
+        Object.assign(weekHead.style, { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--sch-line-soft)' });
+        for (let i = 0; i < 7; i++) {
+            const h = weekHead.createDiv({ text: this.weekdayLabel(new Date(2026, 0, 5 + i), lang) });
+            Object.assign(h.style, { padding: '10px', color: 'var(--sch-ink2)', fontWeight: '700', textAlign: 'center' });
+        }
+        const grid = wrap.createDiv();
+        Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' });
+        for (let i = 0; i < 42; i++) {
+            const d = new Date(start);
+            d.setDate(start.getDate() + i);
+            const date = d.toISOString().split('T')[0]!;
+            const cell = grid.createDiv();
+            Object.assign(cell.style, {
+                minHeight: '112px',
+                padding: '8px',
+                borderLeft: i % 7 === 0 ? '0' : '1px solid var(--sch-line-soft)',
+                borderTop: i < 7 ? '0' : '1px solid var(--sch-line-soft)',
+                background: d.getMonth() === month ? 'var(--sch-surface)' : 'var(--sch-surface2)',
+            });
+            const dayNum = cell.createDiv({ text: d.getDate() === 1 ? `${d.getMonth() + 1}月${d.getDate()}日` : String(d.getDate()) });
+            Object.assign(dayNum.style, {
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: '22px',
+                height: '22px',
+                borderRadius: '999px',
+                padding: '0 6px',
+                color: date === today() ? 'white' : d.getMonth() === month ? 'var(--sch-ink)' : 'var(--sch-mute)',
+                background: date === today() ? 'var(--sch-accent)' : 'transparent',
+                fontWeight: '700',
+            });
+            const items = cell.createDiv();
+            Object.assign(items.style, { display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' });
+            const blocks = this.data.timeblocks.filter(b => b.date === date).sort((a, b) => a.startTime.localeCompare(b.startTime));
+            const sessions = this.data.focus.sessions.filter(s => s.date === date).sort((a, b) => a.start.localeCompare(b.start));
+            for (const b of blocks.slice(0, 3)) this.renderMonthEvent(items, b.title);
+            for (const s of sessions.slice(0, Math.max(0, 3 - blocks.length))) this.renderMonthEvent(items, s.title);
+            const more = blocks.length + sessions.length - items.childElementCount;
+            if (more > 0) {
+                const m = items.createDiv({ text: `+ ${more}` });
+                Object.assign(m.style, { color: 'var(--sch-mute)', fontSize: '11px', fontWeight: '700' });
+            }
+        }
+    }
+
+    private renderCalendarDayEvents(col: HTMLElement, date: string, startHour: number, rowH: number) {
+        const events = [
+            ...this.data.timeblocks.filter(b => b.date === date).map(b => ({ start: b.startTime, end: b.endTime, title: b.title })),
+            ...this.data.focus.sessions.filter(s => s.date === date).map(s => ({ start: s.start, end: s.end, title: s.title })),
+        ].sort((a, b) => a.start.localeCompare(b.start));
+        for (const ev of events) {
+            const sh = parseInt(ev.start.slice(0, 2), 10);
+            const sm = parseInt(ev.start.slice(3, 5), 10) || 0;
+            const eh = parseInt(ev.end.slice(0, 2), 10);
+            const em = parseInt(ev.end.slice(3, 5), 10) || 0;
+            const top = ((sh - startHour) + sm / 60) * rowH;
+            const height = Math.max(((eh - sh) + (em - sm) / 60) * rowH, 26);
+            const item = col.createDiv({ text: ev.title });
+            Object.assign(item.style, {
+                position: 'absolute',
+                left: '6px',
+                right: '6px',
+                top: top + 'px',
+                height: height + 'px',
+                borderRadius: '7px',
+                borderLeft: '3px solid var(--sch-accent)',
+                background: 'var(--sch-accent-soft)',
+                color: 'var(--sch-accent-ink)',
+                padding: '4px 7px',
+                fontSize: '12px',
+                fontWeight: '700',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                zIndex: '2',
+            });
+            item.title = `${ev.start}-${ev.end} ${ev.title}`;
+        }
+    }
+
+    private renderCalendarNowLine(grid: HTMLElement, startHour: number, rowH: number, hours: number, dayIndex: number) {
+        const line = grid.createDiv();
+        Object.assign(line.style, { position: 'absolute', left: '54px', right: '0', height: '2px', background: '#ff4d4f', zIndex: '5' });
+        const dot = line.createSpan();
+        Object.assign(dot.style, { position: 'absolute', left: `calc(${dayIndex * 100 / 7}% - 5px)`, top: '-4px', width: '10px', height: '10px', borderRadius: '50%', background: '#ff4d4f' });
+        const label = line.createSpan();
+        Object.assign(label.style, { position: 'absolute', left: '-58px', top: '-9px', color: '#ff4d4f', fontSize: '11px', fontFamily: 'var(--sch-font-mono)', fontWeight: '700' });
+        const update = () => {
+            const n = new Date();
+            const frac = (n.getHours() - startHour) + n.getMinutes() / 60;
+            if (frac < 0 || frac > hours) { line.style.display = 'none'; return; }
+            line.style.display = 'block';
+            line.style.top = (frac * rowH) + 'px';
+            label.setText(`${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`);
+        };
+        update();
+        this.todayTimer = this.plugin.registerInterval(window.setInterval(update, 30000));
+    }
+
+    private renderMonthEvent(host: HTMLElement, title: string) {
+        const item = host.createDiv({ text: title });
+        Object.assign(item.style, {
+            padding: '3px 6px',
+            borderRadius: '5px',
+            borderLeft: '3px solid var(--sch-accent)',
+            background: 'var(--sch-accent-soft)',
+            color: 'var(--sch-accent-ink)',
+            fontSize: '11.5px',
+            fontWeight: '650',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+        });
+    }
+
+    private weekdayLabel(d: Date, lang: 'zh' | 'en'): string {
+        const zh = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+        const en = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        return lang === 'zh' ? zh[d.getDay()]! : en[d.getDay()]!;
+    }
+
+    private renderTimelineMiniItem(host: HTMLElement, time: string, title: string, category: string, note?: string) {
+        const item = host.createDiv();
+        Object.assign(item.style, { padding: '8px 10px', borderRadius: '10px', background: 'var(--sch-surface2)', border: '1px solid var(--sch-line-soft)' });
+        const top = item.createDiv({ text: time });
+        Object.assign(top.style, { fontFamily: 'var(--sch-font-mono)', fontSize: '11px', color: 'var(--sch-accent-ink)', fontWeight: '700' });
+        const ttl = item.createDiv({ text: title });
+        Object.assign(ttl.style, { marginTop: '3px', fontSize: '13px', color: 'var(--sch-ink)', fontWeight: '650' });
+        const meta = item.createDiv({ text: note ? `${category} · ${note}` : category });
+        Object.assign(meta.style, { marginTop: '3px', fontSize: '11.5px', color: 'var(--sch-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+    }
+
+    private getTimelineDates(range: TimelineRange): string[] {
+        const base = new Date(today() + 'T00:00:00');
+        const dates: string[] = [];
+        if (range === 'week') {
+            const monday = new Date(base);
+            const day = monday.getDay() || 7;
+            monday.setDate(monday.getDate() - day + 1);
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(monday);
+                d.setDate(monday.getDate() + i);
+                dates.push(d.toISOString().split('T')[0]!);
+            }
+            return dates;
+        }
+        const year = base.getFullYear();
+        const month = base.getMonth();
+        for (let d = 1; d <= getMonthDays(year, month); d++) {
+            dates.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+        }
+        return dates;
+    }
+
+    private formatTimelineDate(date: string, lang: 'zh' | 'en'): string {
+        const d = new Date(date + 'T00:00:00');
+        const weekZh = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];
+        return lang === 'zh' ? `${d.getMonth() + 1}月${d.getDate()}日 · ${weekZh}` : d.toDateString();
+    }
+
+    private renderCheckinCard(host: HTMLElement, td: CheckinDay, lang: 'zh' | 'en') {
+        const c = uiCard(host);
+        const working = !!td.activePeriod;
+        const { right } = sectionHeader(c, { eyebrow: t('checkin', lang), title: lang === 'zh' ? '今日打卡' : "Today's check-ins", level: 3 });
+        pill(right, working ? t('state_working', lang) : t('state_resting', lang), working ? 'moss' : 'mute');
+
+        const btnRow = c.createDiv();
+        Object.assign(btnRow.style, { display: 'flex', gap: '6px', marginTop: '6px' });
+        const inBtn = uiButton(btnRow, { text: t('checkin_in', lang), iconName: 'play', variant: working ? 'soft' : 'primary', style: { flex: '1' } });
+        const outBtn = uiButton(btnRow, { text: t('checkin_out', lang), iconName: 'stop', variant: working ? 'primary' : 'soft', style: { flex: '1' } });
+        inBtn.addEventListener('click', async () => {
+            if (td.activePeriod) { new Notice(lang === 'zh' ? '已在岗，请先离开' : 'Already checked in'); return; }
+            const hr = new Date().getHours();
+            const period: 'morning' | 'afternoon' | 'evening' = hr < 12 ? 'morning' : hr < 18 ? 'afternoon' : 'evening';
+            td.activePeriod = { period, since: nowHHMM() };
+            await this.save(); this.rerender();
+        });
+        outBtn.addEventListener('click', async () => {
+            if (!td.activePeriod) { new Notice(lang === 'zh' ? '当前不在岗' : 'Not checked in'); return; }
+            td[td.activePeriod.period].push({ start: td.activePeriod.since, end: nowHHMM() });
+            td.activePeriod = null;
+            await this.save(); this.rerender();
+        });
+
+        // 今日工作汇总
+        const inset = insetBlock(c, { style: { marginTop: '10px' } });
+        const totalMin = (['morning', 'afternoon', 'evening'] as const).reduce((sum, pk) => sum + td[pk].reduce((s, r) => s + diffMin(r.start, r.end), 0), 0)
+            + (td.activePeriod ? diffMin(td.activePeriod.since, nowHHMM()) : 0);
+        const row1 = inset.createDiv();
+        Object.assign(row1.style, { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
+        const lbl = row1.createSpan({ text: lang === 'zh' ? '今日在岗' : "Today's work" });
+        Object.assign(lbl.style, { fontSize: '11.5px', color: 'var(--sch-mute)', fontWeight: '600' });
+        const valEl = row1.createSpan({ text: `${Math.floor(totalMin / 60)}h ${totalMin % 60}m` });
+        Object.assign(valEl.style, { fontFamily: 'var(--sch-font-mono)', fontSize: '13px', color: 'var(--sch-ink)', fontWeight: '600' });
+        const tokens = inset.createDiv();
+        Object.assign(tokens.style, { display: 'flex', gap: '4px', flexWrap: 'wrap' });
+        const segs: string[] = [];
+        (['morning', 'afternoon', 'evening'] as const).forEach(pk => td[pk].forEach(r => { segs.push(`${r.start}→`); segs.push(r.end); }));
+        if (td.activePeriod) { segs.push(`${td.activePeriod.since}→`); segs.push('···'); }
+        for (const tk of segs.slice(0, 8)) {
+            const s = tokens.createSpan({ text: tk });
+            Object.assign(s.style, { fontFamily: 'var(--sch-font-mono)', fontSize: '10.5px', color: 'var(--sch-ink2)', background: 'var(--sch-surface)', border: '1px solid var(--sch-line-soft)', padding: '2px 6px', borderRadius: '4px' });
+        }
+        if (segs.length === 0) tokens.createSpan({ text: lang === 'zh' ? '尚未打卡' : 'No check-ins yet' }).style.color = 'var(--sch-mute)';
+    }
+
+    private renderFocusTimerCard(host: HTMLElement, lang: 'zh' | 'en') {
+        const c = uiCard(host);
+        const active = this.data.focus.active;
+        const { right } = sectionHeader(c, { eyebrow: t('focus_timer', lang), title: lang === 'zh' ? '专注计时' : 'Pomodoro', level: 3 });
+        pill(right, active ? (lang === 'zh' ? '进行中' : 'Running') : (lang === 'zh' ? '空闲' : 'Idle'), active ? 'accent' : 'mute');
+
+        const disp = c.createDiv();
+        Object.assign(disp.style, { textAlign: 'center', padding: '14px 0', fontFamily: 'var(--sch-font-mono)', fontSize: '38px', fontWeight: '500', color: active ? 'var(--sch-accent-ink)' : 'var(--sch-ink)', letterSpacing: '-.02em' });
+        this.focusDisplayEl = disp;
+        this.updateTimerDisplay();
+        if (active) this.focusTimer = this.plugin.registerInterval(window.setInterval(() => this.updateTimerDisplay(), 1000));
+
+        const { input: titleInput } = uiInput(c, { placeholder: t('focus_title_ph', lang), iconName: 'bolt', size: 'sm' });
+        if (active) titleInput.value = active.title;
+
+        const btnRow = c.createDiv();
+        Object.assign(btnRow.style, { display: 'flex', gap: '6px', marginTop: '8px' });
+        if (!active) {
+            const startBtn = uiButton(btnRow, { text: t('start', lang), iconName: 'play', variant: 'primary', style: { flex: '1' } });
+            startBtn.addEventListener('click', async () => {
+                this.data.focus.active = { id: uid(), title: titleInput.value.trim() || (lang === 'zh' ? '专注记录' : 'Focus'), startTs: Date.now() };
+                await this.save(); this.rerender();
+            });
+        } else {
+            const stopBtn = uiButton(btnRow, { text: t('stop', lang), iconName: 'stop', variant: 'primary', style: { flex: '1' } });
+            stopBtn.addEventListener('click', async () => {
+                const a = this.data.focus.active; if (!a) return;
+                const minutes = Math.round((Date.now() - a.startTs) / 60000);
+                this.data.focus.sessions.push({ id: a.id, date: today(), title: a.title, start: new Date(a.startTs).toTimeString().slice(0, 5), end: nowHHMM(), minutes, taskId: a.taskId });
+                this.data.focus.active = null;
+                await this.save(); this.rerender();
+                new Notice(`✅ ${a.title}（${minutes}m）`);
+            });
+        }
+    }
+
+    private renderAIScheduleCard(host: HTMLElement, lang: 'zh' | 'en') {
+        const c = uiCard(host);
+        sectionHeader(c, { eyebrow: lang === 'zh' ? 'AI 日程助手' : 'AI planner', title: lang === 'zh' ? '规划今日任务' : 'Plan schedule', level: 3 });
+        const ta = c.createEl('textarea');
+        Object.assign(ta.style, {
+            width: '100%',
+            minHeight: '86px',
+            padding: '10px',
+            borderRadius: '10px',
+            border: '1px solid var(--sch-line)',
+            background: 'var(--sch-surface)',
+            color: 'var(--sch-ink)',
+            fontFamily: 'inherit',
+            fontSize: '12.5px',
+            lineHeight: '1.55',
+            resize: 'vertical',
+        });
+        ta.placeholder = lang === 'zh'
+            ? '例如：9:00-10:30 看文献，10:45-12:00 写实验方案，下午做 HPLC 数据。'
+            : 'Example: 9:00-10:30 read papers, 10:45-12:00 draft protocol.';
+        const hint = c.createDiv({ text: lang === 'zh' ? '会写入时间块，并显示在中间时间轴。写“覆盖今日”会替换今天已有日程。' : 'Saved as time blocks and shown in the center timeline. Include "replace today" to overwrite today.' });
+        Object.assign(hint.style, { marginTop: '6px', fontSize: '11.5px', color: 'var(--sch-mute)', lineHeight: '1.45' });
+        const btnRow = c.createDiv();
+        Object.assign(btnRow.style, { display: 'flex', gap: '6px', marginTop: '10px' });
+        const planBtn = uiButton(btnRow, { text: lang === 'zh' ? 'AI 规划并加入' : 'Plan and add', iconName: 'sparkle', variant: 'primary', style: { flex: '1' } });
+        const clearBtn = uiButton(btnRow, { text: lang === 'zh' ? '清空今日' : 'Clear today', variant: 'soft' });
+        planBtn.addEventListener('click', async () => {
+            const text = ta.value.trim();
+            if (!text) { new Notice(lang === 'zh' ? '先写下你的日程想法' : 'Write a schedule first'); return; }
+            planBtn.setText(lang === 'zh' ? '规划中...' : 'Planning...');
+            try {
+                const blocks = await this.planScheduleWithAI(text);
+                const replace = /覆盖|替换|重新安排|清空|replace|overwrite/i.test(text);
+                this.applyScheduleBlocks(blocks, replace);
+                await this.save();
+                new Notice(lang === 'zh' ? `已加入 ${blocks.length} 个时间块` : `Added ${blocks.length} blocks`);
+                this.rerender();
+            } catch (e) {
+                new Notice((lang === 'zh' ? 'AI 日程规划失败：' : 'Planning failed: ') + (e as Error).message);
+            }
+        });
+        clearBtn.addEventListener('click', async () => {
+            this.data.timeblocks = this.data.timeblocks.filter(b => b.date !== today());
+            await this.save();
+            this.rerender();
+        });
+    }
+
+    private async planScheduleWithAI(text: string): Promise<AIScheduleBlock[]> {
+        const { aiProvider, aiApiKey, aiModel, aiCustomEndpoint, aiTemperature } = this.plugin.settings;
+        if (!aiApiKey) return this.parseScheduleLocally(text);
+        const existing = this.data.timeblocks.filter(b => b.date === today())
+            .sort((a, b) => a.startTime.localeCompare(b.startTime))
+            .map(b => `${b.startTime}-${b.endTime} ${b.title} [${b.category}]`).join('\n') || '(none)';
+        const system = `You are a schedule planner inside an Obsidian research workspace.
+Return ONLY JSON: {"blocks":[{"date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","category":"work|study|experiment|writing|meeting|rest|admin","title":"short task title","note":"optional"}]}.
+Rules:
+- Use today's date ${today()} unless the user explicitly says another date.
+- Preserve the user's intended times. If an end time is missing, choose a reasonable 45-90 minute block.
+- Split separate tasks into separate blocks.
+- Keep titles concrete and short.
+- Existing schedule today:
+${existing}`;
+        const raw = await this.scheduleProviderCall(aiProvider, aiApiKey, aiModel, aiCustomEndpoint, aiTemperature, system, text);
+        const json = raw.match(/\{[\s\S]*\}/)?.[0];
+        if (!json) throw new Error('AI 没有返回日程 JSON');
+        const parsed = safeParseJson<{ blocks?: AIScheduleBlock[] }>(json, 'schedule planning');
+        if (!parsed) throw new Error('AI 返回的日程格式无法解析');
+        const blocks = Array.isArray(parsed.blocks) ? parsed.blocks : [];
+        return this.normalizeScheduleBlocks(blocks.length ? blocks : this.parseScheduleLocally(text));
+    }
+
+    private parseScheduleLocally(text: string): AIScheduleBlock[] {
+        const blocks: AIScheduleBlock[] = [];
+        const re = /(\d{1,2})[:：点](\d{0,2})\s*(?:[-~到至—–]\s*(\d{1,2})[:：点]?(\d{0,2})?)?\s*([^，,；;\n]+)/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(text)) !== null) {
+            const sh = Number(m[1]);
+            const sm = m[2] ? Number(m[2]) : 0;
+            const eh = m[3] ? Number(m[3]) : sh + 1;
+            const em = m[4] ? Number(m[4]) : sm;
+            const title = (m[5] || '').replace(/^(干|做|进行|安排)/, '').trim() || '日程安排';
+            blocks.push({ date: today(), startTime: this.hhmm(sh, sm), endTime: this.hhmm(eh, em), category: this.inferScheduleCategory(title), title, note: '' });
+        }
+        return this.normalizeScheduleBlocks(blocks);
+    }
+
+    private normalizeScheduleBlocks(blocks: AIScheduleBlock[]): AIScheduleBlock[] {
+        return blocks
+            .map(b => ({
+                date: b.date || today(),
+                startTime: this.normalizeHHMM(b.startTime),
+                endTime: this.normalizeHHMM(b.endTime),
+                category: this.inferScheduleCategory(b.category || b.title),
+                title: (b.title || '日程安排').trim().slice(0, 40),
+                note: (b.note || '').trim().slice(0, 120),
+            }))
+            .filter(b => b.startTime && b.endTime && b.startTime < b.endTime)
+            .slice(0, 16);
+    }
+
+    private applyScheduleBlocks(blocks: AIScheduleBlock[], replaceToday: boolean) {
+        if (replaceToday) this.data.timeblocks = this.data.timeblocks.filter(b => b.date !== today());
+        for (const b of blocks) {
+            const date = b.date || today();
+            this.data.timeblocks = this.data.timeblocks.filter(x => !(x.date === date && x.startTime === b.startTime && x.endTime === b.endTime));
+            this.data.timeblocks.push({
+                id: uid(),
+                date,
+                startTime: b.startTime,
+                endTime: b.endTime,
+                category: b.category || 'work',
+                title: b.title,
+                note: b.note || '',
+            });
+        }
+    }
+
+    private inferScheduleCategory(text: string): string {
+        if (/实验|hplc|合成|测试|表征|experiment/i.test(text)) return 'experiment';
+        if (/写|论文|投稿|draft|writing/i.test(text)) return 'writing';
+        if (/文献|阅读|学习|read|study/i.test(text)) return 'study';
+        if (/会|讨论|组会|meeting/i.test(text)) return 'meeting';
+        if (/休息|吃饭|午休|rest|meal/i.test(text)) return 'rest';
+        return 'work';
+    }
+
+    private normalizeHHMM(value: string): string {
+        const m = String(value || '').match(/(\d{1,2})[:：]?(\d{0,2})/);
+        if (!m) return '';
+        return this.hhmm(Number(m[1]), m[2] ? Number(m[2]) : 0);
+    }
+
+    private hhmm(hour: number, minute: number): string {
+        const h = Math.min(23, Math.max(0, hour));
+        const m = Math.min(59, Math.max(0, minute));
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+
+    private async scheduleProviderCall(provider: AIProvider, apiKey: string, model: string, customEndpoint: string, temp: number, system: string, user: string): Promise<string> {
+        if (provider === 'claude') {
+            const res = await requestUrlWithTimeout({
+                url: 'https://api.anthropic.com/v1/messages',
+                method: 'POST',
+                headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+                body: JSON.stringify({ model: model || 'claude-sonnet-4-6', max_tokens: 1200, temperature: temp, system, messages: [{ role: 'user', content: user }] }),
+            });
+            if (res.status < 200 || res.status >= 300) throw new Error(`Claude ${res.status}`);
+            const d = res.json as { content: Array<{ type: string; text: string }> };
+            return d.content.find(x => x.type === 'text')?.text ?? '';
+        }
+        const cfg = PROVIDER_CONFIG[provider];
+        const endpoint = provider === 'custom' ? customEndpoint : cfg.endpoint;
+        if (!endpoint) throw new Error('缺少 API 端点');
+        const res = await requestUrlWithTimeout({
+            url: endpoint,
+            method: 'POST',
+            headers: { Authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ model: model || cfg.defaultModel, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], max_tokens: 1200, temperature: temp }),
+        });
+        if (res.status < 200 || res.status >= 300) throw new Error(`${cfg.label} ${res.status}`);
+        const d = res.json as { choices: Array<{ message: { content: string } }> };
+        return d.choices[0]?.message?.content ?? '';
+    }
+
+    private renderQuickCaptureCard(host: HTMLElement, lang: 'zh' | 'en') {
+        const c = uiCard(host);
+        sectionHeader(c, { eyebrow: t('quick_capture', lang), title: lang === 'zh' ? '随手捕获' : 'Quick capture', level: 3 });
+        let selectedKind: CaptureKind = 'idea';
+        const types: Array<{ kind: CaptureKind; zh: string; en: string; tone: string }> = [
+            { kind: 'task', zh: '任务', en: 'Task', tone: 'var(--sch-surface2)' },
+            { kind: 'idea', zh: '想法', en: 'Idea', tone: 'var(--sch-sun-bg)' },
+            { kind: 'contact', zh: '联系人', en: 'Contact', tone: 'var(--sch-sky-bg)' },
+            { kind: 'experiment', zh: '实验', en: 'Experiment', tone: 'var(--sch-moss-bg)' },
+        ];
+        const chooser = c.createDiv();
+        Object.assign(chooser.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' });
+        const typeButtons = new Map<CaptureKind, HTMLButtonElement>();
+        const refreshTypeButtons = () => {
+            for (const type of types) {
+                const btn = typeButtons.get(type.kind);
+                if (!btn) continue;
+                const selected = type.kind === selectedKind;
+                btn.style.background = selected ? type.tone : 'transparent';
+                btn.style.borderColor = selected ? 'var(--sch-accent)' : 'var(--sch-line)';
+                btn.style.color = selected ? 'var(--sch-ink)' : 'var(--sch-mute)';
+                btn.setAttribute('aria-pressed', String(selected));
+            }
+        };
+        for (const type of types) {
+            const label = lang === 'zh' ? type.zh : type.en;
+            const btn = chooser.createEl('button', { text: label, attr: { type: 'button', 'aria-label': label } });
+            Object.assign(btn.style, {
+                minHeight: '30px', padding: '0 11px', borderRadius: '999px',
+                border: '1px solid var(--sch-line)', fontSize: '12px', fontWeight: '600',
+                cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s ease',
+            });
+            typeButtons.set(type.kind, btn);
+            btn.addEventListener('click', () => {
+                selectedKind = type.kind;
+                refreshTypeButtons();
+                capInput.placeholder = lang === 'zh' ? `记录${type.zh}，按回车保存` : `Write a ${type.en.toLowerCase()}, press Enter to save`;
+                capInput.focus();
+            });
+        }
+        refreshTypeButtons();
+        const { input: capInput } = uiInput(c, { placeholder: lang === 'zh' ? '记录想法，按回车保存' : 'Write an idea, press Enter to save', iconName: 'plus' });
+        capInput.addEventListener('keydown', async (e) => {
+            if (e.key !== 'Enter') return;
+            const content = capInput.value.trim();
+            if (!content) return;
+            this.data.captures.push({ id: uid(), kind: selectedKind, content, date: today(), time: nowHHMM() });
+            if (selectedKind === 'task') {
+                this.data.tasks.push({ id: uid(), title: content, status: 'active', createdAt: today() });
+            }
+            capInput.value = '';
+            await this.save();
+            this.rerender();
+        });
+        const hint = c.createDiv({ text: lang === 'zh' ? '保存在工作台数据中；任务会同步加入今日任务。' : 'Saved in workspace data; tasks also appear in today tasks.' });
+        Object.assign(hint.style, { marginTop: '8px', color: 'var(--sch-mute)', fontSize: '11.5px', lineHeight: '1.45' });
+    }
+
+    private renderIdeaCalendarCard(host: HTMLElement, lang: 'zh' | 'en') {
+        const c = uiCard(host);
+        const ideas = this.data.captures.filter(entry => entry.kind === 'idea').sort((a, b) =>
+            `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)
+        );
+        const { right } = sectionHeader(c, { eyebrow: lang === 'zh' ? '想法日历' : 'Idea calendar', title: lang === 'zh' ? '按日期回看' : 'By date', level: 3 });
+        pill(right, String(ideas.length), 'sun');
+        if (!ideas.length) {
+            const empty = c.createDiv({ text: lang === 'zh' ? '选择“想法”并保存后，会在这里按日期归档。' : 'Ideas saved in quick capture appear here by date.' });
+            Object.assign(empty.style, { color: 'var(--sch-mute)', fontSize: '12px', lineHeight: '1.55' });
+            return;
+        }
+        const grouped = new Map<string, QuickCapture[]>();
+        for (const idea of ideas) {
+            const day = grouped.get(idea.date) ?? [];
+            day.push(idea);
+            grouped.set(idea.date, day);
+        }
+        const calendar = c.createDiv();
+        Object.assign(calendar.style, { display: 'flex', flexDirection: 'column', gap: '10px' });
+        for (const [date, entries] of Array.from(grouped.entries()).slice(0, 7)) {
+            const day = calendar.createDiv();
+            Object.assign(day.style, { display: 'grid', gridTemplateColumns: '48px minmax(0, 1fr)', gap: '10px', paddingTop: '10px', borderTop: '1px solid var(--sch-line-soft)' });
+            const d = new Date(date + 'T00:00:00');
+            const stamp = day.createDiv();
+            const dateNum = stamp.createDiv({ text: String(d.getDate()).padStart(2, '0') });
+            Object.assign(dateNum.style, { fontFamily: 'var(--sch-font-mono)', fontSize: '20px', fontWeight: '700', color: 'var(--sch-ink)', lineHeight: '1.05' });
+            const month = stamp.createDiv({ text: lang === 'zh' ? `${d.getMonth() + 1} 月` : d.toLocaleDateString('en', { month: 'short' }) });
+            Object.assign(month.style, { color: 'var(--sch-mute)', fontSize: '11px', marginTop: '2px' });
+            const notes = day.createDiv();
+            Object.assign(notes.style, { display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '0' });
+            for (const entry of entries) {
+                const item = notes.createDiv();
+                Object.assign(item.style, { background: 'var(--sch-sun-bg)', borderRadius: '8px', padding: '7px 8px', minWidth: '0' });
+                const content = item.createDiv({ text: entry.content });
+                Object.assign(content.style, { color: 'var(--sch-ink)', fontSize: '12.5px', lineHeight: '1.45', whiteSpace: 'normal', overflowWrap: 'anywhere' });
+                const time = item.createDiv({ text: entry.time });
+                Object.assign(time.style, { color: 'var(--sch-mute)', fontFamily: 'var(--sch-font-mono)', fontSize: '10.5px', marginTop: '3px' });
+            }
+        }
+    }
+
+    private renderTodaysTasksCard(host: HTMLElement, activeTasks: Task[], lang: 'zh' | 'en') {
+        const c = uiCard(host);
+        const { right } = sectionHeader(c, { eyebrow: t('todays_tasks', lang), title: lang === 'zh' ? '锁定的任务' : 'Locked in', level: 3 });
+        pill(right, String(activeTasks.length), 'accent');
+        const list = c.createDiv();
+        Object.assign(list.style, { display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' });
+        if (activeTasks.length === 0) {
+            const e = list.createDiv({ text: lang === 'zh' ? '今天还没有锁定任务' : 'No tasks locked in' });
+            Object.assign(e.style, { fontSize: '12.5px', color: 'var(--sch-mute)', padding: '8px 0' });
+            return;
+        }
+        for (const task of activeTasks.slice(0, 6)) {
+            const item = list.createDiv();
+            Object.assign(item.style, { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 4px', borderTop: '1px solid var(--sch-line-soft)' });
+            const cb = item.createDiv();
+            Object.assign(cb.style, { width: '15px', height: '15px', borderRadius: '4px', border: '1.5px solid var(--sch-mute-soft)', flexShrink: '0', cursor: 'pointer', transition: 'all .15s ease' });
+            cb.addEventListener('click', async () => {
+                task.status = 'done'; task.completedAt = today();
+                await this.save(); this.rerender();
+            });
+            const ttl = item.createDiv({ text: task.title });
+            Object.assign(ttl.style, { flex: '1', minWidth: '0', fontSize: '12.5px', color: 'var(--sch-ink)', fontWeight: '500', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+            const d = item.createSpan({ text: task.createdAt });
+            Object.assign(d.style, { fontSize: '10.5px', color: 'var(--sch-mute)', fontFamily: 'var(--sch-font-mono)', flexShrink: '0' });
+        }
     }
 
     // ════════════════════════════════
@@ -762,6 +1759,43 @@ export class PhDWorkspace {
         }
     }
 
+    private renderTimeblockAIHelper(host: HTMLElement) {
+        const card = host.createDiv({ cls: 'ws2-card' });
+        Object.assign(card.style, { display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px' });
+        card.createEl('h3', { text: 'AI 日程助手', cls: 'ws2-card-title' });
+        const prompt = card.createEl('textarea', {
+            cls: 'ws2-input',
+            attr: {
+                rows: '4',
+                placeholder: '写下你的安排，例如：9点到10点看文献，10:30-12:00 合成 TiO2，下午整理数据。输入“覆盖今日”会替换今天已有日程。'
+            }
+        }) as HTMLTextAreaElement;
+        const actions = card.createDiv();
+        Object.assign(actions.style, { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' });
+        const addBtn = actions.createEl('button', { text: '生成并加入日程', cls: 'ws2-btn' });
+        const replaceBtn = actions.createEl('button', { text: '覆盖今日', cls: 'ws2-btn ws2-btn-outline' });
+        const tip = card.createDiv({ text: 'AI 会生成时间块建议；没有 API key 时，也会识别明确的“几点到几点做什么”。' });
+        Object.assign(tip.style, { color: 'var(--sch-mute)', fontSize: '12px', lineHeight: '1.5' });
+
+        const run = async (replace: boolean) => {
+            const text = prompt.value.trim();
+            if (!text) { new Notice('先写下你的日程安排'); return; }
+            addBtn.setText('生成中...');
+            try {
+                const blocks = await this.planScheduleWithAI(replace ? `覆盖今日：${text}` : text);
+                this.applyScheduleBlocks(blocks, replace);
+                await this.save();
+                new Notice(`已加入 ${blocks.length} 个时间块`);
+                this.rerender();
+            } catch (e) {
+                new Notice('AI 日程助手失败：' + (e as Error).message);
+                addBtn.setText('生成并加入日程');
+            }
+        };
+        addBtn.onclick = () => void run(false);
+        replaceBtn.onclick = () => void run(true);
+    }
+
     private getToday(): CheckinDay {
         const d = today();
         if (!this.data.checkin[d]) {
@@ -775,9 +1809,11 @@ export class PhDWorkspace {
     // ════════════════════════════════
     private renderTimeblock(el: HTMLElement) {
         const wrap = el.createDiv({ cls: 'ws2-timeblock-container' });
+        Object.assign(wrap.style, { display: 'grid', gridTemplateColumns: 'minmax(420px, 1fr) minmax(320px, 420px)', gap: '24px', alignItems: 'start' });
 
         const left = wrap.createDiv({ cls: 'ws2-timeblock-left' });
         const form = left.createDiv({ cls: 'ws2-card' });
+        Object.assign(form.style, { display: 'flex', flexDirection: 'column', gap: '12px' });
         form.createEl('h3', { text: '添加时间块', cls: 'ws2-card-title' });
 
         const date = form.createEl('input', { cls: 'ws2-input', attr: { type: 'date' } }) as HTMLInputElement;
@@ -811,22 +1847,33 @@ export class PhDWorkspace {
             await this.save();
             this.rerender();
         };
+        this.renderTimeblockAIHelper(left);
 
         const right = wrap.createDiv({ cls: 'ws2-timeblock-right' });
+        Object.assign(right.style, { minWidth: '0' });
         const todayBlocks = this.data.timeblocks.filter(b => b.date === today());
         const scheduleCard = right.createDiv({ cls: 'ws2-card' });
+        Object.assign(scheduleCard.style, { overflow: 'hidden' });
         scheduleCard.createEl('h4', { text: '当日日程', cls: 'ws2-card-title' });
 
         if (todayBlocks.length === 0) {
             scheduleCard.createEl('div', { text: '无日程', cls: 'ws2-empty-hint' });
         } else {
             const list = scheduleCard.createDiv({ cls: 'ws2-timeblock-list' });
+            Object.assign(list.style, { display: 'flex', flexDirection: 'column', gap: '10px' });
             for (const block of todayBlocks.sort((a, b) => a.startTime.localeCompare(b.startTime))) {
                 const item = list.createDiv({ cls: 'ws2-timeblock-item' });
-                item.createEl('div', { text: `${block.startTime} - ${block.endTime}`, cls: 'ws2-timeblock-time' });
-                item.createEl('div', { text: block.title, cls: 'ws2-timeblock-title' });
-                item.createEl('div', { text: `[${block.category}]`, cls: 'ws2-timeblock-category' });
-                if (block.note) item.createEl('div', { text: block.note, cls: 'ws2-timeblock-note' });
+                Object.assign(item.style, { display: 'grid', gridTemplateColumns: '92px minmax(0, 1fr) auto 30px', gap: '10px', alignItems: 'start', padding: '12px 10px', borderRadius: '10px', overflow: 'hidden' });
+                const timeEl = item.createEl('div', { text: `${block.startTime}-${block.endTime}`, cls: 'ws2-timeblock-time' });
+                Object.assign(timeEl.style, { whiteSpace: 'nowrap' });
+                const titleEl = item.createEl('div', { text: block.title, cls: 'ws2-timeblock-title' });
+                Object.assign(titleEl.style, { minWidth: '0', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', lineHeight: '1.45' });
+                const catEl = item.createEl('div', { text: block.category, cls: 'ws2-timeblock-category' });
+                Object.assign(catEl.style, { whiteSpace: 'nowrap', maxWidth: '96px', overflow: 'hidden', textOverflow: 'ellipsis' });
+                if (block.note) {
+                    const noteEl = item.createEl('div', { text: block.note, cls: 'ws2-timeblock-note' });
+                    Object.assign(noteEl.style, { gridColumn: '2 / -2', minWidth: '0', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', lineHeight: '1.45' });
+                }
                 const del = item.createEl('button', { text: '×', cls: 'ws2-del-btn' });
                 del.onclick = async () => {
                     this.data.timeblocks = this.data.timeblocks.filter(b => b.id !== block.id);
@@ -851,7 +1898,7 @@ export class PhDWorkspace {
         this.updateTimerDisplay();
 
         if (this.data.focus.active) {
-            this.focusTimer = window.setInterval(() => this.updateTimerDisplay(), 1000);
+            this.focusTimer = this.plugin.registerInterval(window.setInterval(() => this.updateTimerDisplay(), 1000));
             timerCard.createEl('div', { text: `🎯 ${this.data.focus.active.title}`, cls: 'ws2-timer-label' });
         } else {
             timerCard.createEl('div', { text: '暂无进行中的专注', cls: 'ws2-timer-label' });
@@ -1654,6 +2701,68 @@ export class PhDWorkspace {
     }
 
     public destroy(): void {
-        // No-op
+        if (this.focusTimer) { window.clearInterval(this.focusTimer); this.focusTimer = null; }
+        if (this.todayTimer) { window.clearInterval(this.todayTimer); this.todayTimer = null; }
     }
+}
+
+// ─── 时间块编辑弹窗（点击时间轴上的任务块打开）───
+class TimeBlockEditModal extends Modal {
+    private block: TimeBlock;
+    private lang: 'zh' | 'en';
+    private onSaveCb: () => Promise<void>;
+    private onDeleteCb: () => Promise<void>;
+
+    constructor(app: App, block: TimeBlock, lang: 'zh' | 'en', onSave: () => Promise<void>, onDelete: () => Promise<void>) {
+        super(app);
+        this.block = block;
+        this.lang = lang;
+        this.onSaveCb = onSave;
+        this.onDeleteCb = onDelete;
+    }
+
+    onOpen(): void {
+        const zh = this.lang === 'zh';
+        const c = this.contentEl;
+        c.empty();
+        c.createEl('h3', { text: zh ? '编辑时间块' : 'Edit time block' });
+
+        const mk = (label: string, value: string, type = 'text'): HTMLInputElement => {
+            const w = c.createDiv(); w.style.marginBottom = '10px';
+            w.createEl('div', { text: label, attr: { style: 'font-size:12px;color:var(--text-muted);margin-bottom:4px;' } });
+            const inp = w.createEl('input', { cls: 'ws2-input', attr: { type } }) as HTMLInputElement;
+            inp.value = value; inp.style.width = '100%';
+            return inp;
+        };
+        const titleIn = mk(zh ? '标题' : 'Title', this.block.title);
+        const startIn = mk(zh ? '开始' : 'Start', this.block.startTime, 'time');
+        const endIn = mk(zh ? '结束' : 'End', this.block.endTime, 'time');
+        const catIn = mk(zh ? '分类' : 'Category', this.block.category);
+
+        const noteW = c.createDiv(); noteW.style.marginBottom = '10px';
+        noteW.createEl('div', { text: zh ? '备注' : 'Note', attr: { style: 'font-size:12px;color:var(--text-muted);margin-bottom:4px;' } });
+        const noteIn = noteW.createEl('textarea', { cls: 'ws2-input' }) as HTMLTextAreaElement;
+        noteIn.value = this.block.note || ''; noteIn.style.width = '100%'; noteIn.rows = 3;
+
+        const btns = c.createDiv();
+        Object.assign(btns.style, { display: 'flex', gap: '8px', justifyContent: 'space-between', marginTop: '12px' });
+        const del = btns.createEl('button', { text: zh ? '删除' : 'Delete' });
+        del.style.color = 'var(--text-error)';
+        del.onclick = async () => { await this.onDeleteCb(); this.close(); };
+        const right = btns.createDiv();
+        Object.assign(right.style, { display: 'flex', gap: '8px' });
+        right.createEl('button', { text: zh ? '取消' : 'Cancel' }).onclick = () => this.close();
+        const save = right.createEl('button', { text: zh ? '保存' : 'Save', cls: 'mod-cta' });
+        save.onclick = async () => {
+            this.block.title = titleIn.value.trim() || this.block.title;
+            this.block.startTime = startIn.value || this.block.startTime;
+            this.block.endTime = endIn.value || this.block.endTime;
+            this.block.category = catIn.value.trim();
+            this.block.note = noteIn.value;
+            await this.onSaveCb();
+            this.close();
+        };
+    }
+
+    onClose(): void { this.contentEl.empty(); }
 }

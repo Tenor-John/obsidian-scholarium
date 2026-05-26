@@ -1,6 +1,7 @@
-import { Modal, Notice, TFile, requestUrl } from 'obsidian';
+import { Modal, Notice, TFile } from 'obsidian';
 import type ChemELNPlugin from './main';
 import { PROVIDER_CONFIG, providerLabel } from './settings';
+import { requestUrlWithTimeout } from './utils/network';
 
 export interface ExperimentContext {
     filePath: string;
@@ -247,7 +248,7 @@ export class AIAssistantModal extends Modal {
             { role: 'user', content: userPrompt },
         ];
 
-        const response = await requestUrl({
+        const response = await requestUrlWithTimeout({
             url,
             method: 'POST',
             headers: {
@@ -289,7 +290,7 @@ export class AIAssistantModal extends Modal {
             },
         ];
 
-        const response = await requestUrl({
+        const response = await requestUrlWithTimeout({
             url,
             method: 'POST',
             headers: {
@@ -331,7 +332,7 @@ export class AIAssistantModal extends Modal {
             { role: 'user', parts: [{ text: userPrompt }] },
         ];
 
-        const response = await requestUrl({
+        const response = await requestUrlWithTimeout({
             url,
             method: 'POST',
             headers: {
@@ -457,7 +458,8 @@ export class AIAssistantModal extends Modal {
             const normalized = this.extractJson(raw);
             const parsed = JSON.parse(normalized) as AiResponsePayload;
             return this.normalizePayload(parsed);
-        } catch {
+        } catch (error) {
+            console.warn('[Scholarium] Unable to parse AI assistant payload:', error);
             return null;
         }
     }

@@ -1,11 +1,16 @@
-import { ItemView, WorkspaceLeaf, TFile, Notice } from 'obsidian';
+import { ItemView, WorkspaceLeaf, TFile, Notice, MarkdownRenderer, getFrontMatterInfo, parseYaml } from 'obsidian';
 import ChemELNPlugin from './main';
 import { WORKSPACE_ROLE_LABELS, WORKSPACE_ROLE_ICONS } from './settings';
 import { AIChatModal } from './ai-chat-modal';
 import { PhDWorkspace } from './phd-workspace';
+import { fetchWithTimeout } from './utils/network';
 import { MaterialLibrary } from './material-library';
-import { ResearchCanvas } from './research-canvas';
+import { ResearchToolLibrary } from './research-tool-library';
 import type { CloudSyncManager } from './cloud-sync';
+import { t } from './i18n';
+import { iconSvg } from './icons';
+import { avatar as makeAvatar, segmented, card as uiCard, sectionHeader, pill, button as uiButton, input as uiInput, insetBlock } from './components/ui';
+import { IdeaLibrary } from './idea-library';
 
 // 本地打包 smiles-drawer（兼容 esbuild 的 ESM→CJS 转换）
 // @ts-ignore
@@ -17,6 +22,7 @@ export const DASHBOARD_VIEW_TYPE = 'scholarium-dashboard';
 
 interface ExperimentNote {
     file: TFile;
+    noteType: 'experiment' | 'research-learning';
     title: string;
     date: string;         // 严格来自 frontmatter.date 或文件名，不依赖 mtime
     status: string;
@@ -41,9 +47,13 @@ export class DashboardView extends ItemView {
     private workspace: PhDWorkspace | null = null;
     // 素材库
     private materialLib: MaterialLibrary | null = null;
-    // 研究画布
-    private researchCanvas: ResearchCanvas | null = null;
-    private activePanel: 'lab' | 'workspace' | 'materials' | 'canvas' = 'lab';
+    // 科研库
+    private researchToolLib: ResearchToolLibrary | null = null;
+    // 想法库（Notebook → Ideas，重设计 M5）
+    private ideaLib: IdeaLibrary | null = null;
+    private notebookMode: 'experiments' | 'ideas' = 'experiments';
+    private activePanel: 'lab' | 'workspace' | 'materials' | 'tools' = 'lab';
+    private resizeTimer: number | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: ChemELNPlugin) {
         super(leaf);
@@ -68,11 +78,19 @@ export class DashboardView extends ItemView {
             // 初始化素材库
             this.materialLib = new MaterialLibrary(this.app, this.plugin);
             await this.materialLib.load();
-            // 初始化研究画布
-            this.researchCanvas = new ResearchCanvas(this.app, this.plugin);
-            await this.researchCanvas.load();
+            // 初始化科研库
+            this.researchToolLib = new ResearchToolLibrary(this.app, this.plugin);
+            await this.researchToolLib.load();
+            // 想法库
+            this.ideaLib = new IdeaLibrary(this.app, this.plugin);
+            await this.ideaLib.load();
             await this.render();
-            this.clockInterval = window.setInterval(() => this.updateClock(), 60000);
+            this.clockInterval = this.registerInterval(window.setInterval(() => this.updateClock(), 60000));
+            // 窗口/叶子尺寸变化（如折叠侧边栏）时防抖重渲染，让按窗口测量的高度与布局自适应
+            this.registerDomEvent(window, 'resize', () => {
+                if (this.resizeTimer) window.clearTimeout(this.resizeTimer);
+                this.resizeTimer = window.setTimeout(() => { void this.render(); }, 200);
+            });
         } catch (e) {
             console.error('[ChemELN] onOpen 出错:', e);
             const c = this.contentEl;
@@ -85,7 +103,7 @@ export class DashboardView extends ItemView {
         if (this.clockInterval !== null) window.clearInterval(this.clockInterval);
         this.workspace?.destroy();
         this.materialLib?.destroy();
-        this.researchCanvas?.destroy();
+        this.researchToolLib?.destroy();
     }
 
     async render() {
@@ -93,87 +111,9 @@ export class DashboardView extends ItemView {
         container.empty();
         container.addClass('scholarium-dashboard');
 
-        // ===== 顶部标题栏（公开版 Hero 风格）=====
-        const header = container.createDiv({ cls: 'scholarium-header xl-hero' });
-
-        const heroRow = header.createDiv({ cls: 'xl-hero-row' });
-
-        // 左：插件名 + 问候 + 日期 + WK
-        const leftWrap = heroRow.createDiv();
-        leftWrap.createEl('h2', {
-            text: this.plugin.settings.pluginDisplayName || '🧪 实验记录本',
-            cls: 'scholarium-logo xl-hero-title'
-        });
-
-        // 副标题：问候 + 日期 + WK
-        const now = new Date();
-        const hr = now.getHours();
-        const greet = hr < 6 ? '深夜好' : hr < 12 ? '早上好' : hr < 14 ? '中午好'
-            : hr < 18 ? '下午好' : hr < 22 ? '晚上好' : '夜深了';
-        const isoWk = (d: Date): number => {
-            const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-            let n = t.getUTCDay(); if (n === 0) n = 7;
-            t.setUTCDate(t.getUTCDate() + 4 - n);
-            const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
-            return Math.ceil((((+t - +y0) / 86400000) + 1) / 7);
-        };
-        const wkStr = isoWk(now).toString().padStart(2, '0');
-        const dayCh = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][now.getDay()] || '';
-        const subText = `${greet} · ${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${dayCh} · WK${wkStr}`;
-        leftWrap.createEl('div', { text: subText, cls: 'xl-hero-sub' });
-
-        // 右：信息条 chips（时钟 / 天气 / 统计）
-        const infoBar = heroRow.createDiv({ cls: 'scholarium-info-bar xl-hero-chips' });
-        const clockChip = infoBar.createEl('span', { cls: 'xl-stat-chip accent scholarium-clock' });
-        clockChip.id = 'scholarium-clock';
-        this.updateClock();
-
-        const weatherChip = infoBar.createEl('span', { text: '🌡 获取天气中…', cls: 'xl-stat-chip scholarium-weather' });
-        weatherChip.id = 'scholarium-weather';
-        this.fetchWeather();
-
-        const statsChip = infoBar.createEl('span', { cls: 'xl-stat-chip scholarium-stats' });
-        statsChip.id = 'scholarium-stats';
-
-        // ===== 面板切换栏（实验记录 | 工作台 | 素材库 | 研究画布）=====
-        // 根据角色设置生成工作台标签
-        const { workspaceRole, notebookLabel, workspaceTabLabel } = this.plugin.settings;
-        const wsTabLabel = workspaceRole !== 'custom'
-            ? `${WORKSPACE_ROLE_ICONS[workspaceRole]} ${WORKSPACE_ROLE_LABELS[workspaceRole]}`
-            : `📊 ${workspaceTabLabel || '工作台'}`;
-        const nbLabel = notebookLabel || '实验记录';
-
-        const panelSwitch = container.createDiv({ cls: 'scholarium-panel-switch' });
-        const labBtn = panelSwitch.createEl('button', {
-            text: `🧪 ${nbLabel}`,
-            cls: `scholarium-switch-btn${this.activePanel === 'lab' ? ' active' : ''}`
-        });
-        const wsBtn = panelSwitch.createEl('button', {
-            text: wsTabLabel,
-            cls: `scholarium-switch-btn${this.activePanel === 'workspace' ? ' active' : ''}`
-        });
-        const matBtn = panelSwitch.createEl('button', {
-            text: '🗂️ 素材库',
-            cls: `scholarium-switch-btn${this.activePanel === 'materials' ? ' active' : ''}`
-        });
-        const canvasBtn = panelSwitch.createEl('button', {
-            text: '🗺️ 研究画布',
-            cls: `scholarium-switch-btn${this.activePanel === 'canvas' ? ' active' : ''}`
-        });
-
-        // ===== 操作栏 =====
-        const actionBar = container.createDiv({ cls: 'scholarium-action-bar' });
-        if (this.activePanel === 'lab') {
-            actionBar.createEl('button', { text: '＋ 新建实验', cls: 'scholarium-btn primary' })
-                .onclick = () => this.createNewExperiment();
-            actionBar.createEl('button', { text: '🔄 刷新', cls: 'scholarium-btn' })
-                .onclick = () => this.render();
-            actionBar.createEl('button', { text: '🤖 AI 助手', cls: 'scholarium-btn ai-btn' })
-                .onclick = () => new AIChatModal(this.app, this.plugin).open();
-        } else {
-            actionBar.createEl('button', { text: '🔄 刷新', cls: 'scholarium-btn' })
-                .onclick = () => this.render();
-        }
+        // ===== 顶部品牌栏（重设计：logo · 4 Tab · 搜索 · AI · 设置 · 头像）=====
+        this.renderBrandBar(container);
+        const nbLabel = this.plugin.settings.notebookLabel || '实验记录';
 
         // ===== 主体区 =====
         const main = container.createDiv({ cls: 'scholarium-main' });
@@ -182,40 +122,41 @@ export class DashboardView extends ItemView {
             // ── PhD 工作台（全宽）──
             const wsPanel = main.createDiv({ cls: 'scholarium-panel ws-full-panel' });
             if (this.workspace) this.workspace.render(wsPanel);
-
-            labBtn.onclick = () => { this.activePanel = 'lab'; this.render(); };
-            wsBtn.onclick  = () => {};
-            matBtn.onclick = () => { this.activePanel = 'materials'; this.render(); };
-            canvasBtn.onclick = () => { this.activePanel = 'canvas'; this.render(); };
         } else if (this.activePanel === 'materials') {
             // ── 素材库（全宽）──
             const matPanel = main.createDiv({ cls: 'scholarium-panel mat-full-panel' });
             if (this.materialLib) this.materialLib.render(matPanel);
+        } else if (this.activePanel === 'tools') {
+            // ── 科研库（全宽）──
+            const toolsPanel = main.createDiv({ cls: 'scholarium-panel rtl-full-panel' });
+            if (this.researchToolLib) this.researchToolLib.render(toolsPanel);
+        } else {
+            // ── Notebook 模式条（实验 ⇄ 想法，重设计 M5）──
+            const lang = this.plugin.settings.language;
+            const modeBar = container.createDiv({ cls: 'sch-notebook-modebar' });
+            Object.assign(modeBar.style, { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' });
+            main.before(modeBar);
+            segmented(
+                modeBar,
+                [
+                    { value: 'experiments', label: this.plugin.settings.notebookLabel || t('notebook', lang) },
+                    { value: 'ideas', label: lang === 'zh' ? '想法库' : 'Ideas' },
+                ],
+                this.notebookMode,
+                (v) => { this.notebookMode = v as 'experiments' | 'ideas'; void this.render(); },
+            );
 
-            labBtn.onclick = () => { this.activePanel = 'lab'; this.render(); };
-            wsBtn.onclick  = () => { this.activePanel = 'workspace'; this.render(); };
-            matBtn.onclick = () => {};
-            canvasBtn.onclick = () => { this.activePanel = 'canvas'; this.render(); };
-        } else if (this.activePanel === 'canvas') {
-            // ── 研究画布（全宽）──
-            const canvasPanel = main.createDiv({ cls: 'scholarium-panel rc-full-panel' });
-            if (this.researchCanvas) {
-                const folder = this.plugin.settings.literatureFolder || '';
-                await this.researchCanvas.loadNotes(folder);
-                this.researchCanvas.render(canvasPanel);
+            if (this.notebookMode === 'ideas') {
+                const ideasPanel = main.createDiv({ cls: 'scholarium-panel ideas-full-panel' });
+                this.allExperiments = await this.getExperiments();
+                if (this.ideaLib) {
+                    this.ideaLib.experimentIndex = this.allExperiments.map(e => ({ id: e.file.basename, title: e.title }));
+                    this.ideaLib.render(ideasPanel);
+                }
+                return;
             }
 
-            labBtn.onclick = () => { this.activePanel = 'lab'; this.render(); };
-            wsBtn.onclick  = () => { this.activePanel = 'workspace'; this.render(); };
-            matBtn.onclick = () => { this.activePanel = 'materials'; this.render(); };
-            canvasBtn.onclick = () => {};
-        } else {
             // ── 实验记录（左右两栏）──
-            labBtn.onclick = () => {};
-            wsBtn.onclick  = () => { this.activePanel = 'workspace'; this.render(); };
-            matBtn.onclick = () => { this.activePanel = 'materials'; this.render(); };
-            canvasBtn.onclick = () => { this.activePanel = 'canvas'; this.render(); };
-
             // ── 左栏 ──
             const leftPanel = main.createDiv({ cls: 'scholarium-panel left-panel' });
             leftPanel.createEl('h3', { text: `📋 ${nbLabel}`, cls: 'panel-title' });
@@ -235,6 +176,7 @@ export class DashboardView extends ItemView {
             const filterTabs = leftPanel.createDiv({ cls: 'filter-tabs' });
             const tabDefs: Array<[string, string, string]> = [
                 ['all', '全部', '全部实验'],
+                ['study', '📚 研究学习', '研究学习笔记'],
                 ['in-progress', '🔄 进行中', '进行中'],
                 ['completed', '✅ 已完成', '已完成'],
                 ['planned', '📋 计划中', '计划中'],
@@ -272,6 +214,116 @@ export class DashboardView extends ItemView {
                 rightPanel.createEl('div', { text: '← 点击左侧实验记录查看详情，或点击"＋ 新建实验"开始。', cls: 'scholarium-placeholder' });
             }
         }
+    }
+
+    // ───── 顶部品牌栏（重设计 M3）─────
+    private switchTab(panel: 'lab' | 'workspace' | 'materials' | 'tools'): void {
+        if (this.activePanel === panel) return;
+        this.activePanel = panel;
+        void this.render();
+    }
+
+    private brandIconButton(parent: HTMLElement, icon: string, title: string): HTMLButtonElement {
+        const btn = parent.createEl('button', { attr: { title } });
+        Object.assign(btn.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: '34px', height: '34px', border: '1px solid var(--sch-line)',
+            borderRadius: '10px', background: 'transparent', color: 'var(--sch-ink2)',
+            cursor: 'pointer', flexShrink: '0', transition: 'all .15s ease',
+        });
+        btn.appendChild(iconSvg(icon, { size: 16 }));
+        return btn;
+    }
+
+    private renderBrandBar(container: HTMLElement): void {
+        const s = this.plugin.settings;
+        const lang = s.language;
+
+        const bar = container.createDiv({ cls: 'sch-brandbar' });
+        Object.assign(bar.style, {
+            display: 'flex', alignItems: 'center', gap: '10px 14px', flexWrap: 'wrap', minWidth: '0',
+            padding: '10px 16px', marginBottom: '14px',
+            background: 'var(--sch-surface)', border: '1px solid var(--sch-line)',
+            borderRadius: 'var(--sch-radius)',
+            boxShadow: '0 1px 2px rgba(0,0,0,.02), 0 1px 0 rgba(255,255,255,.5) inset',
+        });
+
+        // logo
+        const logo = bar.createDiv({ cls: 'sch-brandbar-logo' });
+        Object.assign(logo.style, { display: 'flex', alignItems: 'center', gap: '8px', flex: '0 1 auto', minWidth: '0' });
+        const logoIcon = iconSvg('flask', { size: 20 });
+        logoIcon.style.color = 'var(--sch-accent)';
+        logo.appendChild(logoIcon);
+        const logoText = logo.createSpan({ text: s.pluginDisplayName || 'Scholarium' });
+        Object.assign(logoText.style, {
+            fontFamily: 'var(--sch-font-serif)', fontWeight: '600', fontSize: '16px',
+            color: 'var(--sch-ink)', whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: '1.35',
+        });
+
+        // 4 tabs
+        const tabsWrap = bar.createDiv({ cls: 'sch-brandbar-tabs' });
+        Object.assign(tabsWrap.style, { display: 'flex', alignItems: 'center', gap: '4px', flex: '1 1 360px', minWidth: '0', flexWrap: 'wrap' });
+        const roleLabel = s.workspaceRole !== 'custom'
+            ? (WORKSPACE_ROLE_LABELS[s.workspaceRole] ?? t('workspace', lang))
+            : (s.workspaceTabLabel || t('workspace', lang));
+        const tabs: Array<{ key: 'lab' | 'workspace' | 'materials' | 'tools'; icon: string; label: string }> = [
+            { key: 'lab',        icon: 'notebook',  label: s.notebookLabel || t('notebook', lang) },
+            { key: 'workspace',  icon: 'workspace', label: roleLabel },
+            { key: 'materials',  icon: 'folder',    label: t('materials', lang) },
+            { key: 'tools',      icon: 'tool',      label: t('tools', lang) },
+        ];
+        for (const tab of tabs) {
+            const active = this.activePanel === tab.key;
+            const btn = tabsWrap.createEl('button');
+            Object.assign(btn.style, {
+                display: 'flex', alignItems: 'center', gap: '7px',
+                height: '34px', padding: '0 14px', border: '0', borderRadius: '10px',
+                background: active ? 'var(--sch-accent-soft)' : 'transparent',
+                color: active ? 'var(--sch-accent-ink)' : 'var(--sch-mute)',
+                fontWeight: '600', fontSize: '13.5px', cursor: 'pointer',
+                fontFamily: 'inherit', whiteSpace: 'nowrap', transition: 'all .15s ease',
+            });
+            btn.appendChild(iconSvg(tab.icon, { size: 16 }));
+            btn.appendChild(document.createTextNode(tab.label));
+            btn.addEventListener('click', () => this.switchTab(tab.key));
+        }
+
+        const actions = bar.createDiv({ cls: 'sch-brandbar-actions' });
+        Object.assign(actions.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+            gap: '8px', marginLeft: 'auto', flex: '0 1 auto', minWidth: '0', flexWrap: 'wrap',
+        });
+
+        // clock chip (keep id so updateClock() keeps working)
+        const clock = actions.createSpan({ cls: 'scholarium-clock' });
+        clock.id = 'scholarium-clock';
+        Object.assign(clock.style, {
+            fontFamily: 'var(--sch-font-mono)', fontSize: '12.5px',
+            color: 'var(--sch-mute)', whiteSpace: 'nowrap',
+        });
+        this.updateClock();
+
+        // search → Obsidian command palette
+        const searchBtn = this.brandIconButton(actions, 'search', t('search', lang));
+        searchBtn.addEventListener('click', () => {
+            const cmd = (this.app as unknown as { commands?: { executeCommandById?: (id: string) => void } }).commands;
+            cmd?.executeCommandById?.('command-palette:open');
+        });
+
+        // AI assistant
+        const aiBtn = this.brandIconButton(actions, 'sparkle', t('ai', lang));
+        aiBtn.addEventListener('click', () => new AIChatModal(this.app, this.plugin).open());
+
+        // settings
+        const setBtn = this.brandIconButton(actions, 'settings', t('settings', lang));
+        setBtn.addEventListener('click', () => {
+            const setting = (this.app as unknown as { setting?: { open?: () => void; openTabById?: (id: string) => void } }).setting;
+            if (setting?.open) { setting.open(); setting.openTabById?.('scholarium'); }
+        });
+
+        // avatar (initial)
+        const initial = (s.pluginDisplayName || 'S').replace(/[^\p{L}\p{N}]/gu, '').charAt(0).toUpperCase() || 'S';
+        makeAvatar(actions, initial, { size: 30 });
     }
 
     // ───── 统计 ─────
@@ -314,7 +366,8 @@ export class DashboardView extends ItemView {
 
     getFilteredExperiments(): ExperimentNote[] {
         let filtered = this.allExperiments;
-        if (this.filterStatus !== 'all') filtered = filtered.filter(e => e.status === this.filterStatus);
+        if (this.filterStatus === 'study') filtered = filtered.filter(e => e.noteType === 'research-learning');
+        else if (this.filterStatus !== 'all') filtered = filtered.filter(e => e.noteType === 'experiment' && e.status === this.filterStatus);
         if (this.filterText.trim()) {
             const q = this.filterText.trim().toLowerCase();
             filtered = filtered.filter(e =>
@@ -333,22 +386,22 @@ export class DashboardView extends ItemView {
 
         const header = panel.createDiv({ cls: 'exp-board-header' });
         const titleWrap = header.createDiv();
-        titleWrap.createEl('h2', { text: '实验记录看板', cls: 'detail-title exp-board-title' });
+        titleWrap.createEl('h2', { text: '研究记录看板', cls: 'detail-title exp-board-title' });
         titleWrap.createEl('div', {
-            text: experiments.length ? `共 ${experiments.length} 条记录，卡片内可滚动浏览。` : '还没有符合条件的实验记录。',
+            text: experiments.length ? `共 ${experiments.length} 条记录，包含实验与研究学习笔记。` : '还没有符合条件的记录。',
             cls: 'exp-board-subtitle',
         });
 
         const tools = header.createDiv({ cls: 'exp-board-tools' });
         tools.createEl('button', { text: '＋ 新建实验', cls: 'scholarium-btn primary' })
             .onclick = () => this.createNewExperiment();
-        tools.createEl('button', { text: 'AI 助手', cls: 'scholarium-btn ai-btn' })
+        tools.createEl('button', { text: 'AI 整理 / 新建', cls: 'scholarium-btn ai-btn' })
             .onclick = () => new AIChatModal(this.app, this.plugin).open();
 
         if (!experiments.length) {
             const empty = panel.createDiv({ cls: 'exp-board-empty' });
-            empty.createEl('div', { text: '暂无实验记录', cls: 'exp-board-empty-title' });
-            empty.createEl('div', { text: '可以新建一条实验，或调整左侧筛选条件。', cls: 'exp-board-empty-text' });
+            empty.createEl('div', { text: '暂无研究记录', cls: 'exp-board-empty-title' });
+            empty.createEl('div', { text: '可以新建实验，或使用 AI 整理研究学习笔记。', cls: 'exp-board-empty-text' });
             return;
         }
 
@@ -356,11 +409,12 @@ export class DashboardView extends ItemView {
         this.renderBoardStat(stats, '全部记录', String(experiments.length));
         this.renderBoardStat(stats, '已完成', String(experiments.filter(e => e.status === 'completed').length));
         this.renderBoardStat(stats, '进行中', String(experiments.filter(e => e.status === 'in-progress').length));
-        this.renderBoardStat(stats, '计划中', String(experiments.filter(e => e.status === 'planned').length));
+        this.renderBoardStat(stats, '研究学习', String(experiments.filter(e => e.noteType === 'research-learning').length));
 
         const grid = panel.createDiv({ cls: 'exp-card-dashboard' });
         for (const exp of experiments) {
-            const card = grid.createDiv({ cls: 'exp-note-card' });
+            const cardStatus = exp.noteType === 'research-learning' ? 'study' : exp.status;
+            const card = grid.createDiv({ cls: `exp-note-card status-${cardStatus}` });
             if (exp.bookmarked) card.addClass('is-bookmarked');
             await this.renderExperimentCard(card, exp);
         }
@@ -376,7 +430,10 @@ export class DashboardView extends ItemView {
         card.empty();
 
         const top = card.createDiv({ cls: 'exp-note-card-top' });
-        top.createEl('span', { text: this.statusLabel(exp.status), cls: `status-badge status-${exp.status}` });
+        top.createEl('span', {
+            text: exp.noteType === 'research-learning' ? '研究学习' : this.statusLabel(exp.status),
+            cls: `status-badge status-${exp.noteType === 'research-learning' ? 'study' : exp.status}`
+        });
         top.createEl('span', { text: exp.date, cls: 'exp-note-card-date' });
 
         const body = card.createDiv({ cls: 'exp-note-card-scroll' });
@@ -388,7 +445,17 @@ export class DashboardView extends ItemView {
         if (exp.bookmarked) meta.createEl('span', { text: '收藏' });
 
         let noteBody = '';
-        try { noteBody = await this.app.vault.read(exp.file); } catch { /* ignore */ }
+        try { noteBody = await this.app.vault.read(exp.file); } catch (error) { console.warn('[Scholarium] Unable to read experiment preview:', exp.file.path, error); }
+
+        if (exp.noteType === 'research-learning') {
+            const content = this.stripFrontmatterAndTitle(noteBody);
+            if (content) {
+                const sec = body.createDiv({ cls: 'exp-note-card-section' });
+                sec.createEl('h4', { text: '研究学习笔记' });
+                const div = sec.createDiv({ cls: 'exp-note-card-text' });
+                await MarkdownRenderer.render(this.app, content.slice(0, 700), div, exp.file.path, this);
+            }
+        }
 
         const images = this.extractMarkdownImages(noteBody).slice(0, 3);
         if (images.length) {
@@ -402,7 +469,7 @@ export class DashboardView extends ItemView {
             }
         }
 
-        const rawSmiles = exp.reaction_smiles || exp.smiles;
+        const rawSmiles = exp.noteType === 'experiment' ? (exp.reaction_smiles || exp.smiles) : '';
         const smilesStr = (rawSmiles || '').replace(/^["']|["']$/g, '').trim();
         if (smilesStr && smilesStr !== '""') {
             const sec = body.createDiv({ cls: 'exp-note-card-section' });
@@ -410,7 +477,7 @@ export class DashboardView extends ItemView {
             sec.createEl('code', { text: smilesStr, cls: 'smiles-text' });
         }
 
-        if (exp.reagents?.length) {
+        if (exp.noteType === 'experiment' && exp.reagents?.length) {
             const sec = body.createDiv({ cls: 'exp-note-card-section' });
             sec.createEl('h4', { text: '试剂与原料' });
             const ul = sec.createEl('ul', { cls: 'reagent-list' });
@@ -418,14 +485,16 @@ export class DashboardView extends ItemView {
         }
 
         const resultsStr = (exp.results || '').replace(/^["']|["']$/g, '').trim();
-        if (resultsStr) {
+        if (exp.noteType === 'experiment' && resultsStr) {
             const sec = body.createDiv({ cls: 'exp-note-card-section' });
             sec.createEl('h4', { text: '实验结果' });
             sec.createEl('p', { text: resultsStr, cls: 'results-text' });
         }
 
         const sections = this.extractNoteSections(noteBody);
-        for (const heading of ['实验目的', '目的', '实验步骤', '步骤', '观察与现象', '下一步计划', '注意事项', '备注', '参考文献']) {
+        for (const heading of exp.noteType === 'research-learning'
+            ? ['摘要', '核心概念', '方法理解', '关键结论', '问题与思考', '参考文献']
+            : ['实验目的', '目的', '实验步骤', '步骤', '观察与现象', '下一步计划', '注意事项', '备注', '参考文献']) {
             const content = sections.get(heading);
             if (!content || content.length < 2) continue;
             const sec = body.createDiv({ cls: 'exp-note-card-section' });
@@ -485,6 +554,13 @@ export class DashboardView extends ItemView {
             .replace(/\n/g, '<br>');
     }
 
+    private stripFrontmatterAndTitle(content: string): string {
+        return content
+            .replace(/^---[\s\S]*?---\s*/m, '')
+            .replace(/^#\s+.+?\n+/m, '')
+            .trim();
+    }
+
     groupByDate(exps: ExperimentNote[]): Map<string, ExperimentNote[]> {
         const map = new Map<string, ExperimentNote[]>();
         for (const e of exps) { if (!map.has(e.date)) map.set(e.date, []); map.get(e.date)!.push(e); }
@@ -498,11 +574,12 @@ export class DashboardView extends ItemView {
     }
 
     renderExpListItem(container: HTMLElement, exp: ExperimentNote) {
-        const item = container.createDiv({ cls: 'exp-item' });
+        const itemStatus = exp.noteType === 'research-learning' ? 'study' : exp.status;
+        const item = container.createDiv({ cls: `exp-item status-${itemStatus}` });
         if (this.selectedExperiment?.file.path === exp.file.path) item.addClass('selected');
 
         const icons: Record<string, string> = { completed: '✅', 'in-progress': '🔄', planned: '📋', failed: '❌' };
-        item.createEl('span', { text: icons[exp.status] ?? '🔬', cls: 'exp-status-icon' });
+        item.createEl('span', { text: exp.noteType === 'research-learning' ? '📚' : (icons[exp.status] ?? '🔬'), cls: 'exp-status-icon' });
 
         const info = item.createDiv({ cls: 'exp-item-info' });
         // 标题前显示收藏星
@@ -608,33 +685,41 @@ export class DashboardView extends ItemView {
         btnGroup.createEl('button', { text: '✏️ 打开笔记', cls: 'scholarium-btn' })
             .onclick = () => this.app.workspace.getLeaf(false).openFile(exp.file);
 
-        // Excalidraw 绘图
-        const drawBtn = btnGroup.createEl('button', { text: '📐 绘图', cls: 'scholarium-btn' });
-        drawBtn.onclick = () => this.openExcalidraw(exp);
-
-        // ✏️ 内联编辑
-        btnGroup.createEl('button', { text: '✏️ 编辑', cls: 'scholarium-btn' })
-            .onclick = () => this.showDetailEdit(panel, exp);
+        if (exp.noteType === 'experiment') {
+            const drawBtn = btnGroup.createEl('button', { text: '📐 绘图', cls: 'scholarium-btn' });
+            drawBtn.onclick = () => this.openExcalidraw(exp);
+            btnGroup.createEl('button', { text: '✏️ 编辑', cls: 'scholarium-btn' })
+                .onclick = () => this.showDetailEdit(panel, exp);
+        }
 
         // AI 修改（携带笔记内容作为上下文）
         const aiBtn = btnGroup.createEl('button', { text: '🤖 AI 修改', cls: 'scholarium-btn ai-btn' });
         aiBtn.onclick = async () => {
             let nc = '';
-            try { nc = await this.app.vault.read(exp.file); } catch { /* ignore */ }
+            try { nc = await this.app.vault.read(exp.file); } catch (error) { console.warn('[Scholarium] Unable to read experiment content:', exp.file.path, error); }
             new AIChatModal(this.app, this.plugin, exp.file, nc).open();
         };
 
         // —— 状态（可点击改状态）+ 日期 ——
         const meta = panel.createDiv({ cls: 'detail-meta' });
-        this.renderStatusPicker(meta, exp, panel);
-        meta.createEl('span', { text: `📅 实验日期：${exp.date}`, cls: 'date-tag' });
+        if (exp.noteType === 'experiment') this.renderStatusPicker(meta, exp, panel);
+        else meta.createEl('span', { text: '📚 研究学习笔记', cls: 'status-badge status-study' });
+        meta.createEl('span', { text: `📅 ${exp.noteType === 'experiment' ? '实验日期' : '记录日期'}：${exp.date}`, cls: 'date-tag' });
 
         // ── 读取笔记正文（一次读取，共享内容）──
         let noteBody = '';
-        try { noteBody = await this.app.vault.read(exp.file); } catch { /* ignore */ }
+        try { noteBody = await this.app.vault.read(exp.file); } catch (error) { console.warn('[Scholarium] Unable to read experiment detail:', exp.file.path, error); }
 
         // —— 1. 实验图片（最优先，放顶部）——
         await this.renderImages(panel, noteBody);
+
+        if (exp.noteType === 'research-learning') {
+            const sec = panel.createDiv({ cls: 'detail-section' });
+            sec.createEl('h4', { text: '📚 整理后的学习笔记', cls: 'section-title' });
+            const text = sec.createDiv({ cls: 'exp-note-card-text' });
+            await MarkdownRenderer.render(this.app, this.stripFrontmatterAndTitle(noteBody), text, exp.file.path, this);
+            return;
+        }
 
         // —— 2. 化学结构（reaction_smiles 优先，smiles 兜底）——
         const rawSmiles = exp.reaction_smiles || exp.smiles;
@@ -1149,7 +1234,7 @@ export class DashboardView extends ItemView {
         panel.empty();
 
         let noteContent = '';
-        try { noteContent = await this.app.vault.read(exp.file); } catch { /* ignore */ }
+        try { noteContent = await this.app.vault.read(exp.file); } catch (error) { console.warn('[Scholarium] Unable to read experiment note:', exp.file.path, error); }
 
         // 提取正文各章节
         const bodyMatch = noteContent.match(/^---[\s\S]*?---\s*([\s\S]*)$/);
@@ -1325,7 +1410,9 @@ export class DashboardView extends ItemView {
             if (!this.app.vault.getAbstractFileByPath(folder)) {
                 await this.app.vault.createFolder(folder);
             }
-        } catch { /* ignore */ }
+        } catch (error) {
+            console.warn('[Scholarium] Unable to ensure experiment folder:', folder, error);
+        }
         const baseName = `${today}-实验记录`;
         let path = `${folder}/${baseName}.md`;
         let i = 1;
@@ -1367,8 +1454,13 @@ results: ""
         const results: ExperimentNote[] = [];
         for (const file of this.app.vault.getMarkdownFiles()) {
             try {
-                const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-                if (fm?.type === 'experiment') {
+                let fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+                if (!fm) {
+                    const content = await this.app.vault.cachedRead(file);
+                    const info = getFrontMatterInfo(content);
+                    fm = info.exists ? parseYaml(info.frontmatter) : undefined;
+                }
+                if (fm?.type === 'experiment' || fm?.type === 'research-learning') {
                     // 日期优先级：frontmatter.date > 文件名中的日期 > ctime（创建时间，不是修改时间）
                     const filenameDate = file.basename.match(/(\d{4}-\d{2}-\d{2})/)?.[1] ?? '';
                     const fallbackDate = filenameDate || (new Date(file.stat.ctime).toISOString().split('T')[0] ?? '');
@@ -1376,6 +1468,7 @@ results: ""
 
                     results.push({
                         file,
+                        noteType: fm.type === 'research-learning' ? 'research-learning' : 'experiment',
                         title: (fm.title as string | undefined) ?? file.basename,
                         date,
                         status: (fm.status as string | undefined) ?? 'in-progress',
@@ -1387,7 +1480,9 @@ results: ""
                         excalidraw: (fm.excalidraw as string | undefined) ?? '',
                     });
                 }
-            } catch { /* skip */ }
+            } catch (error) {
+                console.warn('[Scholarium] Skipping unreadable experiment metadata:', file.path, error);
+            }
         }
         results.sort((a, b) => {
             // 收藏的永远排最前
@@ -1418,13 +1513,16 @@ results: ""
         try {
             let lat = this.plugin.settings.latitude, lon = this.plugin.settings.longitude, city = this.plugin.settings.cityName;
             if (!lat || !lon) {
-                const g = await (await fetch('https://ipapi.co/json/')).json() as { latitude: number; longitude: number; city: string };
+                const g = await (await fetchWithTimeout('https://ipapi.co/json/')).json() as { latitude: number; longitude: number; city: string };
                 lat = g.latitude; lon = g.longitude; city = g.city ?? '';
             }
-            const d = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`)).json() as { current: { temperature_2m: number; weather_code: number } };
+            const d = await (await fetchWithTimeout(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`)).json() as { current: { temperature_2m: number; weather_code: number } };
             const c = d.current;
             el.setText(`${this.weatherIcon(c.weather_code)} ${Math.round(c.temperature_2m)}°C ${this.weatherDesc(c.weather_code)}${city ? ' · ' + city : ''}`);
-        } catch { el.setText('🌡 天气暂不可用'); }
+        } catch (error) {
+            console.warn('[Scholarium] Weather request failed:', error);
+            el.setText('🌡 天气暂不可用');
+        }
     }
 
     weatherIcon(c: number) {

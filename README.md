@@ -1,190 +1,213 @@
-# Scholarium — Obsidian Plugin
+# Scholarium
 
-*Scholarium* (from Latin *scholaris*, "of scholars") is your all-in-one research workspace inside Obsidian.
+Scholarium is an Obsidian plugin for building a local-first research workspace. It combines an electronic lab notebook, AI-assisted experiment writing, a productivity dashboard, a material library, and an academic tool library inside the vault you already use.
 
-Most researchers juggle a dozen disconnected tools — a spreadsheet for experiments, a reference manager for literature, a notes app for tasks, a cloud drive for files. **Scholarium brings it all into one place**, built on top of the vault you already use and the plain Markdown files you already own.
+Your notes stay as Markdown. Your files stay in your Obsidian vault. External AI and cloud services are optional and configured by you.
 
-At its core is a structured **electronic lab notebook** that lets you capture, search, and review every experiment you run. Layer on an **AI writing assistant** that turns rough spoken notes into formatted records in seconds. Open the **research canvas** to drag your literature notes onto a spatial map and draw the connections that matter. Store protocols, images, and PDFs in the **material library**, synced to whatever cloud storage you use. And when you need to manage the rest of your research life — focus sessions, tasks, habits, submissions — the built-in **productivity workspace** has a module for each.
+## What Scholarium Can Do
 
-Scholarium adapts to where you are in your career. Choose a preset for undergraduate, master's, PhD, or faculty work, or rename every label to suit your own discipline and workflow. Nothing is locked to chemistry, biology, or any single field.
+### Experiment Records
 
-Your notes stay in plain Markdown. Your files stay in your vault. No subscription, no server, no lock-in.
+- Create structured experiment notes as Markdown files.
+- Track experiment status: planned, in progress, completed, or failed.
+- Store metadata such as date, reagents, results, SMILES, and linked drawing files.
+- Search experiments by title, reagent, result, or note content.
+- Browse experiments in a dashboard with list and detail views.
+- Open and edit records directly from the Scholarium panel.
 
-> 📖 **中文简介** 见下方 / Chinese documentation below.
+### AI Experiment Assistant
 
----
+- Turn natural-language experiment descriptions into structured records.
+- Generate fields such as title, date, status, reagents, steps, results, notes, and SMILES.
+- Customize the system prompt used for experiment writing.
+- Use Claude, OpenAI, Kimi, DeepSeek, MiniMax, or a custom OpenAI-compatible endpoint.
+- Send requests directly from your device to the selected provider.
 
-## Features
+### Image-to-Experiment Workflow
 
-### 📋 Experiment Records
-- Create and manage lab notes stored as standard Markdown files
-- Rich frontmatter: date, status, reagents, results, SMILES structures, Excalidraw drawings
-- Status labels: Completed ✅ · In Progress 🔄 · Planned 📋 · Failed ❌
-- Quick delete with confirmation directly from the list view
-- Bookmarking, full-text search, and date-group filtering
-- Inline editing without leaving the dashboard
+- Use OCR-assisted image import for handwritten or screenshot-based experiment notes.
+- Extract text from images with MinerU.
+- Rewrite OCR output into a cleaner experiment record with the configured writing model.
+- Keep the workflow inside Obsidian without copying text between apps.
 
-### 🤖 AI Assistant
-- Describe your experiment in natural language — the AI fills in the full record
-- Structured output with title, date, reagents, steps, results, and SMILES
-- Supports Claude (Anthropic), OpenAI, Kimi, DeepSeek, MiniMax, and custom OpenAI-compatible endpoints
-- Fully configurable system prompt; all API calls go directly from your device
+### Productivity Workspace
 
-### 🗺️ Research Canvas
-- Drag-and-drop canvas for literature notes
-- Auto-generates connection arrows from frontmatter relationships
-- Manual connections: draw, label, and delete lines between any two cards
-- Colour-coded zone system — create named regions to classify cards
-- Pan and zoom with mouse or trackpad
+Scholarium includes a role-aware research workspace for daily planning and self-management.
 
-### 🗂️ Material Library
-- Centralised storage for PDFs, images, protocols, and data files
-- Category sidebar, search, grid/list view toggle
-- Cloud sync via WebDAV (Jianguoyun, Nextcloud, OneDrive) or S3-compatible storage (Aliyun OSS, Tencent COS, Qiniu)
+- Role presets for undergraduate, master, PhD, advisor, or custom workflows.
+- Daily overview for tasks, focus time, mood, meals, phone usage, and submissions.
+- Focus sessions and task tracking.
+- Habit logs, check-ins, and personal notes.
+- Submission and project tracking for longer research cycles.
 
-### 📊 Productivity Workspace
-A complete personal workspace that adapts to your role:
+### Material Library
 
-| Role | Preset |
-|---|---|
-| Undergraduate | 🎓 Undergraduate Workspace |
-| Master's | 📖 Master's Workspace |
-| PhD | 🔬 PhD Workspace |
-| Advisor / Faculty | 🏛️ Advisor Workspace |
+- Store frequently used research files inside the vault.
+- Manage PDFs, images, spreadsheets, protocols, archives, and other files.
+- Organize files by custom categories.
+- Search by file name or category.
+- Preview images and open vault files from the library.
+- Optional cloud sync through WebDAV or S3-compatible storage.
 
-Included modules: Focus timer · Task manager · Daily schedule · Habit tracker · Mood journal · Food diary · Phone screen-time log · Submission tracker · Data dashboard
+### Academic Tool Library
 
-### 🎨 Theme Customisation
-- Eight built-in colour presets (orange-red, academic blue, green, lavender, cyan, rose, plus 囍樂咖 / 囍樂青 from the public 囍樂 design system)
-- Custom accent colour, gradient end colour, and background transparency via colour pickers
-- Live preview in settings; changes apply instantly without restarting Obsidian
-- **囍樂 Joyful Layer** — every panel (experiment list, AI dialog, canvas, library, productivity workspace) shares unified rounded cards, soft shadows, refined scrollbars, and a Weekly (WK) dashboard widget on the overview page
+The academic tool library is a shortcut hub for research websites, software, and databases.
 
----
+- Add custom tool cards manually.
+- Set a tool name, URL, icon, category, and description.
+- Browse tools by grouped categories.
+- Use a left-side category navigation panel to jump between sections.
+- Open external links directly from Obsidian.
+- Customize category colors in the plugin settings.
+- Includes a curated starter set of tools for literature search, reference management, AI assistants, formulas, slides, data analysis, plotting, databases, and computational chemistry.
+
+### Theme and Personalization
+
+- Rename the plugin display name, notebook label, and workspace label.
+- Choose role-based presets or set custom labels.
+- Adjust interface font size.
+- Pick accent colors, gradient colors, and background transparency.
+- Customize academic tool category colors.
 
 ## Installation
 
-### From the Community Plugin Store *(coming soon)*
-1. Open Obsidian → **Settings → Community plugins → Browse**
-2. Search for **Scholarium**
-3. Click **Install**, then **Enable**
-
 ### Manual Installation
-1. Download `main.js`, `styles.css`, and `manifest.json` from the [latest release](../../releases/latest)
-2. Copy the three files into `<your vault>/.obsidian/plugins/scholarium/`
-3. Reload Obsidian and enable the plugin in **Settings → Community plugins**
 
----
+1. Download `manifest.json`, `main.js`, and `styles.css` from the latest release.
+2. Create this folder in your vault:
 
-## Getting Started
+```text
+<your-vault>/.obsidian/plugins/scholarium/
+```
 
-1. Click the **🧪** icon in the left ribbon to open the dashboard
-2. Press **＋ New Record** to create your first experiment note
-3. Or click **🤖 AI Assistant** and describe your experiment in plain language
+3. Copy the three files into that folder.
+4. Reload Obsidian.
+5. Enable **Scholarium** in **Settings -> Community plugins**.
 
-### AI Setup
-Go to **Settings → Scholarium → AI Assistant** and choose a provider:
+### From Source
 
-| Provider | Recommended Model |
-|---|---|
-| Claude (Anthropic) | `claude-sonnet-4-6` |
-| OpenAI | `gpt-4o` |
-| DeepSeek | `deepseek-chat` |
-| Kimi (Moonshot) | `moonshot-v1-32k` |
-| Custom | Any OpenAI-compatible endpoint |
+```bash
+npm install
+npm run build
+```
 
-Your API key is stored locally in Obsidian's data file and never sent to any third-party server.
+The production build writes `main.js` to the plugin root.
 
-### Cloud Sync Setup
-Go to **Settings → Scholarium → Cloud Sync**, choose WebDAV or S3, and enter your credentials. Click **Test Connection** to verify before saving.
+## Basic Setup
 
----
-
-## Plugin Customisation
-
-The plugin display name, notebook tab label, and workspace tab label are all configurable under **Settings → Scholarium → Personalisation**. The plugin works for any research discipline — not just chemistry or biology.
-
----
-
-## Requirements
-
-- Obsidian **0.15.0** or later
-- Desktop or mobile (no desktop-only APIs used)
-- An API key is required to use the AI assistant feature
-
----
+1. Open the Scholarium dashboard from the ribbon icon or command palette.
+2. Set your experiment note folder in **Settings -> Scholarium -> Basic settings**.
+3. Optional: configure an AI provider in **Settings -> Scholarium -> AI experiment assistant**.
+4. Optional: configure MinerU and a writing model for image-to-experiment workflows.
+5. Optional: configure WebDAV or S3 if you want material library sync.
 
 ## Privacy
 
-- All experiment notes are standard `.md` files stored inside your vault
-- AI requests are made directly from your device to the chosen provider — no proxy server
-- Cloud sync credentials are stored locally in `data.json` inside your vault
+- Experiment notes are stored as local Markdown files in your vault.
+- Material library files are stored in your vault.
+- AI API keys and sync credentials are stored in the plugin data file inside your vault.
+- AI requests are sent directly from your device to the provider you configure.
+- Scholarium does not include hidden telemetry.
 
----
+## Requirements
 
-## Contributing
+- Obsidian 0.15.0 or later.
+- Node.js is only required if building from source.
+- AI features require your own provider API key.
+- Cloud sync requires your own WebDAV or S3-compatible account.
 
-Issues and pull requests are welcome. Please open an issue before submitting large changes.
+## Release Assets
 
----
+Each release should include:
+
+- `manifest.json`
+- `main.js`
+- `styles.css`
 
 ## License
 
-[MIT](LICENSE)
+MIT. See [LICENSE](LICENSE).
 
 ---
----
 
-# 中文文档 · Scholarium
+# Scholarium 中文说明
 
-**Scholarium**（拉丁语"学者之所"）是一款运行于 [Obsidian](https://obsidian.md) 的全能科研工作台。
+Scholarium 是一款面向科研工作流的 Obsidian 插件。它把实验记录、AI 实验助手、个人工作台、素材库和科研工具库整合到一个本地优先的研究空间中。
 
-大多数研究者需要在十几个工具之间来回切换——表格记实验、文献管理器整理论文、任务软件管进度、网盘存文件。Scholarium 把这一切整合进你已经在用的 Obsidian vault，所有数据以标准 Markdown 存储，完全属于你自己。
+你的笔记仍然是 Markdown，你的文件仍然保存在 Obsidian 库中。AI 和云同步都是可选功能，由你自己配置。
 
-核心是一本结构化的**电子实验记录本**，配以 **AI 写作助手**（口述即可生成规范记录）、可拖拽连线的**研究画布**、带云同步的**素材库**，以及涵盖专注计时、任务管理、习惯打卡、投稿跟踪的**个人工作台**。支持本科 / 硕士 / 博士 / 导师四种角色预设，不限专业，标签完全可自定义。
+## 主要功能
 
-本地存储，无订阅，无服务器，数据永远在你手里。
+### 实验记录
 
-## 核心功能
+- 新建结构化实验笔记，并以 Markdown 文件保存。
+- 记录实验日期、状态、试剂、结果、SMILES 和关联绘图文件。
+- 支持计划中、进行中、已完成、未成功等状态。
+- 支持标题、试剂、结果和内容搜索。
+- 在仪表盘中查看实验列表和详情。
 
-### 📋 实验记录
-- 笔记以标准 Markdown 文件存储，支持日期、状态、试剂、结果、SMILES 结构式等 frontmatter 字段
-- 状态快速切换：已完成 / 进行中 / 计划中 / 未成功
-- 列表悬停即可删除，带二次确认弹窗防止误操作
-- 支持收藏、全文搜索、按日期分组展示、内联编辑
+### AI 实验助手
 
-### 🤖 AI 实验助手
-- 口述实验内容，AI 自动整理为规范记录格式（标题、日期、试剂、步骤、结果、SMILES）
-- 支持 Claude、OpenAI、Kimi、DeepSeek、MiniMax 及自定义 OpenAI 兼容接口
-- 系统提示词完全可自定义；API 请求从本地直接发出，不经过任何中间服务器
+- 用自然语言描述实验，AI 自动整理成规范实验记录。
+- 可生成标题、日期、状态、试剂、步骤、结果、备注和 SMILES。
+- 支持自定义系统提示词。
+- 支持 Claude、OpenAI、Kimi、DeepSeek、MiniMax 和自定义 OpenAI 兼容接口。
+- 请求直接从本地设备发往你选择的服务商。
 
-### 🗺️ 研究画布
-- 可拖拽的文献卡片画布，自动生成 frontmatter 关联箭头
-- 支持手动连线、连线标注、悬停删除连线
-- 自定义分区（命名区域 + 七色配色），卡片拖入自动归类
-- 支持鼠标缩放与平移
+### 图片识别生成实验记录
 
-### 🗂️ 素材库
-- 集中管理实验图片、PDF、协议文件等素材
-- 支持 WebDAV（坚果云、Nextcloud、OneDrive）和 S3 兼容云存储（阿里云 OSS、腾讯 COS、七牛云）同步
+- 支持从图片、截图或手写记录中提取实验文本。
+- 使用 MinerU 进行 OCR。
+- 使用配置的 AI 重写模型整理为实验记录。
 
-### 📊 工作台
-涵盖专注计时、任务管理、起居考勤、习惯打卡、情绪日志、投稿管理、数据看板等模块，支持本科 / 硕士 / 博士 / 导师四种角色预设，所有显示标签均可自定义。
+### 科研工作台
 
-### 🎨 主题配色
-六套预设配色（橙红、学术蓝、翠绿、薰衣草、青色、玫瑰粉），支持主色调、渐变色及背景透明度自定义，修改后即时生效。
+- 支持本科、硕士、博士、导师和自定义角色预设。
+- 包含任务、专注、习惯、情绪、饮食、手机使用、投稿等模块。
+- 适合做每日科研计划和长期项目追踪。
+
+### 素材库
+
+- 管理 PDF、图片、表格、协议文件和压缩包等科研素材。
+- 支持分类、搜索、图片预览和文件打开。
+- 可选 WebDAV 或 S3 兼容云同步。
+
+### 科研库
+
+- 保存常用科研网站、软件、数据库和辅助工具。
+- 每个工具可以设置名称、网址、图标、分类和介绍。
+- 按分类分组展示，并通过左侧分类导航快速跳转。
+- 点击卡片即可打开外部链接。
+- 支持在设置中自定义每个分类的颜色。
+- 内置一批常用科研工具，覆盖文献获取、文献管理、论文写作、翻译润色、AI 助手、公式工具、PPT 展示、数据分析、绘图制图、数据库和计算化学。
+
+### 外观与个性化
+
+- 可修改插件显示名称、笔记标签和工作台标签。
+- 可调整界面字号。
+- 可设置主题主色、渐变色和背景透明度。
+- 可为科研库分类单独设置颜色。
 
 ## 安装方式
 
-### 社区插件市场（即将上线）
-设置 → 社区插件 → 浏览，搜索 **Scholarium**，安装并启用。
+1. 从最新 release 下载 `manifest.json`、`main.js`、`styles.css`。
+2. 放入：
 
-### 手动安装
-1. 从 [Releases 页面](../../releases/latest) 下载 `main.js`、`styles.css`、`manifest.json`
-2. 复制到 `<库路径>/.obsidian/plugins/scholarium/`
-3. 在 Obsidian 中重载并启用插件
+```text
+<你的库>/.obsidian/plugins/scholarium/
+```
+
+3. 重载 Obsidian。
+4. 在 **设置 -> 社区插件** 中启用 Scholarium。
 
 ## 隐私说明
-- 所有笔记存储在本地 vault 中，格式为标准 `.md` 文件
-- AI 请求从本地设备直接发至所选服务商，不经过任何中间服务器
-- 云同步凭据仅保存在本地 `data.json` 中
+
+- 实验笔记以 Markdown 保存在本地 vault。
+- 素材文件保存在本地 vault。
+- API Key 和同步凭据保存在插件本地数据中。
+- AI 请求直接从你的设备发往你配置的服务商。
+- 插件不包含隐藏遥测。
+
+## 许可证
+
+MIT。详见 [LICENSE](LICENSE)。
