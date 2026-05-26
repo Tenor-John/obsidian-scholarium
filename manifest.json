@@ -1,10 +1,8 @@
 {
 	"id": "scholarium",
 	"name": "Scholarium",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"minAppVersion": "0.15.0",
 	"description": "An all-in-one scholarly workspace with AI-assisted writing, literature management, notes, and productivity tools.",
-	"author": "Tao Jiang",
-	"authorUrl": "https://github.com/Tenor-John",
 	"isDesktopOnly": false
 }

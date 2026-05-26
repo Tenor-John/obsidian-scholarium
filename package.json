@@ -1,6 +1,6 @@
 {
 	"name": "scholarium",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"description": "A scholarly electronic lab notebook plugin for Obsidian",
 	"main": "main.js",
 	"type": "module",

@@ -1,6 +1,7 @@
 import { App, Notice, TFile, TFolder } from 'obsidian';
 import ChemELNPlugin from './main';
 import type { ChemELNSettings } from './settings';
+import { fetchWithTimeout, requestUrlWithTimeout } from './utils/network';
 
 export type CloudProviderType = 'none' | 'webdav' | 's3';
 
@@ -45,14 +46,13 @@ class WebDAVProvider {
 
     async testConnection(): Promise<{ ok: boolean; message: string }> {
         try {
-            const response = await fetch(this.buildUrl(''), {
+            const response = await this.requestWebDav('', {
                 method: 'PROPFIND',
                 headers: {
-                    ...this.authHeader(),
                     'Depth': '0'
                 }
             });
-            if (response.ok || response.status === 207) {
+            if (this.isOk(response.status)) {
                 return { ok: true, message: '✅ 连接成功' };
             }
             return { ok: false, message: `❌ 服务器返回 ${response.status}` };
@@ -64,12 +64,11 @@ class WebDAVProvider {
     async ensureDir(remotePath: string): Promise<void> {
         const dirPath = remotePath.endsWith('/') ? remotePath : remotePath + '/';
         try {
-            const response = await fetch(this.buildUrl(dirPath), {
-                method: 'MKCOL',
-                headers: this.authHeader()
+            const response = await this.requestWebDav(dirPath, {
+                method: 'MKCOL'
             });
             // MKCOL 失败时（如目录已存在）忽略
-            if (!response.ok && response.status !== 405) {
+            if (!this.isOk(response.status) && response.status !== 405) {
                 console.warn('[WebDAV] MKCOL failed:', response.status);
             }
         } catch (e) {
@@ -78,63 +77,57 @@ class WebDAVProvider {
     }
 
     async upload(remotePath: string, data: ArrayBuffer, contentType = 'application/octet-stream'): Promise<void> {
-        const response = await fetch(this.buildUrl(remotePath), {
+        const response = await this.requestWebDav(remotePath, {
             method: 'PUT',
             headers: {
-                ...this.authHeader(),
                 'Content-Type': contentType
             },
             body: data
         });
-        if (!response.ok) {
-            throw new Error(`WebDAV upload failed: ${response.status} ${response.statusText}`);
+        if (!this.isOk(response.status)) {
+            throw new Error(`WebDAV upload failed: ${response.status}`);
         }
     }
 
     async download(remotePath: string): Promise<ArrayBuffer> {
-        const response = await fetch(this.buildUrl(remotePath), {
-            method: 'GET',
-            headers: this.authHeader()
+        const response = await this.requestWebDav(remotePath, {
+            method: 'GET'
         });
-        if (!response.ok) {
+        if (!this.isOk(response.status)) {
             throw new Error(`WebDAV download failed: ${response.status}`);
         }
-        return response.arrayBuffer();
+        return response.arrayBuffer;
     }
 
     async list(remoteDir: string): Promise<RemoteFileInfo[]> {
         const dirPath = remoteDir.endsWith('/') ? remoteDir : remoteDir + '/';
         try {
-            const response = await fetch(this.buildUrl(dirPath), {
+            const response = await this.requestWebDav(dirPath, {
                 method: 'PROPFIND',
                 headers: {
-                    ...this.authHeader(),
                     'Depth': '1'
                 }
             });
-            if (!response.ok && response.status !== 207) {
+            if (!this.isOk(response.status)) {
                 return [];
             }
-            const text = await response.text();
+            const text = response.text;
             const parser = new DOMParser();
             const doc = parser.parseFromString(text, 'application/xml');
             const results: RemoteFileInfo[] = [];
 
-            const responses = doc.querySelectorAll('response');
+            const responses = this.elementsByLocalName(doc, 'response');
             responses.forEach((resp, idx) => {
                 if (idx === 0) return; // 跳过父目录
-                const href = resp.querySelector('href')?.textContent ?? '';
-                const propstat = resp.querySelector('propstat');
-                if (!propstat) return;
-
-                const displayName = propstat.querySelector('displayname')?.textContent ?? '';
-                const contentLength = propstat.querySelector('getcontentlength')?.textContent ?? '0';
-                const lastModified = propstat.querySelector('getlastmodified')?.textContent ?? '';
+                const href = this.firstText(resp, 'href');
+                const displayName = this.firstText(resp, 'displayname') || decodeURIComponent(href.split('/').filter(Boolean).pop() ?? '');
+                const contentLength = this.firstText(resp, 'getcontentlength') || '0';
+                const lastModified = this.firstText(resp, 'getlastmodified');
 
                 if (displayName && !href.endsWith('/')) {
                     results.push({
                         name: displayName,
-                        size: parseInt(contentLength, 10),
+                        size: parseInt(contentLength, 10) || 0,
                         modified: lastModified
                     });
                 }
@@ -147,26 +140,54 @@ class WebDAVProvider {
     }
 
     async delete(remotePath: string): Promise<void> {
-        const response = await fetch(this.buildUrl(remotePath), {
-            method: 'DELETE',
-            headers: this.authHeader()
+        const response = await this.requestWebDav(remotePath, {
+            method: 'DELETE'
         });
-        if (!response.ok) {
+        if (!this.isOk(response.status)) {
             throw new Error(`WebDAV delete failed: ${response.status}`);
         }
     }
 
+    private async requestWebDav(
+        remotePath: string,
+        options: { method: string; headers?: Record<string, string>; body?: ArrayBuffer | string }
+    ) {
+        return requestUrlWithTimeout({
+            url: this.buildUrl(remotePath),
+            method: options.method,
+            headers: {
+                ...this.authHeader(),
+                ...options.headers
+            },
+            body: options.body
+        });
+    }
+
+    private isOk(status: number): boolean {
+        return (status >= 200 && status < 300) || status === 207;
+    }
+
     private buildUrl(remotePath: string): string {
-        let base = this.cfg.webdavUrl;
-        if (!base.endsWith('/')) base += '/';
-        let path = this.cfg.webdavPath;
-        if (!path.endsWith('/')) path += '/';
-        return base + path + remotePath;
+        const base = this.cfg.webdavUrl.trim().replace(/\/+$/, '');
+        const path = this.cfg.webdavPath.trim().replace(/^\/+|\/+$/g, '');
+        const suffix = remotePath.replace(/^\/+/, '');
+        return [base, path, suffix]
+            .filter(Boolean)
+            .join('/')
+            .replace(/([^:]\/)\/+/g, '$1');
     }
 
     private authHeader(): Record<string, string> {
         const credentials = btoa(this.cfg.webdavUser + ':' + this.cfg.webdavPass);
         return { 'Authorization': `Basic ${credentials}` };
+    }
+
+    private firstText(root: Element, localName: string): string {
+        return this.elementsByLocalName(root, localName)[0]?.textContent ?? '';
+    }
+
+    private elementsByLocalName(root: ParentNode, localName: string): Element[] {
+        return Array.from(root.querySelectorAll('*')).filter((el) => el.localName === localName);
     }
 }
 
@@ -196,7 +217,7 @@ class S3Provider {
         };
         const signedHeaders = await this.signRequest(method, '/' + key, headers, data);
 
-        const response = await fetch(this.cfg.s3Endpoint + '/' + key, {
+        const response = await fetchWithTimeout(this.cfg.s3Endpoint + '/' + key, {
             method,
             headers: signedHeaders,
             body: data
@@ -214,7 +235,7 @@ class S3Provider {
         };
         const signedHeaders = await this.signRequest(method, '/' + key, headers, null);
 
-        const response = await fetch(this.cfg.s3Endpoint + '/' + key, {
+        const response = await fetchWithTimeout(this.cfg.s3Endpoint + '/' + key, {
             method,
             headers: signedHeaders
         });
@@ -234,7 +255,7 @@ class S3Provider {
             };
             const signedHeaders = await this.signRequest(method, path, headers, null);
 
-            const response = await fetch(this.cfg.s3Endpoint + path, {
+            const response = await fetchWithTimeout(this.cfg.s3Endpoint + path, {
                 method,
                 headers: signedHeaders
             });
@@ -275,7 +296,7 @@ class S3Provider {
         };
         const signedHeaders = await this.signRequest(method, '/' + key, headers, null);
 
-        const response = await fetch(this.cfg.s3Endpoint + '/' + key, {
+        const response = await fetchWithTimeout(this.cfg.s3Endpoint + '/' + key, {
             method,
             headers: signedHeaders
         });
@@ -475,9 +496,9 @@ export class CloudSyncManager {
     startAutoSync(): void {
         if (!this.cfg.autoSync || this.cfg.syncInterval <= 0) return;
 
-        this.syncTimer = window.setInterval(() => {
+        this.syncTimer = this.plugin.registerInterval(window.setInterval(() => {
             this.fullSync().catch(e => console.warn('[CloudSync] auto sync error:', e));
-        }, this.cfg.syncInterval * 60 * 1000);
+        }, this.cfg.syncInterval * 60 * 1000));
     }
 
     stopAutoSync(): void {

@@ -3,8 +3,13 @@ import ChemELNPlugin from './main';
 import type { CloudProviderType } from './cloud-sync';
 import { CloudSyncManager, buildSyncConfig } from './cloud-sync';
 import type { WritingProvider } from './vision-writer';
+import type { ThemeKey, AccentKey, DensityKey, Lang } from './theme/tokens';
 
 export type AIProvider = 'claude' | 'openai' | 'kimi' | 'deepseek' | 'minimax' | 'custom';
+
+// 重设计新增：列表视图样式与 AI 面板形态
+export type NotebookListView = 'cards' | 'table' | 'timeline';
+export type AIPanelForm = 'sidebar' | 'float' | 'fullscreen';
 
 // 工作台角色预设
 export type WorkspaceRole = 'undergraduate' | 'master' | 'phd' | 'advisor' | 'custom';
@@ -84,6 +89,14 @@ export interface ChemELNSettings {
     notebookLabel:      string;         // 实验记录/笔记栏标签（自定义时使用）
     workspaceTabLabel:  string;         // 工作台 Tab 自定义标签（仅 custom 模式）
     fontSize:           PluginFontSize; // 插件界面字号
+
+    // ─── 重设计：主题 / 密度 / 强调色 / 语言 ───
+    theme:            ThemeKey;          // 'light' | 'dark' | 'scholar'，默认 'scholar'
+    accent:           AccentKey;         // 'amber' | 'indigo' | 'emerald' | 'plum'
+    density:          DensityKey;        // 'compact' | 'regular' | 'spacious'
+    language:         Lang;              // 'zh' | 'en'
+    notebookListView: NotebookListView;  // 实验列表默认样式
+    aiPanelForm:      AIPanelForm;       // AI 面板形态
 }
 
 // 默认系统提示词（{{date}} 在运行时被替换为今日日期）
@@ -152,6 +165,13 @@ export const DEFAULT_SETTINGS: ChemELNSettings = {
     notebookLabel:      '实验记录',
     workspaceTabLabel:  '工作台',
     fontSize:           'medium',
+    // 重设计默认值（首次安装默认素雅主题）
+    theme:            'scholar',
+    accent:           'amber',
+    density:          'regular',
+    language:         'zh',
+    notebookListView: 'cards',
+    aiPanelForm:      'sidebar',
 };
 
 // 各服务商配置（端点、默认模型、Key 格式提示、文档链接）
@@ -795,8 +815,8 @@ export class ChemELNSettingTab extends PluginSettingTab {
             { label: '🟣 薰衣草',       accent: '#7B1FA2', gradient: '#4A148C', alpha: 0.10 },
             { label: '🩵 青色',         accent: '#00838F', gradient: '#006064', alpha: 0.10 },
             { label: '🌸 玫瑰粉',       accent: '#C2185B', gradient: '#880E4F', alpha: 0.10 },
-            { label: '🤎 岩棕（公开版）', accent: '#6B5B4D', gradient: '#3E342B', alpha: 0.10 },
-            { label: '💚 松石青（公开版）', accent: '#008080', gradient: '#005454', alpha: 0.10 },
+            { label: '🤎 岩棕', accent: '#6B5B4D', gradient: '#3E342B', alpha: 0.10 },
+            { label: '💚 松石青', accent: '#008080', gradient: '#005454', alpha: 0.10 },
         ];
 
         const presetWrap = containerEl.createDiv({ attr: { style: 'display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;' } });
@@ -816,6 +836,26 @@ export class ChemELNSettingTab extends PluginSettingTab {
             });
             btn.addEventListener('click', () => void applyPreset(p));
         }
+
+        // ── ➕ 自定义主题色（用户 DIY）──
+        const darken = (hex: string): string => {
+            const c = hex.replace('#', '');
+            const f = (i: number) => Math.round(parseInt(c.slice(i, i + 2), 16) * 0.7).toString(16).padStart(2, '0');
+            return `#${f(0)}${f(2)}${f(4)}`;
+        };
+        const plusBtn = presetWrap.createEl('button', {
+            text: '➕ 自定义',
+            attr: { style: 'padding:5px 12px; border-radius:8px; border:2px dashed var(--background-modifier-border); background:transparent; color:var(--text-muted); cursor:pointer; font-size:0.82em; font-weight:600; transition:all 0.15s;' },
+        });
+        const hiddenColor = presetWrap.createEl('input', { attr: { type: 'color', style: 'position:absolute; width:0; height:0; opacity:0; pointer-events:none;' } }) as HTMLInputElement;
+        hiddenColor.value = this.plugin.settings.themeAccent || '#FF7043';
+        plusBtn.addEventListener('click', () => hiddenColor.click());
+        hiddenColor.addEventListener('change', async () => {
+            this.plugin.settings.themeAccent = hiddenColor.value;
+            this.plugin.settings.themeGradient = darken(hiddenColor.value);
+            await this.plugin.saveSettings();
+            this.display();
+        });
 
         // ── 主色调 ──
         new Setting(containerEl)

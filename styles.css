@@ -111,10 +111,13 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .scholarium-dashboard {
     display: flex;
     flex-direction: column;
+    width: 100%;
     height: 100%;
     overflow: hidden;
     background: var(--background-primary);
     font-family: var(--font-interface);
+    container-type: inline-size;
+    container-name: scholarium-view;
 }
 
 /* 顶部标题栏 */
@@ -4304,6 +4307,12 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     box-shadow: inset 2px 0 0 var(--celn-accent);
 }
 
+.exp-item.status-planned { border-left-color: rgba(76, 120, 206, 0.42); }
+.exp-item.status-in-progress { border-left-color: rgba(209, 132, 35, 0.44); }
+.exp-item.status-completed { border-left-color: rgba(40, 140, 85, 0.42); }
+.exp-item.status-failed { border-left-color: rgba(191, 62, 72, 0.44); }
+.exp-item.status-study { border-left-color: rgba(43, 128, 163, 0.40); }
+
 .exp-status-icon {
     margin-top: 2px;
     opacity: 0.86;
@@ -4421,11 +4430,13 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 .exp-note-card {
+    --exp-status-border: var(--nb-line);
+    --exp-status-soft: #fbfbfa;
     position: relative;
     height: 420px;
     min-height: 420px;
     max-height: 420px;
-    border: 1px solid var(--nb-line);
+    border: 1px solid var(--exp-status-border);
     border-radius: 6px;
     background: #fff;
     box-shadow: none;
@@ -4433,6 +4444,40 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     flex-direction: column;
     overflow: hidden;
     cursor: pointer;
+}
+
+.exp-note-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--exp-status-border);
+    z-index: 1;
+}
+
+.exp-note-card.status-planned {
+    --exp-status-border: rgba(76, 120, 206, 0.42);
+    --exp-status-soft: rgba(76, 120, 206, 0.07);
+}
+
+.exp-note-card.status-in-progress {
+    --exp-status-border: rgba(209, 132, 35, 0.44);
+    --exp-status-soft: rgba(209, 132, 35, 0.08);
+}
+
+.exp-note-card.status-completed {
+    --exp-status-border: rgba(40, 140, 85, 0.42);
+    --exp-status-soft: rgba(40, 140, 85, 0.07);
+}
+
+.exp-note-card.status-failed {
+    --exp-status-border: rgba(191, 62, 72, 0.44);
+    --exp-status-soft: rgba(191, 62, 72, 0.07);
+}
+
+.exp-note-card.status-study {
+    --exp-status-border: rgba(43, 128, 163, 0.40);
+    --exp-status-soft: rgba(43, 128, 163, 0.07);
 }
 
 .exp-note-card:hover {
@@ -4448,7 +4493,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     min-height: 38px;
     padding: 9px 12px;
     border-bottom: 1px solid var(--nb-line-soft);
-    background: #fbfbfa;
+    background: var(--exp-status-soft);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -5365,11 +5410,43 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 .scholarium-dashboard .ws2-page-body {
-    width: min(100%, calc(1060px + (var(--scholarium-font-scale, 1) - 1) * 220px));
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
 }
 
 .scholarium-dashboard .ws2-overview .ws2-card-grid {
     grid-template-columns: repeat(auto-fit, minmax(calc(150px * var(--scholarium-space-scale, 1)), 1fr));
+}
+
+.status-badge.status-study {
+    background: var(--sch-sky-bg, rgba(74, 143, 193, 0.12));
+    color: var(--sch-sky-fg, #246b87);
+}
+
+.sch-brandbar-logo {
+    max-width: 100%;
+}
+
+.sch-brandbar-tabs > button {
+    flex: 0 0 auto;
+}
+
+.sch-brandbar-actions {
+    max-width: 100%;
+}
+
+@container scholarium-view (max-width: 620px) {
+    .sch-brandbar-logo,
+    .sch-brandbar-tabs,
+    .sch-brandbar-actions {
+        flex-basis: 100% !important;
+    }
+
+    .sch-brandbar-actions {
+        justify-content: flex-start !important;
+        margin-left: 0 !important;
+    }
 }
 
 .scholarium-dashboard .ws2-summary-card {
@@ -5609,6 +5686,13 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     border-bottom: 1px solid transparent;
 }
 
+.chat-image-head-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 8px;
+    align-items: center;
+}
+
 .chat-image-title {
     color: var(--nb-ink, var(--text-normal));
     font-size: 0.95em;
@@ -5667,12 +5751,19 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     max-width: 230px;
 }
 
+.chat-image-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(188px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+}
+
 .chat-image-preview-card {
     display: grid;
-    grid-template-columns: 120px minmax(0, 1fr) auto;
-    gap: 12px;
-    align-items: center;
-    margin-top: 10px;
+    grid-template-columns: 72px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: 8px 10px;
+    align-items: start;
     padding: 10px;
     border: 1px solid var(--nb-line-soft, var(--background-modifier-border));
     border-radius: 6px;
@@ -5680,11 +5771,12 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 .chat-image-preview-card img {
-    width: 120px;
-    height: 82px;
+    width: 72px;
+    height: 60px;
     object-fit: cover;
     border-radius: 5px;
     background: var(--background-primary);
+    grid-row: 1 / span 2;
 }
 
 .chat-image-file-info {
@@ -5701,6 +5793,13 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.chat-image-remove {
+    justify-self: start;
+    min-height: 25px;
+    padding: 2px 9px;
+    font-size: 0.75em;
 }
 
 .chat-image-preview-cta {
@@ -5774,6 +5873,39 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 
 .scholarium-chat-modal .chat-msg.chat-assistant .chat-bubble {
     background: #fff;
+}
+
+.chat-processing-summary {
+    margin: 8px 0 0;
+    padding: 10px 12px;
+    border: 1px solid var(--nb-line-soft, var(--background-modifier-border));
+    border-radius: 7px;
+    background: var(--nb-paper-soft, var(--background-secondary));
+}
+
+.chat-processing-title {
+    margin-bottom: 7px;
+    color: var(--nb-ink, var(--text-normal));
+    font-size: 0.8em;
+    font-weight: 700;
+}
+
+.chat-processing-step {
+    padding: 3px 0;
+    color: var(--nb-muted, var(--text-muted));
+    font-size: 0.78em;
+}
+
+.chat-processing-step.is-done::before {
+    content: "✓";
+    margin-right: 7px;
+    color: #23864a;
+}
+
+.chat-processing-step.is-pending::before {
+    content: "○";
+    margin-right: 7px;
+    color: var(--celn-accent, var(--interactive-accent));
 }
 
 .scholarium-chat-modal .chat-input-wrap {

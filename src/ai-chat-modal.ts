@@ -3,10 +3,12 @@ import ChemELNPlugin from './main';
 import { DEFAULT_AI_SYSTEM_PROMPT, PROVIDER_CONFIG } from './settings';
 import { extractTextWithMinerU } from './vision-ocr';
 import { rewriteOcrToAgent, type WritingProvider } from './vision-writer';
+import { fetchWithTimeout } from './utils/network';
 
 interface Message { role: 'user' | 'assistant'; content: string; }
 
 interface ExperimentData {
+    noteType?: 'experiment' | 'research-learning';
     title?: string;
     date?: string;
     status?: string;
@@ -23,8 +25,10 @@ interface ExperimentData {
     catalyst?: string;
     issues?: string;
     source_image?: string;
+    source_images?: string[];
     tags?: string[];
     sections?: Record<string, string>;
+    body?: string;
 }
 
 type AgentAction =
@@ -88,7 +92,7 @@ export class AIChatModal extends Modal {
 
     private targetFile: TFile | null;
     private noteContent: string;
-    private selectedImageFile: File | null = null;
+    private selectedImageFiles: File[] = [];
     private imagePreviewEl: HTMLElement | null = null;
     private imageStatusEl: HTMLElement | null = null;
     private analyzeImageBtn: HTMLButtonElement | null = null;
@@ -181,12 +185,22 @@ export class AIChatModal extends Modal {
         const panel = contentEl.createDiv({ cls: `chat-image-agent${this.startImagePanel ? ' is-open' : ''}` });
         const head = panel.createDiv({ cls: 'chat-image-head' });
         const titleWrap = head.createDiv();
-        titleWrap.createEl('div', { text: '图片识别生成实验记录', cls: 'chat-image-title' });
         titleWrap.createEl('div', {
-            text: '上传手写记录、实验台照片或仪器截图，AI 会自动提取并整理成新实验记录。',
+            text: this.isEditMode ? '图片识别并补充当前记录' : '图片识别生成实验记录',
+            cls: 'chat-image-title',
+        });
+        titleWrap.createEl('div', {
+            text: this.isEditMode
+                ? '粘贴或上传图片，AI 提取整理后由你确认写回当前记录。'
+                : '上传手写记录、实验台照片或仪器截图，AI 会自动提取并整理成新实验记录。',
             cls: 'chat-image-subtitle',
         });
-        const toggleBtn = head.createEl('button', {
+        const headActions = head.createDiv({ cls: 'chat-image-head-actions' });
+        const pasteBtn = headActions.createEl('button', {
+            text: '粘贴图片',
+            cls: 'scholarium-btn chat-image-paste',
+        });
+        const toggleBtn = headActions.createEl('button', {
             text: this.startImagePanel ? '收起' : '展开',
             cls: 'scholarium-btn chat-image-toggle',
         });
@@ -194,15 +208,16 @@ export class AIChatModal extends Modal {
         const body = panel.createDiv({ cls: 'chat-image-body' });
         const drop = body.createDiv({ cls: 'chat-image-drop' });
         const copy = drop.createDiv({ cls: 'chat-image-drop-copy' });
-        copy.createEl('div', { text: '选择图片或拖到这里', cls: 'chat-image-drop-title' });
-        copy.createEl('div', { text: '支持 PNG / JPG / WEBP，先 MinerU OCR，再由重写模型生成笔记。', cls: 'chat-image-drop-sub' });
+        copy.createEl('div', { text: '选择、拖入或粘贴图片', cls: 'chat-image-drop-title' });
+        copy.createEl('div', { text: '支持 PNG / JPG / WEBP；复制截图后在此窗口按 Ctrl+V，可直接识别整理。', cls: 'chat-image-drop-sub' });
         const fileInput = drop.createEl('input', {
             cls: 'chat-image-file',
-            attr: { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,image/bmp' },
+            attr: { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,image/bmp', multiple: 'true' },
         }) as HTMLInputElement;
         fileInput.onchange = () => {
-            const file = fileInput.files?.[0];
-            if (file) this.setSelectedImageFile(file);
+            const files = Array.from(fileInput.files ?? []);
+            if (files.length) this.addSelectedImageFiles(files);
+            fileInput.value = '';
         };
 
         drop.addEventListener('dragover', (event) => {
@@ -213,8 +228,18 @@ export class AIChatModal extends Modal {
         drop.addEventListener('drop', (event) => {
             event.preventDefault();
             drop.removeClass('is-dragging');
-            const file = event.dataTransfer?.files?.[0];
-            if (file) this.setSelectedImageFile(file);
+            const files = Array.from(event.dataTransfer?.files ?? [])
+                .filter((file) => file.type.startsWith('image/'));
+            if (files.length) this.addSelectedImageFiles(files);
+        });
+        this.modalEl.addEventListener('paste', (event: ClipboardEvent) => {
+            const imageFiles = this.imagesFromPasteEvent(event);
+            if (!imageFiles.length) return;
+            event.preventDefault();
+            panel.addClass('is-open');
+            toggleBtn.setText('收起');
+            this.addSelectedImageFiles(imageFiles);
+            this.setImageStatus(`已从剪贴板添加 ${imageFiles.length} 张图片。`);
         });
 
         this.imagePreviewEl = body.createDiv({ cls: 'chat-image-preview' });
@@ -224,6 +249,7 @@ export class AIChatModal extends Modal {
         const actions = body.createDiv({ cls: 'chat-image-actions' });
         this.analyzeImageBtn = actions.createEl('button', { text: '识别图片并生成笔记', cls: 'scholarium-btn primary' });
         this.analyzeImageBtn.onclick = () => void this.runImageAnalysis();
+        pasteBtn.onclick = () => void this.readClipboardImages(panel, toggleBtn);
 
         toggleBtn.onclick = () => {
             panel.toggleClass('is-open', !panel.hasClass('is-open'));
@@ -231,26 +257,85 @@ export class AIChatModal extends Modal {
         };
     }
 
-    private setSelectedImageFile(file: File) {
-        if (!file.type.startsWith('image/')) {
-            new Notice('请选择图片文件');
+    private addSelectedImageFiles(files: File[]) {
+        const images = files.filter((file) => file.type.startsWith('image/'));
+        if (!images.length) {
+            new Notice('剪贴板或所选文件中没有图片');
             return;
         }
-        this.selectedImageFile = file;
+        this.selectedImageFiles.push(...images);
+        this.renderSelectedImageFiles();
+    }
+
+    private renderSelectedImageFiles() {
         if (!this.imagePreviewEl) return;
         this.imagePreviewEl.empty();
-        const preview = this.imagePreviewEl.createDiv({ cls: 'chat-image-preview-card' });
-        preview.createEl('img', { attr: { src: URL.createObjectURL(file), alt: file.name } });
-        const info = preview.createDiv({ cls: 'chat-image-file-info' });
-        info.createEl('strong', { text: file.name });
-        info.createEl('span', { text: `${Math.max(1, Math.round(file.size / 1024))} KB` });
-        const cta = preview.createDiv({ cls: 'chat-image-preview-cta' });
-        cta.createEl('span', { text: '图片已选择', cls: 'chat-image-ready-badge' });
+        const gallery = this.imagePreviewEl.createDiv({ cls: 'chat-image-preview-grid' });
+        this.selectedImageFiles.forEach((file, index) => {
+            const preview = gallery.createDiv({ cls: 'chat-image-preview-card' });
+            preview.createEl('img', { attr: { src: URL.createObjectURL(file), alt: file.name } });
+            const info = preview.createDiv({ cls: 'chat-image-file-info' });
+            info.createEl('strong', { text: file.name });
+            info.createEl('span', { text: `${Math.max(1, Math.round(file.size / 1024))} KB` });
+            const removeBtn = preview.createEl('button', {
+                text: '移除',
+                cls: 'scholarium-btn chat-image-remove',
+                attr: { 'aria-label': `移除 ${file.name}` },
+            });
+            removeBtn.onclick = () => {
+                this.selectedImageFiles.splice(index, 1);
+                this.renderSelectedImageFiles();
+            };
+        });
         if (this.analyzeImageBtn) {
-            this.analyzeImageBtn.setText('开始识别并生成');
-            cta.appendChild(this.analyzeImageBtn);
+            this.analyzeImageBtn.setText(this.selectedImageFiles.length ? `识别并整理 ${this.selectedImageFiles.length} 张图片` : '识别图片并生成笔记');
         }
-        this.setImageStatus('图片已就绪，可以开始识别。');
+        this.setImageStatus(this.selectedImageFiles.length ? `已选择 ${this.selectedImageFiles.length} 张图片，可以开始识别。` : '等待选择图片。');
+    }
+
+    private imagesFromPasteEvent(event: ClipboardEvent): File[] {
+        const data = event.clipboardData;
+        const files = Array.from(data?.files ?? []).filter((entry) => entry.type.startsWith('image/'));
+        if (files.length) return files.map((file, index) => this.renameClipboardFile(file, index));
+        return Array.from(data?.items ?? [])
+            .filter((entry) => entry.kind === 'file' && entry.type.startsWith('image/'))
+            .map((entry, index) => entry.getAsFile())
+            .filter((file): file is File => Boolean(file))
+            .map((file, index) => this.renameClipboardFile(file, index));
+    }
+
+    private async readClipboardImages(panel: HTMLElement, toggleBtn: HTMLButtonElement) {
+        try {
+            if (!navigator.clipboard?.read) throw new Error('当前 Obsidian 环境不支持主动读取剪贴板');
+            const items = await navigator.clipboard.read();
+            const files: File[] = [];
+            for (const item of items) {
+                for (const type of item.types.filter((value) => value.startsWith('image/'))) {
+                    const blob = await item.getType(type);
+                    files.push(this.renameClipboardFile(new File([blob], 'clipboard', { type }), files.length));
+                }
+            }
+            if (!files.length) {
+                new Notice('剪贴板中没有可读取的图片');
+                return;
+            }
+            panel.addClass('is-open');
+            toggleBtn.setText('收起');
+            this.addSelectedImageFiles(files);
+            this.setImageStatus(`已从剪贴板添加 ${files.length} 张图片。`);
+        } catch (error) {
+            console.warn('[Scholarium] Clipboard image read failed:', error);
+            new Notice('无法读取剪贴板图片，请允许剪贴板权限，或将图片拖入此处');
+        }
+    }
+
+    private renameClipboardFile(file: File, index: number): File {
+        const extension = file.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        return new File([file], `clipboard-${stamp}-${index + 1}.${extension}`, {
+            type: file.type,
+            lastModified: Date.now(),
+        });
     }
 
     private async runImageAnalysis() {
@@ -258,8 +343,8 @@ export class AIChatModal extends Modal {
     }
 
     private async runImageAnalysisWithMinerUAgent() {
-        if (!this.selectedImageFile) {
-            new Notice('请先选择一张图片');
+        if (!this.selectedImageFiles.length) {
+            new Notice('请先添加图片');
             return;
         }
 
@@ -274,19 +359,27 @@ export class AIChatModal extends Modal {
 
         this.analyzeImageBtn!.disabled = true;
         this.analyzeImageBtn!.setText('识别中...');
-        this.appendMessage('user', `图片识别：${this.selectedImageFile.name}`);
+        this.appendMessage('user', `图片识别：共 ${this.selectedImageFiles.length} 张`);
 
         try {
-            const imagePath = await this.saveImageToVault(this.selectedImageFile);
-            this.setImageStatus('阶段 1/2：MinerU 正在上传图片并提取文字...');
-            const ocrResult = await extractTextWithMinerU(
-                await this.fileToBase64(this.selectedImageFile),
-                this.selectedImageFile.type || 'image/png',
-                this.plugin.settings.mineruApiKey,
-                this.selectedImageFile.name,
-            );
+            const imagePaths: string[] = [];
+            const ocrResults: Array<{ text: string; markdown: string }> = [];
+            for (const [index, image] of this.selectedImageFiles.entries()) {
+                this.setImageStatus(`阶段 1/2：正在识别第 ${index + 1}/${this.selectedImageFiles.length} 张图片...`);
+                imagePaths.push(await this.saveImageToVault(image));
+                ocrResults.push(await extractTextWithMinerU(
+                    await this.fileToBase64(image),
+                    image.type || 'image/png',
+                    this.plugin.settings.mineruApiKey,
+                    image.name,
+                ));
+            }
+            const ocrResult = {
+                text: ocrResults.map((result, index) => `图片 ${index + 1}\n${result.text}`).join('\n\n'),
+                markdown: ocrResults.map((result, index) => `## 图片 ${index + 1}\n\n${result.markdown}`).join('\n\n'),
+            };
 
-            this.setImageStatus('阶段 2/2：AI 正在整理为实验记录...');
+            this.setImageStatus(`阶段 2/2：AI 正在整理 ${this.selectedImageFiles.length} 张图片的识别结果...`);
             this.analyzeImageBtn!.setText('生成中...');
             const action = await rewriteOcrToAgent(ocrResult, {
                 provider,
@@ -299,24 +392,38 @@ export class AIChatModal extends Modal {
                 throw new Error('图片识别当前只允许创建新的实验记录');
             }
 
-            const data = this.normalizeVisionExperimentData(action.data, imagePath);
-            const file = await this.createExperimentFromAgent(data);
-            this.setImageStatus(`已创建：${file.basename}`);
-            this.appendMessage('assistant', `已根据图片创建实验记录：${file.basename}`);
-            new Notice(`实验记录已创建：${file.basename}`);
-            await this.app.workspace.getLeaf(false).openFile(file);
+            const data = this.normalizeVisionExperimentData(action.data, imagePaths);
+            if (this.isEditMode) {
+                const response = this.appendMessage('assistant', '图片内容已经识别并整理，请确认后写入当前记录。');
+                const actions: AgentAction[] = [{
+                    type: 'update_experiment',
+                    target: 'current',
+                    mode: 'merge',
+                    data,
+                }];
+                this.renderProcessingSummary(response, actions);
+                this.renderAgentActions(response, actions);
+                this.setImageStatus('识别完成，等待确认写入当前记录。');
+            } else {
+                const file = await this.createExperimentFromAgent(data);
+                this.setImageStatus(`已创建：${file.basename}`);
+                this.appendMessage('assistant', `已根据图片创建实验记录：${file.basename}`);
+                this.plugin.refreshDashboards();
+                new Notice(`实验记录已创建：${file.basename}`);
+                await this.app.workspace.getLeaf(false).openFile(file);
+            }
         } catch (err) {
             this.setImageStatus((err as Error).message, true);
             this.appendMessage('assistant', `图片识别失败：${(err as Error).message}`);
         } finally {
             this.analyzeImageBtn!.disabled = false;
-            this.analyzeImageBtn!.setText(this.selectedImageFile ? '开始识别并生成' : '识别图片并生成笔记');
+            this.analyzeImageBtn!.setText(this.selectedImageFiles.length ? `识别并整理 ${this.selectedImageFiles.length} 张图片` : '识别图片并生成笔记');
         }
     }
 
     private async runImageAnalysisLegacy() {
-        if (!this.selectedImageFile) {
-            new Notice('请先选择一张图片');
+        if (!this.selectedImageFiles.length) {
+            new Notice('请先添加图片');
             return;
         }
         if (!this.plugin.settings.mineruApiKey) {
@@ -335,16 +442,25 @@ export class AIChatModal extends Modal {
 
         this.analyzeImageBtn!.disabled = true;
         this.analyzeImageBtn!.setText('识别中...');
-        this.appendMessage('user', `图片识别：${this.selectedImageFile.name}`);
+        this.appendMessage('user', `图片识别：共 ${this.selectedImageFiles.length} 张`);
 
         try {
-            const imagePath = await this.saveImageToVault(this.selectedImageFile);
-            this.setImageStatus('阶段 1/2：MinerU 正在提取文字、表格和公式...');
-            const ocrResult = await extractTextWithMinerU(
-                await this.fileToBase64(this.selectedImageFile),
-                this.selectedImageFile.type || 'image/png',
-                this.plugin.settings.mineruApiKey,
-            );
+            const imagePaths: string[] = [];
+            const ocrResults: Array<{ text: string; markdown: string }> = [];
+            for (const [index, image] of this.selectedImageFiles.entries()) {
+                this.setImageStatus(`阶段 1/2：正在识别第 ${index + 1}/${this.selectedImageFiles.length} 张图片...`);
+                imagePaths.push(await this.saveImageToVault(image));
+                ocrResults.push(await extractTextWithMinerU(
+                    await this.fileToBase64(image),
+                    image.type || 'image/png',
+                    this.plugin.settings.mineruApiKey,
+                    image.name,
+                ));
+            }
+            const ocrResult = {
+                text: ocrResults.map((result, index) => `图片 ${index + 1}\n${result.text}`).join('\n\n'),
+                markdown: ocrResults.map((result, index) => `## 图片 ${index + 1}\n\n${result.markdown}`).join('\n\n'),
+            };
 
             this.setImageStatus('阶段 2/2：AI 正在整理为实验记录...');
             this.analyzeImageBtn!.setText('生成中...');
@@ -359,10 +475,11 @@ export class AIChatModal extends Modal {
                 throw new Error('图片识别当前只允许创建新的实验记录');
             }
 
-            const data = this.normalizeVisionExperimentData(action.data, imagePath);
+            const data = this.normalizeVisionExperimentData(action.data, imagePaths);
             const file = await this.createExperimentFromAgent(data);
             this.setImageStatus(`已创建：${file.basename}`);
             this.appendMessage('assistant', `已根据图片创建实验记录：${file.basename}`);
+            this.plugin.refreshDashboards();
             new Notice(`实验记录已创建：${file.basename}`);
             await this.app.workspace.getLeaf(false).openFile(file);
         } catch (err) {
@@ -370,7 +487,7 @@ export class AIChatModal extends Modal {
             this.appendMessage('assistant', `图片识别失败：${(err as Error).message}`);
         } finally {
             this.analyzeImageBtn!.disabled = false;
-            this.analyzeImageBtn!.setText(this.selectedImageFile ? '开始识别并生成' : '识别图片并生成笔记');
+            this.analyzeImageBtn!.setText(this.selectedImageFiles.length ? `识别并整理 ${this.selectedImageFiles.length} 张图片` : '识别图片并生成笔记');
         }
     }
 
@@ -380,7 +497,7 @@ export class AIChatModal extends Modal {
         this.imageStatusEl.toggleClass('is-error', isError);
     }
 
-    appendMessage(role: 'user' | 'assistant', content: string, data?: ExperimentData) {
+    appendMessage(role: 'user' | 'assistant', content: string, data?: ExperimentData): HTMLElement {
         const msgEl = this.chatContainer.createDiv({ cls: `chat-msg chat-${role}` });
         const bubble = msgEl.createDiv({ cls: 'chat-bubble' });
 
@@ -391,6 +508,7 @@ export class AIChatModal extends Modal {
             bubble.setText(content);
         }
         this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+        return msgEl;
     }
 
     private renderBasicMarkdown(content: string): string {
@@ -406,14 +524,17 @@ export class AIChatModal extends Modal {
         return Boolean(
             data.title || data.results || data.steps || data.objective || data.observations ||
             data.nextSteps || data.notes || data.references ||
-            (data.sections && Object.keys(data.sections).length > 0),
+            data.body || (data.sections && Object.keys(data.sections).length > 0),
         );
     }
 
     private renderLegacyActions(msgEl: HTMLElement, data: ExperimentData) {
+        this.renderProcessingSummary(msgEl, []);
         const actionEl = msgEl.createDiv({ cls: 'chat-action' });
         const preview = actionEl.createDiv({ cls: 'exp-preview' });
 
+        if (data.noteType === 'research-learning') preview.createEl('div', { text: '类型：研究学习笔记', cls: 'preview-field' });
+        if (this.isEditMode && data.body?.trim()) preview.createEl('div', { text: '写入方式：替换当前正文', cls: 'preview-field' });
         if (data.title) preview.createEl('div', { text: `标题：${data.title}`, cls: 'preview-title' });
         if (data.status) preview.createEl('div', { text: `状态：${data.status}`, cls: 'preview-field' });
         if (data.results) preview.createEl('div', { text: `结果：${data.results.substring(0, 100)}`, cls: 'preview-field' });
@@ -425,9 +546,14 @@ export class AIChatModal extends Modal {
         const btnGroup = actionEl.createDiv({ cls: 'chat-action-btns' });
         if (this.isEditMode) {
             const applyBtn = btnGroup.createEl('button', { text: '应用到当前笔记', cls: 'scholarium-btn primary' });
-            applyBtn.onclick = () => void this.applyToCurrentNote(data, applyBtn);
+            applyBtn.onclick = () => void this.applyProposalToFile(
+                this.targetFile!,
+                data,
+                applyBtn,
+                data.body?.trim() ? 'replace' : 'merge',
+            );
         } else {
-            const createBtn = btnGroup.createEl('button', { text: '创建新实验记录', cls: 'scholarium-btn primary' });
+            const createBtn = btnGroup.createEl('button', { text: data.noteType === 'research-learning' ? '保存研究学习笔记' : '创建新实验记录', cls: 'scholarium-btn primary' });
             createBtn.onclick = () => void this.createExperimentNote(data, createBtn);
             const appendBtn = btnGroup.createEl('button', { text: '补充到现有记录...', cls: 'scholarium-btn' });
             appendBtn.onclick = () => this.openExperimentPicker(data, appendBtn);
@@ -458,16 +584,16 @@ export class AIChatModal extends Modal {
             const raw = await this.callAI(this.messages);
             loadingEl.remove();
             const parsed = this.parseAIResponse(raw);
-            const clean = parsed.text || parsed.agent?.reply || '我已经准备好修改方案。';
+            const clean = parsed.text || parsed.agent?.reply || '我已经准备好修改方案，请确认后写入实验记录。';
             this.messages.push({ role: 'assistant', content: raw });
-            this.appendMessage('assistant', clean, parsed.data ?? undefined);
+            const responseEl = this.appendMessage('assistant', clean, parsed.data ?? undefined);
 
             if (parsed.agent?.actions?.length) {
-                const summary = await this.applyAgentPayload(parsed.agent);
-                this.appendMessage('assistant', summary);
-            } else if (parsed.data && this.isEditMode) {
-                const summary = await this.applyAgentDataToCurrent(parsed.data);
-                this.appendMessage('assistant', summary);
+                const actions = this.normalizeActionsForMode(parsed.agent.actions);
+                this.renderProcessingSummary(responseEl, actions);
+                this.renderAgentActions(responseEl, actions);
+            } else if (!parsed.data && this.isEditMode && clean.trim()) {
+                this.renderUnstructuredEditActions(responseEl, clean);
             }
         } catch (e) {
             loadingEl.remove();
@@ -488,7 +614,7 @@ export class AIChatModal extends Modal {
         const systemPrompt = this.buildAgentPrompt(today);
 
         if (aiProvider === 'claude') {
-            const res = await fetch('https://api.anthropic.com/v1/messages', {
+            const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
                 method: 'POST',
                 headers: {
                     'x-api-key': aiApiKey,
@@ -509,7 +635,7 @@ export class AIChatModal extends Modal {
 
         const endpoint = aiProvider === 'custom' ? aiCustomEndpoint : cfg.endpoint;
         if (!endpoint) throw new Error('请在设置中填写自定义 API 端点地址');
-        const res = await fetch(endpoint, {
+        const res = await fetchWithTimeout(endpoint, {
             method: 'POST',
             headers: {
                 Authorization: `Bearer ${aiApiKey}`,
@@ -539,7 +665,7 @@ export class AIChatModal extends Modal {
             ? `\n当前编辑目标：${this.targetFile!.path}\n当前笔记全文：\n${this.noteContent.slice(0, 12000)}`
             : '';
 
-        return `你是 Obsidian 实验记录插件里的实验记录 Agent。你的任务不是只生成文本，而是决定要创建新实验记录，还是修改/丰富已有实验记录。
+        return `你是 Obsidian 研究记录插件里的记录 Agent。你的任务是判断用户内容应形成实验记录，还是研究学习笔记，并决定创建新笔记或修改已有笔记。
 今天日期：${today}
 
 插件会执行你输出的 actions。请优先输出一个 json_agent 代码块，格式如下：
@@ -549,7 +675,8 @@ export class AIChatModal extends Modal {
   "actions": [
     {
       "type": "create_experiment",
-      "data": {
+       "data": {
+        "noteType": "experiment | research-learning",
         "title": "自动命名的实验标题",
         "date": "${today}",
         "status": "planned | in-progress | completed | failed",
@@ -563,7 +690,8 @@ export class AIChatModal extends Modal {
         "nextSteps": "下一步计划",
         "notes": "注意事项",
         "references": "参考文献",
-        "sections": { "任意章节名": "章节内容" }
+        "sections": { "任意章节名": "章节内容" },
+        "body": "研究学习笔记使用的完整 Markdown 正文"
       }
     },
     {
@@ -579,8 +707,13 @@ export class AIChatModal extends Modal {
 \`\`\`
 
 规则：
+- 用户提供实验过程、配方、操作条件、表征或结果时，noteType 使用 experiment，并按实验字段整理。
+- 用户提供概念学习、文献阅读、方法理解、研究思路或知识总结而非一次具体实验时，noteType 使用 research-learning。
+- research-learning 不使用实验模板；必须把整理后的、可直接阅读的 Markdown 全文放入 data.body，可使用小标题、列表和公式说明，去除对话口吻和“我来帮你”等措辞。
 - 用户要求“修改、完善、补充、丰富、整理已有/当前记录”时，必须使用 update_experiment，不能新建。
+- 用户明确要求“替换、改写全文、重写正文”时，update_experiment 使用 mode: "replace"，并将整理完成、可直接阅读的完整 Markdown 正文放入 data.body。
 - 当前处于 AI 修改笔记模式时，默认 target 使用 current。
+- 当前处于 AI 修改笔记模式时，用户粘贴的内容应整理为可写回记录的 data 字段，并必须返回 update_experiment action；不要只给聊天建议。
 - 普通 AI 助手模式下，如果用户提到已有记录，请从“已有实验记录索引”中选择最匹配的 path。
 - 用户要求新实验、创建、记录一个新的实验时，使用 create_experiment，并根据实验主题自动命名 title。
 - 不要删除用户已有内容；mode 默认 merge。只输出需要修改或补充的字段。
@@ -734,6 +867,116 @@ ${customTone}`;
         return summary;
     }
 
+    private renderAgentActions(msgEl: HTMLElement, actions: AgentAction[]) {
+        const actionWrap = msgEl.createDiv({ cls: 'chat-proposals' });
+        for (const action of actions) {
+            const card = actionWrap.createDiv({ cls: 'exp-preview chat-proposal-card' });
+            if (action.type === 'update_experiment') {
+                const file = this.resolveAgentTarget(action);
+                card.createEl('div', { text: '拟修改实验记录', cls: 'preview-title' });
+                card.createEl('div', { text: file ? file.basename : '未找到目标笔记', cls: 'preview-field' });
+                this.renderProposalFields(card, action.data, action.mode);
+                const buttons = card.createDiv({ cls: 'chat-action-btns' });
+                const applyBtn = buttons.createEl('button', { text: '应用修改', cls: 'scholarium-btn primary' });
+                applyBtn.disabled = !file;
+                applyBtn.onclick = () => {
+                    if (file) void this.applyProposalToFile(file, action.data, applyBtn, action.mode);
+                };
+                if (!this.isEditMode) {
+                    const createBtn = buttons.createEl('button', { text: '另存为新记录', cls: 'scholarium-btn' });
+                    createBtn.onclick = () => void this.createExperimentNote(action.data, createBtn);
+                }
+                continue;
+            }
+
+            card.createEl('div', { text: action.data.noteType === 'research-learning' ? '拟创建研究学习笔记' : '拟创建实验记录', cls: 'preview-title' });
+            this.renderProposalFields(card, action.data);
+            const buttons = card.createDiv({ cls: 'chat-action-btns' });
+            const createBtn = buttons.createEl('button', { text: action.data.noteType === 'research-learning' ? '保存研究学习笔记' : '保存为新实验记录', cls: 'scholarium-btn primary' });
+            createBtn.onclick = () => void this.createExperimentNote(action.data, createBtn);
+            if (this.targetFile) {
+                const applyBtn = buttons.createEl('button', { text: '应用到当前记录', cls: 'scholarium-btn' });
+                applyBtn.onclick = () => void this.applyProposalToFile(this.targetFile!, action.data, applyBtn);
+            }
+        }
+    }
+
+    private renderProposalFields(card: HTMLElement, data: ExperimentData, mode?: 'merge' | 'replace') {
+        const fields: Array<[string, string | undefined]> = [
+            ['写入方式', mode === 'replace' ? '替换当前正文' : mode === 'merge' ? '合并更新字段' : undefined],
+            ['类型', data.noteType === 'research-learning' ? '研究学习笔记' : data.noteType === 'experiment' ? '实验记录' : undefined],
+            ['标题', data.title],
+            ['状态', data.status],
+            ['实验目的', data.objective],
+            ['实验步骤', data.steps],
+            ['结果', data.results],
+            ['观察', data.observations],
+            ['下一步', data.nextSteps],
+            ['正文', data.body],
+        ];
+        for (const [label, value] of fields) {
+            if (!value?.trim()) continue;
+            const shortValue = value.length > 120 ? `${value.slice(0, 120)}...` : value;
+            card.createEl('div', { text: `${label}：${shortValue}`, cls: 'preview-field' });
+        }
+    }
+
+    private normalizeActionsForMode(actions: AgentAction[]): AgentAction[] {
+        if (!this.isEditMode) return actions;
+        return actions.map((action): AgentAction => {
+            if (action.type === 'create_experiment') {
+                return {
+                    type: 'update_experiment',
+                    target: 'current',
+                    mode: action.data.body?.trim() ? 'replace' : 'merge',
+                    data: action.data,
+                };
+            }
+            return { ...action, target: 'current' };
+        });
+    }
+
+    private renderProcessingSummary(msgEl: HTMLElement, actions: AgentAction[]) {
+        const summary = msgEl.createDiv({ cls: 'chat-processing-summary' });
+        summary.createEl('div', { text: '处理进度', cls: 'chat-processing-title' });
+        summary.createEl('div', { text: '已分析输入内容和当前笔记', cls: 'chat-processing-step is-done' });
+        summary.createEl('div', { text: '已整理可写入的修改方案', cls: 'chat-processing-step is-done' });
+        summary.createEl('div', {
+            text: this.isEditMode
+                ? '等待你确认后写回当前记录'
+                : `等待你确认后保存 ${actions.length || 1} 条记录`,
+            cls: 'chat-processing-step is-pending',
+        });
+    }
+
+    private renderUnstructuredEditActions(msgEl: HTMLElement, content: string) {
+        const card = msgEl.createDiv({ cls: 'exp-preview chat-proposal-card' });
+        card.createEl('div', { text: 'AI 未生成可直接写回的字段', cls: 'preview-title' });
+        card.createEl('div', { text: '可以先将当前文本存入“注意事项”，或继续要求 AI 按实验字段整理。', cls: 'preview-field' });
+        const buttons = card.createDiv({ cls: 'chat-action-btns' });
+        const noteBtn = buttons.createEl('button', { text: '存入注意事项', cls: 'scholarium-btn' });
+        noteBtn.onclick = () => {
+            if (this.targetFile) void this.applyProposalToFile(this.targetFile, { notes: content }, noteBtn);
+        };
+    }
+
+    private async applyProposalToFile(file: TFile, data: ExperimentData, btn: HTMLButtonElement, mode: 'merge' | 'replace' = 'merge') {
+        btn.disabled = true;
+        const originalText = btn.textContent ?? '应用修改';
+        btn.setText('写入中...');
+        try {
+            await this.patchExperimentFile(file, data, mode);
+            btn.setText('已写入');
+            this.plugin.refreshDashboards();
+            new Notice(`已更新实验记录：${file.basename}`);
+            this.appendMessage('assistant', `已将修改写回当前记录：${file.basename}。看板内容已同步刷新。`);
+        } catch (error) {
+            btn.disabled = false;
+            btn.setText(originalText);
+            new Notice(`写入失败：${(error as Error).message}`);
+        }
+    }
+
     private resolveAgentTarget(action: Extract<AgentAction, { type: 'update_experiment' }>): TFile | null {
         if ((action.target === 'current' || !action.target) && this.targetFile) return this.targetFile;
 
@@ -790,7 +1033,7 @@ ${customTone}`;
         }
     }
 
-    private async patchExperimentFile(file: TFile, data: ExperimentData) {
+    private async patchExperimentFile(file: TFile, data: ExperimentData, mode: 'merge' | 'replace' = 'merge') {
         let content = await this.app.vault.read(file);
         content = this.patchFrontmatter(content, data);
 
@@ -819,6 +1062,17 @@ ${customTone}`;
                 if (body.trim()) content = this.replaceSection(content, heading, body.trim());
             }
         }
+        if (data.source_images?.length) {
+            content = this.replaceSection(content, '实验图片', this.renderImageLinks(data.source_images));
+        }
+        if (data.noteType === 'research-learning' || (mode === 'replace' && data.body?.trim())) {
+            const replacementBody = data.noteType === 'research-learning'
+                ? this.researchLearningBody(data)
+                : data.body!.trim();
+            const fallbackType = data.noteType ?? 'experiment';
+            const frontmatter = content.match(/^---[\s\S]*?\n---/)?.[0] ?? `---\ntype: ${fallbackType}\n---`;
+            content = `${frontmatter}\n\n# ${data.title || file.basename}\n\n${replacementBody}\n`;
+        }
 
         await this.app.vault.modify(file, content);
         if (this.targetFile?.path === file.path) this.noteContent = content;
@@ -826,6 +1080,7 @@ ${customTone}`;
 
     patchFrontmatter(content: string, data: ExperimentData): string {
         let updated = this.ensureFrontmatter(content);
+        if (data.noteType) updated = this.fmSet(updated, 'type', this.yamlQuote(data.noteType));
         if (data.title) updated = this.fmSet(updated, 'title', this.yamlQuote(data.title));
         if (data.date) updated = this.fmSet(updated, 'date', this.yamlQuote(data.date));
         if (data.status) updated = this.fmSet(updated, 'status', this.yamlQuote(data.status));
@@ -900,17 +1155,18 @@ ${customTone}`;
         btn.setText('创建中...');
         try {
             const file = await this.createExperimentFromAgent(data);
-            new Notice(`实验笔记已创建：${file.basename}`);
+            new Notice(`${data.noteType === 'research-learning' ? '研究学习笔记' : '实验笔记'}已创建：${file.basename}`);
+            this.plugin.refreshDashboards();
             this.close();
             await this.app.workspace.getLeaf(false).openFile(file);
         } catch (e) {
             new Notice(`创建失败：${(e as Error).message}`);
             btn.disabled = false;
-            btn.setText('创建新实验记录');
+            btn.setText(data.noteType === 'research-learning' ? '保存研究学习笔记' : '创建新实验记录');
         }
     }
 
-    private normalizeVisionExperimentData(raw: Record<string, unknown>, imagePath: string): ExperimentData {
+    private normalizeVisionExperimentData(raw: Record<string, unknown>, imagePaths: string[]): ExperimentData {
         const steps = this.asStringArray(raw.steps);
         return {
             title: this.asString(raw.title),
@@ -926,7 +1182,8 @@ ${customTone}`;
             results: this.asString(raw.results),
             notes: this.asString(raw.notes),
             issues: this.asString(raw.issues),
-            source_image: imagePath,
+            source_image: imagePaths[0],
+            source_images: imagePaths,
             tags: Array.from(new Set([...this.asStringArray(raw.tags), 'from-image'])),
         };
     }
@@ -959,7 +1216,11 @@ ${customTone}`;
     private async createExperimentFromAgent(data: ExperimentData, titleSuggestion?: string): Promise<TFile> {
         const folder = this.plugin.settings.experimentsFolder?.replace(/\/+$/, '');
         const date = this.normalizeDate(data.date);
-        const title = this.normalizeExperimentTitle(data.title || titleSuggestion, date);
+        const title = this.normalizeExperimentTitle(
+            data.title || titleSuggestion,
+            date,
+            data.noteType === 'research-learning' ? '研究学习笔记' : '图片识别实验记录',
+        );
         const safeTitle = this.safeFileName(`${date}-${title}`);
         const fileName = await this.uniqueMarkdownPath(folder ? `${folder}/${safeTitle}.md` : `${safeTitle}.md`);
 
@@ -970,12 +1231,27 @@ ${customTone}`;
         const reagentsYaml = data.reagents?.length
             ? data.reagents.map(r => `  - ${String(r).trim()}`).join('\n')
             : '  - ';
-        const sourceImage = data.source_image || '';
+        const sourceImages = data.source_images?.length ? data.source_images : (data.source_image ? [data.source_image] : []);
+        const sourceImage = sourceImages[0] || '';
+        const sourceImagesYaml = sourceImages.length
+            ? `\nsource_images:\n${sourceImages.map((path) => `  - ${this.yamlQuote(path)}`).join('\n')}`
+            : '';
         const tags = Array.from(new Set(['experiment', ...(data.tags ?? [])]))
             .map(tag => this.safeTag(tag))
             .filter(Boolean)
             .join(', ');
-        const noteContent = `---
+        const noteContent = data.noteType === 'research-learning' ? `---
+type: research-learning
+title: ${this.yamlQuote(title)}
+date: ${this.yamlQuote(date)}
+status: ${this.yamlQuote('study')}
+tags: [research-learning, study-note]
+---
+
+# ${title}
+
+${this.researchLearningBody(data)}
+` : `---
 type: experiment
 title: ${this.yamlQuote(title)}
 date: ${this.yamlQuote(date)}
@@ -986,7 +1262,7 @@ catalyst: ${this.yamlQuote(data.catalyst || '')}
 reagents:
 ${reagentsYaml}
 results: ${this.yamlQuote(data.results || '')}
-source_image: ${this.yamlQuote(sourceImage)}
+source_image: ${this.yamlQuote(sourceImage)}${sourceImagesYaml}
 tags: [${tags || 'experiment'}]
 ---
 
@@ -1016,7 +1292,7 @@ ${data.nextSteps || ''}
 
 ## 实验图片
 
-（在此粘贴截图，格式：![描述](图片路径)）
+${sourceImages.length ? this.renderImageLinks(sourceImages) : '（在此粘贴截图，格式：![描述](图片路径)）'}
 
 ## 注意事项
 
@@ -1024,6 +1300,10 @@ ${data.notes || ''}
 ${data.references ? `\n## 参考文献\n\n${data.references}\n` : ''}`;
 
         return this.app.vault.create(fileName, noteContent);
+    }
+
+    private renderImageLinks(paths: string[]): string {
+        return paths.map((path, index) => `![实验图片 ${index + 1}](${path})`).join('\n\n');
     }
 
     private async uniqueMarkdownPath(path: string): Promise<string> {
@@ -1049,7 +1329,18 @@ ${data.references ? `\n## 参考文献\n\n${data.references}\n` : ''}`;
         return `${y}-${m!.padStart(2, '0')}-${d!.padStart(2, '0')}`;
     }
 
-    private normalizeExperimentTitle(value: string | undefined, date: string): string {
+    private researchLearningBody(data: ExperimentData): string {
+        if (data.body?.trim()) return data.body.trim();
+        if (data.sections && Object.keys(data.sections).length > 0) {
+            return Object.entries(data.sections)
+                .filter(([, body]) => body.trim())
+                .map(([heading, body]) => `## ${heading}\n\n${body.trim()}`)
+                .join('\n\n');
+        }
+        return data.notes?.trim() || data.objective?.trim() || data.results?.trim() || '待补充研究学习内容。';
+    }
+
+    private normalizeExperimentTitle(value: string | undefined, date: string, fallback = '图片识别实验记录'): string {
         let title = (value || '').trim()
             .replace(/^#+\s*/, '')
             .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
@@ -1060,7 +1351,7 @@ ${data.references ? `\n## 参考文献\n\n${data.references}\n` : ''}`;
             .trim();
 
         if (!title || /^\d+$/.test(title) || title.length < 2) {
-            title = '图片识别实验记录';
+            title = fallback;
         }
         return title.slice(0, 60);
     }

@@ -75,9 +75,9 @@ export class ResearchToolLibrary {
 
     async save(): Promise<void> {
         try {
-            const pluginData = ((await this.plugin.loadData()) as Record<string, unknown>) || {};
-            pluginData.researchToolLibrary = this.data;
-            await this.plugin.saveData(pluginData);
+            await this.plugin.updateData((pluginData) => {
+                pluginData.researchToolLibrary = this.data;
+            });
         } catch (e) {
             console.error('[ResearchToolLibrary] 保存失败:', e);
             new Notice('科研库保存失败：' + (e as Error).message);
@@ -515,7 +515,7 @@ class ResearchToolEditModal extends Modal {
 
     onClose(): void {
         for (const fn of this.cleanupCallbacks) {
-            try { fn(); } catch { /* ignore */ }
+            try { fn(); } catch (error) { console.warn('[Scholarium] Research tool cleanup failed:', error); }
         }
         this.cleanupCallbacks = [];
     }

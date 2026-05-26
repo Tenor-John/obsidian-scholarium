@@ -1,3 +1,5 @@
+import { fetchWithTimeout, safeParseJson } from './utils/network';
+
 export type WritingProvider = 'deepseek' | 'claude' | 'openai' | 'gemini' | 'custom';
 
 export interface WriterSettings {
@@ -68,7 +70,7 @@ async function callOpenAIStyle(
     const model = settings.model || DEFAULT_MODELS[settings.provider];
     if (!model.trim()) throw new Error('请填写 AI 重写模型型号');
 
-    const response = await fetch(endpoint, {
+    const response = await fetchWithTimeout(endpoint, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -99,7 +101,7 @@ async function callOpenAIStyle(
 async function callClaude(ocrText: string, settings: WriterSettings): Promise<string> {
     if (!settings.apiKey.trim()) throw new Error('请填写 Claude API Key');
 
-    const response = await fetch(ENDPOINTS.claude, {
+    const response = await fetchWithTimeout(ENDPOINTS.claude, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -149,7 +151,8 @@ export async function rewriteOcrToAgent(
         .trim();
 
     try {
-        const parsed = JSON.parse(cleaned) as VisionAgentAction;
+        const parsed = safeParseJson<VisionAgentAction>(cleaned, 'vision writer output');
+        if (!parsed) throw new Error('invalid JSON');
         if (!parsed.type || !parsed.data) throw new Error('missing type/data');
         return parsed;
     } catch {
