@@ -37,7 +37,7 @@ export function card(parent: El, opts: CardOptions = {}): El {
     el.style.border = '1px solid var(--sch-line)';
     el.style.borderRadius = 'var(--sch-radius)';
     el.style.padding = opts.pad === false ? '0' : 'var(--sch-pad)';
-    el.style.boxShadow = '0 1px 2px rgba(0,0,0,.02), 0 1px 0 rgba(255,255,255,.5) inset';
+    el.style.boxShadow = 'none';
     el.style.transition = 'transform .18s ease, box-shadow .18s ease, border-color .18s ease';
     if (opts.hover || opts.onClick) el.classList.add('sch-card--hover');
     if (opts.onClick) {
@@ -109,7 +109,7 @@ const BTN_SIZE: Record<Size, { h: number; px: number; fs: number; gap: number }>
     lg: { h: 40, px: 16, fs: 14, gap: 8 },
 };
 const BTN_VARIANT: Record<ButtonVariant, { bg: string; fg: string; bd: string }> = {
-    primary: { bg: 'var(--sch-accent)', fg: '#fff', bd: 'transparent' },
+    primary: { bg: 'var(--sch-accent)', fg: '#0a0a0a', bd: 'var(--sch-accent)' },
     ghost:   { bg: 'transparent', fg: 'var(--sch-ink)', bd: 'var(--sch-line)' },
     soft:    { bg: 'var(--sch-surface2)', fg: 'var(--sch-ink)', bd: 'var(--sch-line-soft)' },
     accent:  { bg: 'var(--sch-accent-soft)', fg: 'var(--sch-accent-ink)', bd: 'transparent' },
@@ -131,7 +131,7 @@ export function button(parent: El, opts: ButtonOptions = {}): HTMLButtonElement 
     el.style.background = v.bg;
     el.style.color = v.fg;
     el.style.border = `1px solid ${v.bd}`;
-    el.style.borderRadius = '10px';
+    el.style.borderRadius = '8px';
     el.style.fontSize = size.fs + 'px';
     el.style.fontWeight = '600';
     el.style.letterSpacing = '.005em';
@@ -175,9 +175,9 @@ export function input(parent: El, opts: InputOptions = {}): { wrap: El; input: H
     const wrap = parent.createDiv({ cls: 'sch-input' });
     wrap.style.display = 'inline-flex';
     wrap.style.alignItems = 'center';
-    wrap.style.background = 'var(--sch-surface)';
+    wrap.style.background = 'var(--sch-surface2)';
     wrap.style.border = '1px solid var(--sch-line)';
-    wrap.style.borderRadius = '10px';
+    wrap.style.borderRadius = '8px';
     wrap.style.height = size.h + 'px';
     wrap.style.paddingLeft = (opts.iconName ? 10 : size.px) + 'px';
     wrap.style.paddingRight = size.px + 'px';

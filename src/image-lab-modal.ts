@@ -12,6 +12,7 @@ export class ImageLabModal extends Modal {
     constructor(app: App, private plugin: ChemELNPlugin) {
         super(app);
         this.modalEl.addClass('scholarium-chat-modal-wrap');
+        this.plugin.applyThemeAttributes(this.modalEl);
     }
 
     onOpen() {

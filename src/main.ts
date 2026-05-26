@@ -5,7 +5,8 @@ import type { ChemELNSettings } from './settings';
 import type { ExperimentContext } from './ai-assistant-modal';
 import { CloudSyncManager, buildSyncConfig } from './cloud-sync';
 import { AIChatModal } from './ai-chat-modal';
-import { scholariumThemeCss } from './theme/tokens';
+import { SCHOLARIUM_ACCENTS, accentVarsFromHex, scholariumThemeCss } from './theme/tokens';
+import type { AccentKey } from './theme/tokens';
 
 export default class ChemELNPlugin extends Plugin {
     settings: ChemELNSettings;
@@ -78,6 +79,26 @@ export default class ChemELNPlugin extends Plugin {
 }
 ${scholariumThemeCss(this.settings.theme, this.settings.accent, this.settings.density, this.settings.themeAccent)}`;
         document.head.appendChild(style);
+        document.querySelectorAll<HTMLElement>('.scholarium-root').forEach((root) => this.applyThemeAttributes(root));
+    }
+
+    applyThemeAttributes(root: HTMLElement): void {
+        root.addClass('scholarium-root');
+        root.dataset.theme = this.settings.theme;
+        root.dataset.accent = this.settings.accent;
+        const customAccent = accentVarsFromHex(this.settings.themeAccent, this.settings.theme);
+        const accent = this.settings.accent === 'custom'
+            ? {
+                ...customAccent,
+                soft: `rgba(${customAccent.rgb}, ${this.settings.themeAlpha})`,
+                deep: this.settings.themeGradient,
+            }
+            : SCHOLARIUM_ACCENTS[this.settings.accent];
+        root.style.setProperty('--accent', accent.base);
+        root.style.setProperty('--accent-rgb', accent.rgb);
+        root.style.setProperty('--accent-dim', accent.soft);
+        root.style.setProperty('--accent-deep', accent.deep);
+        root.style.setProperty('--accent-text', accent.text);
     }
 
     async onload() {
@@ -168,6 +189,31 @@ ${scholariumThemeCss(this.settings.theme, this.settings.accent, this.settings.de
 
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<ChemELNSettings>);
+        this.settings.pluginDisplayName = 'scholarium';
+        this.settings.notebookSidebarWidth = Math.min(440, Math.max(280, Number(this.settings.notebookSidebarWidth) || 300));
+        this.settings.theme = this.settings.theme === 'dark' ? 'dark' : 'light';
+        const legacyAccents: Record<string, AccentKey> = {
+            emerald: 'green',
+            indigo: 'blue',
+            plum: 'purple',
+        };
+        const storedHex = this.settings.themeAccent.toLowerCase();
+        const matchingPreset = Object.entries(SCHOLARIUM_ACCENTS)
+            .find(([, preset]) => preset.base.toLowerCase() === storedHex)?.[0] as AccentKey | undefined;
+        const selectedAccent = legacyAccents[String(this.settings.accent)] ?? this.settings.accent;
+        if (matchingPreset) {
+            this.settings.accent = matchingPreset;
+        } else if (/^#[0-9a-f]{6}$/i.test(this.settings.themeAccent)) {
+            this.settings.accent = 'custom';
+        } else if (Object.prototype.hasOwnProperty.call(SCHOLARIUM_ACCENTS, selectedAccent)) {
+            this.settings.accent = selectedAccent as AccentKey;
+            this.settings.themeAccent = SCHOLARIUM_ACCENTS[selectedAccent as keyof typeof SCHOLARIUM_ACCENTS].base;
+            this.settings.themeGradient = SCHOLARIUM_ACCENTS[selectedAccent as keyof typeof SCHOLARIUM_ACCENTS].deep;
+        } else {
+            this.settings.accent = 'green';
+            this.settings.themeAccent = SCHOLARIUM_ACCENTS.green.base;
+            this.settings.themeGradient = SCHOLARIUM_ACCENTS.green.deep;
+        }
     }
 
     async saveSettings() {
