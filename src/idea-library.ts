@@ -8,7 +8,7 @@ import ChemELNPlugin from './main';
 import { PROVIDER_CONFIG } from './settings';
 import type { AIProvider } from './settings';
 import { iconSvg } from './icons';
-import { card as uiCard, sectionHeader, pill, button as uiButton, input as uiInput, segmented, empty as emptyState } from './components/ui';
+import { card as uiCard, sectionHeader, pill, button as uiButton, input as uiInput, segmented, empty as emptyState, type PillTone } from './components/ui';
 import { requestUrlWithTimeout, safeParseJson } from './utils/network';
 
 export type IdeaSource = 'claude' | 'gpt' | 'paper' | 'manual';
@@ -32,17 +32,26 @@ export interface Idea {
 export interface ExperimentRef { id: string; title: string }
 interface NoteRef { path: string; title: string }
 
-const SOURCE_META: Record<IdeaSource, { tone: 'iris' | 'moss' | 'sky' | 'mute'; zh: string; en: string }> = {
+const SOURCE_META: Record<IdeaSource, { tone: PillTone; zh: string; en: string }> = {
     claude: { tone: 'iris', zh: 'Claude', en: 'Claude' },
     gpt:    { tone: 'moss', zh: 'GPT', en: 'GPT' },
     paper:  { tone: 'sky', zh: '文献', en: 'Paper' },
-    manual: { tone: 'mute', zh: '手动', en: 'Manual' },
+    manual: { tone: 'coral', zh: '手动', en: 'Manual' },
 };
-const STATUS_META: Record<IdeaStatus, { tone: 'mute' | 'accent' | 'moss'; zh: string; en: string }> = {
+const STATUS_META: Record<IdeaStatus, { tone: PillTone; zh: string; en: string }> = {
     draft:      { tone: 'mute', zh: '草稿', en: 'Draft' },
     refined:    { tone: 'accent', zh: '已精炼', en: 'Refined' },
     integrated: { tone: 'moss', zh: '已落地', en: 'Integrated' },
 };
+
+const SOURCE_ACCENT: Record<IdeaSource, string> = {
+    claude: 'var(--sch-iris-fg)',
+    gpt: 'var(--sch-moss-fg)',
+    paper: 'var(--sch-sky-fg)',
+    manual: 'var(--sch-coral-fg)',
+};
+
+const TAG_TONES: PillTone[] = ['sky', 'iris', 'moss', 'sun', 'coral', 'rose'];
 
 const REFINED_START = '<!-- scholarium:refined:start -->';
 const REFINED_END = '<!-- scholarium:refined:end -->';
@@ -321,7 +330,7 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
 
     private renderToolbar(root: HTMLElement): void {
         const zh = this.lang === 'zh';
-        const c = uiCard(root);
+        const c = uiCard(root, { cls: 'idea-toolbar' });
         const row = c.createDiv();
         Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' });
 
@@ -376,8 +385,9 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
 
     private renderCard(grid: HTMLElement, idea: Idea): void {
         const active = this.selected?.id === idea.id;
-        const c = uiCard(grid, { onClick: () => { if (this.selected?.id === idea.id) { this.selected = null; } else { this.selected = idea; this.editing = false; } this.rerender(); }, style: { borderLeft: '3px solid var(--sch-iris)', position: 'relative' } });
-        if (active) c.style.boxShadow = '0 0 0 2px var(--sch-accent-soft)';
+        const sourceAccent = SOURCE_ACCENT[idea.source];
+        const c = uiCard(grid, { cls: `idea-card idea-source-${idea.source}${active ? ' is-selected' : ''}`, onClick: () => { if (this.selected?.id === idea.id) { this.selected = null; } else { this.selected = idea; this.editing = false; } this.rerender(); }, style: { borderLeft: `3px solid ${sourceAccent}`, position: 'relative' } });
+        if (active) c.style.boxShadow = `0 0 0 1px ${sourceAccent}`;
         const titleRow = c.createDiv();
         Object.assign(titleRow.style, { display: 'flex', alignItems: 'flex-start', gap: '6px', justifyContent: 'space-between' });
         const ttl = titleRow.createDiv({ text: idea.title });
@@ -391,15 +401,25 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         if (idea.tags.length) {
             const tagRow = c.createDiv();
             Object.assign(tagRow.style, { display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '8px' });
-            for (const tg of idea.tags.slice(0, 4)) pill(tagRow, tg, 'mute');
+            idea.tags.slice(0, 4).forEach((tg, index) => pill(tagRow, tg, this.tagTone(tg, index)));
         }
         // source ribbon at bottom
         const foot = c.createDiv();
         Object.assign(foot.style, { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--sch-line-soft)' });
         const sm = SOURCE_META[idea.source];
-        pill(foot, sm[this.lang], sm.tone);
+        const meta = foot.createDiv();
+        Object.assign(meta.style, { display: 'flex', gap: '5px', flexWrap: 'wrap' });
+        pill(meta, sm[this.lang], sm.tone);
+        const status = STATUS_META[idea.status];
+        pill(meta, status[this.lang], status.tone);
         const dt = foot.createSpan({ text: idea.date });
         Object.assign(dt.style, { fontFamily: 'var(--sch-font-mono)', fontSize: '10.5px', color: 'var(--sch-mute)' });
+    }
+
+    private tagTone(tag: string, offset = 0): PillTone {
+        let hash = 0;
+        for (const char of tag) hash = (hash + char.charCodeAt(0)) % TAG_TONES.length;
+        return TAG_TONES[(hash + offset) % TAG_TONES.length] ?? 'sky';
     }
 
     /** Render markdown as a formatted preview (not raw text) into host. */
@@ -433,7 +453,7 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         if (idea.tags.length) {
             const tagRow = c.createDiv();
             Object.assign(tagRow.style, { display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '10px' });
-            for (const tg of idea.tags) pill(tagRow, tg, 'mute');
+            idea.tags.forEach((tg, index) => pill(tagRow, tg, this.tagTone(tg, index)));
         }
 
         // connections

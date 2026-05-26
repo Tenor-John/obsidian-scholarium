@@ -105,6 +105,7 @@ export class AIChatModal extends Modal {
         this.noteContent = noteContent ?? '';
         this.startImagePanel = startImagePanel;
         this.modalEl.addClass('scholarium-chat-modal-wrap');
+        this.plugin.applyThemeAttributes(this.modalEl);
     }
 
     get isEditMode() { return this.targetFile !== null; }

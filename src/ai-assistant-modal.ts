@@ -81,6 +81,7 @@ export class AIAssistantModal extends Modal {
 
     onOpen() {
         this.modalEl.addClass('scholarium-chat-modal-wrap');
+        this.plugin.applyThemeAttributes(this.modalEl);
         const { contentEl } = this;
         contentEl.empty();
         contentEl.addClass('scholarium-chat-modal');

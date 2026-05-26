@@ -507,7 +507,7 @@ export class PhDWorkspace {
         Object.assign(eb.style, { fontSize: '11.5px', color: 'var(--sch-mute)', fontWeight: '700', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: '6px' });
         const userName = (this.plugin.settings.pluginDisplayName || '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
         const greet = hLeft.createDiv({ text: t(greetKey, lang) + (userName ? `，${userName}` : '') });
-        Object.assign(greet.style, { fontFamily: 'var(--sch-font-serif)', fontSize: 'var(--sch-h1)', fontWeight: '500', color: 'var(--sch-ink)', letterSpacing: '-.02em', lineHeight: '1.1' });
+        Object.assign(greet.style, { fontFamily: 'var(--sch-font-ui)', fontSize: 'var(--sch-h1)', fontWeight: '800', color: 'var(--sch-ink)', letterSpacing: '0', lineHeight: '1.1' });
         const summary = hLeft.createDiv();
         Object.assign(summary.style, { marginTop: '6px', fontSize: '13px', color: 'var(--sch-mute)', maxWidth: '580px', lineHeight: '1.55' });
         const blocksToday = this.data.timeblocks.filter(b => b.date === today()).length;
@@ -705,8 +705,8 @@ export class PhDWorkspace {
                 position: 'absolute', top: top + 'px', height: height + 'px',
                 left: leftCss, width: widthCss,
                 borderRadius: '10px',
-                background: `linear-gradient(135deg, color-mix(in oklch, ${color} 16%, var(--sch-surface)), color-mix(in oklch, ${color} 7%, var(--sch-surface)))`,
-                border: `1px solid color-mix(in oklch, ${color} 28%, var(--sch-line-soft))`,
+                background: 'var(--sch-surface)',
+                border: '1px solid var(--sch-line-soft)',
                 borderLeft: `3px solid ${color}`,
                 padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: '2px',
                 overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.03)',
@@ -881,7 +881,7 @@ export class PhDWorkspace {
                 height: '22px',
                 borderRadius: '999px',
                 padding: '0 6px',
-                color: date === today() ? 'white' : d.getMonth() === month ? 'var(--sch-ink)' : 'var(--sch-mute)',
+                color: date === today() ? 'var(--sch-bg)' : d.getMonth() === month ? 'var(--sch-ink)' : 'var(--sch-mute)',
                 background: date === today() ? 'var(--sch-accent)' : 'transparent',
                 fontWeight: '700',
             });
@@ -936,11 +936,11 @@ export class PhDWorkspace {
 
     private renderCalendarNowLine(grid: HTMLElement, startHour: number, rowH: number, hours: number, dayIndex: number) {
         const line = grid.createDiv();
-        Object.assign(line.style, { position: 'absolute', left: '54px', right: '0', height: '2px', background: '#ff4d4f', zIndex: '5' });
+        Object.assign(line.style, { position: 'absolute', left: '54px', right: '0', height: '2px', background: 'var(--sch-accent)', zIndex: '5' });
         const dot = line.createSpan();
-        Object.assign(dot.style, { position: 'absolute', left: `calc(${dayIndex * 100 / 7}% - 5px)`, top: '-4px', width: '10px', height: '10px', borderRadius: '50%', background: '#ff4d4f' });
+        Object.assign(dot.style, { position: 'absolute', left: `calc(${dayIndex * 100 / 7}% - 5px)`, top: '-4px', width: '10px', height: '10px', borderRadius: '50%', background: 'var(--sch-accent)' });
         const label = line.createSpan();
-        Object.assign(label.style, { position: 'absolute', left: '-58px', top: '-9px', color: '#ff4d4f', fontSize: '11px', fontFamily: 'var(--sch-font-mono)', fontWeight: '700' });
+        Object.assign(label.style, { position: 'absolute', left: '-58px', top: '-9px', color: 'var(--sch-accent)', fontSize: '11px', fontFamily: 'var(--sch-font-mono)', fontWeight: '700' });
         const update = () => {
             const n = new Date();
             const frac = (n.getHours() - startHour) + n.getMinutes() / 60;
@@ -1067,7 +1067,7 @@ export class PhDWorkspace {
         pill(right, active ? (lang === 'zh' ? '进行中' : 'Running') : (lang === 'zh' ? '空闲' : 'Idle'), active ? 'accent' : 'mute');
 
         const disp = c.createDiv();
-        Object.assign(disp.style, { textAlign: 'center', padding: '14px 0', fontFamily: 'var(--sch-font-mono)', fontSize: '38px', fontWeight: '500', color: active ? 'var(--sch-accent-ink)' : 'var(--sch-ink)', letterSpacing: '-.02em' });
+        Object.assign(disp.style, { textAlign: 'center', padding: '14px 0', fontFamily: 'var(--sch-font-mono)', fontSize: '38px', fontWeight: '500', color: active ? 'var(--sch-accent-ink)' : 'var(--sch-ink)', letterSpacing: '0' });
         this.focusDisplayEl = disp;
         this.updateTimerDisplay();
         if (active) this.focusTimer = this.plugin.registerInterval(window.setInterval(() => this.updateTimerDisplay(), 1000));

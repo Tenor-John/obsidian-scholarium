@@ -5462,26 +5462,28 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 
 /* Settings page cleanup */
 .scholarium-settings {
-    --settings-paper: #fff;
-    --settings-line: rgba(28, 31, 35, 0.10);
-    --settings-soft: #f6f5f3;
+    --settings-paper: var(--bg-surface);
+    --settings-line: var(--border);
+    --settings-soft: var(--bg-elevated);
     max-width: 980px;
     margin: 0 auto;
     padding: 28px 34px 44px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
 }
 
 .scholarium-settings > h2 {
     margin: 0 0 20px;
     padding-bottom: 14px;
     border-bottom: 1px solid var(--settings-line);
-    color: var(--text-normal);
+    color: var(--text-primary);
     font-size: 1.25em;
     font-weight: 700;
 }
 
 .scholarium-settings > h3 {
     margin: 28px 0 10px;
-    color: var(--text-normal);
+    color: var(--text-primary);
     font-size: 1.02em;
     font-weight: 700;
 }
@@ -5493,7 +5495,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 
 .scholarium-settings > p,
 .scholarium-settings .setting-item-description {
-    color: var(--text-muted);
+    color: var(--text-secondary);
     line-height: 1.6;
 }
 
@@ -5510,7 +5512,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 .scholarium-settings .setting-item-name {
-    color: var(--text-normal);
+    color: var(--text-primary);
     font-weight: 600;
 }
 
@@ -5521,6 +5523,15 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     border: 1px solid var(--settings-line);
     border-radius: 5px;
     background: var(--settings-paper);
+    color: var(--text-primary);
+}
+
+.scholarium-settings input[type="text"]:focus,
+.scholarium-settings input[type="password"]:focus,
+.scholarium-settings select:focus,
+.scholarium-settings textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-dim);
 }
 
 .scholarium-settings button,
@@ -5532,10 +5543,98 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     min-height: 220px;
 }
 
-.theme-dark .scholarium-settings {
-    --settings-paper: var(--background-primary);
-    --settings-line: rgba(255,255,255,0.10);
-    --settings-soft: var(--background-secondary);
+.modal-content:has(.scholarium-settings),
+.vertical-tab-content-container:has(.scholarium-settings) {
+    background: var(--bg-surface);
+}
+
+.sch-theme-modes {
+    display: flex;
+    gap: 10px;
+    margin: 14px 0 20px;
+}
+
+.sch-theme-mode {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 146px;
+    padding: 11px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
+.sch-theme-mode.is-selected {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+}
+
+.sch-theme-mode-title { font-size: 0.92em; font-weight: 600; }
+.sch-theme-mode-desc { margin-top: 3px; color: var(--text-secondary); font-size: 0.8em; }
+.sch-accent-label { margin-bottom: 9px; color: var(--text-primary); font-weight: 600; }
+.sch-accent-picker { display: flex; gap: 13px; margin-bottom: 18px; }
+
+.scholarium-settings .sch-accent-swatch {
+    position: relative;
+    width: 34px;
+    height: 34px;
+    padding: 4px;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    background: transparent;
+}
+
+.scholarium-settings .sch-accent-swatch.is-selected { border-color: var(--swatch-color); }
+.sch-accent-dot { display: block; width: 100%; height: 100%; border-radius: 50%; background: var(--swatch-color); }
+.sch-accent-check {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #0a0a0a;
+    font-weight: 700;
+}
+
+.sch-theme-preview {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    height: 40px;
+    margin: 8px 0 22px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-base);
+}
+
+.sch-theme-preview-nav {
+    height: 100%;
+    padding: 3px 10px;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-size: 0.8em;
+}
+
+.sch-theme-preview-card {
+    padding: 3px 10px;
+    border: 1px solid var(--accent);
+    border-radius: 5px;
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-size: 0.8em;
+}
+
+.scholarium-settings .sch-theme-preview-button {
+    padding: 4px 11px;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-size: 0.8em;
 }
 
 /* Image-to-note modal */
@@ -7271,4 +7370,1460 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     color: var(--text-muted);
     text-align: center;
     font-size: 0.86em;
+}
+
+/* =====================================================
+   Signal console theme - dark research workspace
+   ===================================================== */
+.scholarium-dashboard.scholarium-dashboard,
+.scholarium-chat-modal-wrap,
+.scholarium-settings {
+    --celn-accent: #1aff8c;
+    --celn-accent-rgb: 26, 255, 140;
+    --celn-accent-light: #57ffa9;
+    --celn-accent-medium: #00e874;
+    --celn-accent-dark: #0f6e56;
+    --celn-accent-deeper: #0f3d28;
+    --celn-alpha: 0.06;
+    --sch-bg: #0a0a0a;
+    --sch-bg-deep: #0d0d0d;
+    --sch-surface: #141414;
+    --sch-surface2: #1a1a1a;
+    --sch-line: rgba(255, 255, 255, 0.10);
+    --sch-line-soft: rgba(255, 255, 255, 0.07);
+    --sch-ink: #f0f0f0;
+    --sch-ink2: #e8e8e8;
+    --sch-mute: #888888;
+    --sch-mute-soft: #555555;
+    --sch-paper: #0a0a0a;
+    --sch-accent: #1aff8c;
+    --sch-accent-soft: #0f3d28;
+    --sch-accent-ink: #1aff8c;
+    --sch-rose: #d87587;
+    --sch-sun: #bca159;
+    --sch-moss: #1aff8c;
+    --sch-sky: #62a7ad;
+    --sch-iris: #a18cc5;
+    --sch-coral: #bd8669;
+    --sch-rose-fg: #d87587;
+    --sch-rose-bg: #201519;
+    --sch-sun-fg: #c6ad67;
+    --sch-sun-bg: #1c1911;
+    --sch-moss-fg: #1aff8c;
+    --sch-moss-bg: #0f3d28;
+    --sch-sky-fg: #7abac0;
+    --sch-sky-bg: #101b1c;
+    --sch-iris-fg: #b6a2d9;
+    --sch-iris-bg: #18151f;
+    --sch-coral-fg: #c8967d;
+    --sch-coral-bg: #1d1613;
+    --sch-radius: 11px;
+    --sch-radius-inset: 8px;
+    --sch-pad: 16px;
+    --sch-gap: 10px;
+    --background-primary: #0a0a0a;
+    --background-primary-alt: #0d0d0d;
+    --background-secondary: #141414;
+    --background-secondary-alt: #161616;
+    --background-modifier-border: rgba(255, 255, 255, 0.07);
+    --background-modifier-hover: #1a1a1a;
+    --text-normal: #e8e8e8;
+    --text-muted: #888888;
+    --text-faint: #555555;
+    --interactive-accent: #1aff8c;
+    --interactive-accent-hover: #00e874;
+    --sch-font-serif: Inter, var(--font-interface), system-ui, sans-serif;
+    color: #e8e8e8;
+    font-family: Inter, var(--font-interface), system-ui, sans-serif;
+    letter-spacing: 0;
+}
+
+.scholarium-dashboard.scholarium-dashboard {
+    background: #0a0a0a;
+    color: #e8e8e8;
+    font-size: 13px;
+}
+
+/* Top command bar */
+.scholarium-dashboard .sch-brandbar,
+.scholarium-dashboard .scholarium-header,
+.scholarium-dashboard .scholarium-panel-switch,
+.scholarium-dashboard .scholarium-action-bar {
+    background: #0d0d0d;
+    border-color: rgba(255, 255, 255, 0.07);
+}
+
+.scholarium-dashboard .sch-brandbar {
+    min-height: 54px;
+    padding: 10px 18px;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.scholarium-dashboard .sch-brandbar-logo,
+.scholarium-dashboard .scholarium-logo {
+    color: #f0f0f0;
+    font-weight: 800;
+}
+
+.scholarium-dashboard .sch-brandbar-logo svg,
+.scholarium-dashboard .sch-brandbar-actions svg {
+    color: #888888;
+}
+
+.scholarium-dashboard .sch-brandbar-tabs {
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.scholarium-dashboard .sch-brandbar-tabs button,
+.scholarium-dashboard .scholarium-switch-btn {
+    height: 34px;
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: #888888;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.scholarium-dashboard .sch-brandbar-tabs button:hover,
+.scholarium-dashboard .scholarium-switch-btn:hover {
+    background: #161616;
+    border-color: rgba(255, 255, 255, 0.10);
+    color: #e8e8e8;
+}
+
+.scholarium-dashboard .sch-brandbar-tabs button.active,
+.scholarium-dashboard .scholarium-switch-btn.active {
+    color: #1aff8c;
+    background: rgba(26, 255, 140, 0.06);
+    border-color: rgba(26, 255, 140, 0.24);
+    box-shadow: inset 0 -2px 0 #1aff8c;
+}
+
+.scholarium-dashboard .scholarium-clock {
+    color: #888888;
+    font-family: var(--celn-mono);
+}
+
+/* Controls */
+.scholarium-dashboard .scholarium-btn,
+.scholarium-dashboard .ws2-btn,
+.scholarium-dashboard .rtl-add-btn,
+.scholarium-dashboard .rtl-secondary-btn,
+.scholarium-chat-modal-wrap .scholarium-btn,
+.scholarium-settings button {
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+    color: #e8e8e8;
+    font-size: 13px;
+    font-weight: 600;
+    transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.scholarium-dashboard .scholarium-btn:hover,
+.scholarium-dashboard .ws2-btn:hover:not(.ws2-btn-disabled),
+.scholarium-dashboard .rtl-add-btn:hover,
+.scholarium-dashboard .rtl-secondary-btn:hover,
+.scholarium-chat-modal-wrap .scholarium-btn:hover,
+.scholarium-settings button:hover {
+    background: #1a1a1a;
+    border-color: rgba(255, 255, 255, 0.25);
+    color: #f0f0f0;
+}
+
+.scholarium-dashboard .scholarium-btn.primary,
+.scholarium-dashboard .ws2-btn.ws2-btn-primary,
+.scholarium-dashboard .rtl-add-btn,
+.scholarium-chat-modal-wrap .scholarium-btn.primary {
+    background: #1aff8c;
+    border-color: #1aff8c;
+    color: #0a0a0a;
+}
+
+.scholarium-dashboard .scholarium-btn.primary:hover,
+.scholarium-dashboard .ws2-btn.ws2-btn-primary:hover:not(.ws2-btn-disabled),
+.scholarium-dashboard .rtl-add-btn:hover,
+.scholarium-chat-modal-wrap .scholarium-btn.primary:hover {
+    background: #00e874;
+    border-color: #00e874;
+    color: #0a0a0a;
+}
+
+.scholarium-dashboard .scholarium-btn.ai-btn {
+    background: #1aff8c;
+    border: 1px solid #1aff8c;
+    color: #0a0a0a;
+}
+
+.scholarium-dashboard input,
+.scholarium-dashboard select,
+.scholarium-dashboard textarea,
+.scholarium-chat-modal-wrap input,
+.scholarium-chat-modal-wrap select,
+.scholarium-chat-modal-wrap textarea,
+.scholarium-settings input,
+.scholarium-settings select,
+.scholarium-settings textarea,
+.scholarium-dashboard .ws2-input {
+    background: #1a1a1a;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 8px;
+    box-shadow: none;
+    color: #e8e8e8;
+}
+
+.scholarium-dashboard input::placeholder,
+.scholarium-dashboard textarea::placeholder,
+.scholarium-chat-modal-wrap textarea::placeholder,
+.scholarium-settings input::placeholder {
+    color: #555555;
+}
+
+.scholarium-dashboard input:focus,
+.scholarium-dashboard select:focus,
+.scholarium-dashboard textarea:focus,
+.scholarium-chat-modal-wrap input:focus,
+.scholarium-chat-modal-wrap textarea:focus,
+.scholarium-settings input:focus,
+.scholarium-settings textarea:focus {
+    border-color: #1aff8c;
+    box-shadow: 0 0 0 2px rgba(26, 255, 140, 0.10);
+    outline: none;
+}
+
+/* Notebook and experiment board */
+.scholarium-dashboard .scholarium-main,
+.scholarium-dashboard .scholarium-panel {
+    background: #0a0a0a;
+}
+
+.scholarium-dashboard .scholarium-panel.left-panel {
+    width: 220px;
+    min-width: 190px;
+    padding: 14px 12px;
+    background: #0d0d0d;
+    border-right: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.scholarium-dashboard .panel-title,
+.scholarium-dashboard .detail-title,
+.scholarium-dashboard .exp-board-title {
+    color: #f0f0f0;
+    font-weight: 700;
+}
+
+.scholarium-dashboard .filter-tab.active,
+.scholarium-dashboard .status-badge.status-study {
+    background: #0f3d28;
+    border-color: transparent;
+    color: #1aff8c;
+}
+
+.scholarium-dashboard .exp-item,
+.scholarium-dashboard .exp-board-stat,
+.scholarium-dashboard .exp-note-card,
+.scholarium-dashboard .detail-section,
+.scholarium-dashboard .exp-del-modal {
+    background: #141414;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 10px;
+    box-shadow: none;
+}
+
+.scholarium-dashboard .exp-item:hover,
+.scholarium-dashboard .exp-note-card:hover {
+    background: #1a1a1a;
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.scholarium-dashboard .exp-item.selected,
+.scholarium-dashboard .exp-item.active,
+.scholarium-dashboard .exp-note-card.is-bookmarked {
+    border-color: #1aff8c;
+    box-shadow: inset 0 0 0 1px rgba(26, 255, 140, 0.12);
+}
+
+.scholarium-dashboard .exp-board-stats {
+    gap: 10px;
+}
+
+.scholarium-dashboard .exp-card-dashboard {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 10px;
+}
+
+.scholarium-dashboard .exp-note-card-title {
+    color: #f0f0f0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.scholarium-dashboard .exp-note-card-meta,
+.scholarium-dashboard .exp-board-subtitle,
+.scholarium-dashboard .results-text,
+.scholarium-dashboard .notes-text {
+    color: #888888;
+}
+
+/* Academic tools library */
+.scholarium-dashboard .rtl-root {
+    --rtl-panel: #141414;
+    --rtl-panel-strong: #141414;
+    --rtl-line: rgba(255, 255, 255, 0.07);
+    --rtl-title: #f0f0f0;
+    --rtl-muted-final: #888888;
+    background: #0a0a0a;
+    color: #e8e8e8;
+    padding: 16px max(14px, 2vw) 28px;
+}
+
+.scholarium-dashboard .rtl-hero {
+    position: relative;
+    margin-bottom: 16px;
+    padding: 18px 20px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 12px;
+    background: #0d0d0d;
+}
+
+.scholarium-dashboard .rtl-hero::after {
+    content: "+";
+    position: absolute;
+    top: 15px;
+    right: 18px;
+    color: rgba(255, 255, 255, 0.48);
+    font-size: 18px;
+    font-weight: 300;
+}
+
+.scholarium-dashboard .rtl-hero-title {
+    color: #f0f0f0;
+    font-size: clamp(26px, 3vw, 34px);
+    font-weight: 850;
+}
+
+.scholarium-dashboard .rtl-hero-sub {
+    color: #888888;
+    font-size: 13px;
+}
+
+.scholarium-dashboard .rtl-main {
+    gap: 12px;
+}
+
+.scholarium-dashboard .rtl-nav-col {
+    width: 202px;
+    min-width: 202px;
+}
+
+.scholarium-dashboard .rtl-nav {
+    width: 202px;
+    background: #0d0d0d;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 11px;
+    padding: 10px;
+}
+
+.scholarium-dashboard .rtl-search-input {
+    height: 32px;
+    font-size: 12px;
+}
+
+.scholarium-dashboard .rtl-nav-title {
+    color: #555555;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+.scholarium-dashboard .rtl-nav-item {
+    position: relative;
+    min-height: 30px;
+    padding: 5px 8px 5px 12px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #888888;
+}
+
+.scholarium-dashboard .rtl-nav-item:hover {
+    background: #161616;
+    color: #e8e8e8;
+}
+
+.scholarium-dashboard .rtl-nav-item.active {
+    background: rgba(26, 255, 140, 0.06);
+    color: #1aff8c;
+}
+
+.scholarium-dashboard .rtl-nav-item.active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 3px;
+    border-radius: 4px;
+    background: #1aff8c;
+}
+
+.scholarium-dashboard .rtl-nav-count,
+.scholarium-dashboard .rtl-section-count {
+    background: #1a1a1a;
+    color: #888888;
+}
+
+.scholarium-dashboard .rtl-nav-item.active .rtl-nav-count,
+.scholarium-dashboard .rtl-section-count {
+    background: #0f3d28;
+    color: #1aff8c;
+}
+
+.scholarium-dashboard .rtl-grid-wrap {
+    padding: 0 10px 0 0;
+}
+
+.scholarium-dashboard .rtl-section {
+    --rtl-category-color: #1aff8c !important;
+}
+
+.scholarium-dashboard .rtl-section-head {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    padding-bottom: 9px;
+    margin-bottom: 10px;
+}
+
+.scholarium-dashboard .rtl-section-head::before {
+    width: 3px;
+    height: 18px;
+    background: #1aff8c;
+}
+
+.scholarium-dashboard .rtl-section-title {
+    color: #e8e8e8;
+    font-size: 14px;
+    font-weight: 650;
+}
+
+.scholarium-dashboard .rtl-grid {
+    grid-template-columns: repeat(auto-fill, minmax(188px, 1fr));
+    gap: 10px;
+}
+
+.scholarium-dashboard .rtl-card {
+    --rtl-category-color: #1aff8c !important;
+    min-height: 118px;
+    padding: 14px 14px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 10px;
+    background: #141414;
+    box-shadow: none;
+}
+
+.scholarium-dashboard .rtl-card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: #1a1a1a;
+    box-shadow: none;
+    transform: none;
+}
+
+.scholarium-dashboard .rtl-card-top {
+    grid-template-columns: minmax(0, 1fr) 24px;
+    gap: 8px;
+}
+
+.scholarium-dashboard .rtl-card-title {
+    color: #f0f0f0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.scholarium-dashboard .rtl-card-icon {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    border-radius: 6px;
+    background: transparent;
+    color: #888888;
+    font-size: 14px;
+}
+
+.scholarium-dashboard .rtl-card-desc {
+    min-height: 32px;
+    margin: 9px 0;
+    color: #888888;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.scholarium-dashboard .rtl-card-link {
+    max-width: calc(100% - 52px);
+    color: #555555;
+    font-size: 12px;
+}
+
+.scholarium-dashboard .rtl-card-link > span:first-child {
+    color: #888888;
+}
+
+.scholarium-dashboard .rtl-card-actions {
+    background: #141414;
+}
+
+.scholarium-dashboard .rtl-mini-btn {
+    color: #888888;
+    border-color: rgba(255, 255, 255, 0.10);
+    background: transparent;
+}
+
+.scholarium-dashboard .rtl-mini-btn.primary {
+    background: #1aff8c;
+    border-color: #1aff8c;
+    color: #0a0a0a;
+}
+
+/* PhD workspace, overview, attendance and scheduling */
+.scholarium-dashboard .ws2-root,
+.scholarium-dashboard .ws2-layout,
+.scholarium-dashboard .ws2-content,
+.scholarium-dashboard .ws2-page,
+.scholarium-dashboard .ws2-page-body {
+    background: #0a0a0a;
+    color: #e8e8e8;
+}
+
+.scholarium-dashboard .ws2-sidebar {
+    width: 210px;
+    background: #0d0d0d;
+    border-right: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.scholarium-dashboard .ws2-logo-circle {
+    background: #0f3d28;
+    color: #1aff8c;
+    border: 1px solid rgba(26, 255, 140, 0.22);
+}
+
+.scholarium-dashboard .ws2-logo-title,
+.scholarium-dashboard .ws2-page-hero-title,
+.scholarium-dashboard .ws2-overview-title {
+    color: #f0f0f0;
+    font-family: Inter, var(--font-interface), sans-serif;
+    font-weight: 800;
+}
+
+.scholarium-dashboard .ws2-logo-subtitle,
+.scholarium-dashboard .ws2-logo-datetime,
+.scholarium-dashboard .ws2-page-hero-sub {
+    color: #888888;
+}
+
+.scholarium-dashboard .ws2-nav-group-label {
+    color: #555555;
+}
+
+.scholarium-dashboard .ws2-nav-item {
+    border-left: 3px solid transparent;
+    border-radius: 7px;
+    color: #888888;
+}
+
+.scholarium-dashboard .ws2-nav-item:hover {
+    background: #161616;
+    color: #e8e8e8;
+}
+
+.scholarium-dashboard .ws2-nav-item.active {
+    border-left-color: #1aff8c;
+    background: rgba(26, 255, 140, 0.06);
+    color: #1aff8c;
+}
+
+.scholarium-dashboard .ws2-page-hero {
+    position: relative;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    background: #0a0a0a;
+}
+
+.scholarium-dashboard .ws2-page-hero::after {
+    content: "+";
+    display: block;
+    position: absolute;
+    top: 14px;
+    right: 18px;
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 16px;
+}
+
+.scholarium-dashboard .ws2-card,
+.scholarium-dashboard .ws2-snapshot-card,
+.scholarium-dashboard .ws2-summary-card,
+.scholarium-dashboard .ws2-big-num-card,
+.scholarium-dashboard .ws2-period-card,
+.scholarium-dashboard .ws2-timeblock-item,
+.scholarium-dashboard .ws2-task-item,
+.scholarium-dashboard .ws2-sub-card,
+.scholarium-dashboard .ws2-kanban-col,
+.scholarium-dashboard .ws2-chart,
+.scholarium-dashboard .ws2-stack-chart-card {
+    background: #141414;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 10px;
+    box-shadow: none;
+}
+
+.scholarium-dashboard .ws2-summary-card:nth-child(n) {
+    background: #141414;
+    border-color: rgba(255, 255, 255, 0.07);
+}
+
+.scholarium-dashboard .ws2-card:hover,
+.scholarium-dashboard .ws2-summary-card:hover,
+.scholarium-dashboard .ws2-big-num-card:hover,
+.scholarium-dashboard .ws2-period-card:hover,
+.scholarium-dashboard .ws2-sub-card:hover {
+    background: #1a1a1a;
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: none;
+}
+
+.scholarium-dashboard .ws2-card-value,
+.scholarium-dashboard .ws2-big-num-value,
+.scholarium-dashboard .ws2-snapshot-value,
+.scholarium-dashboard .ws2-stat-value-large,
+.scholarium-dashboard .ws2-timeblock-time {
+    color: #1aff8c;
+}
+
+.scholarium-dashboard .ws2-stack-bar-wrap {
+    background: #1a1a1a;
+}
+
+.scholarium-dashboard .ws2-stack-seg,
+.scholarium-dashboard .ws2-habit-progress-bar,
+.scholarium-dashboard .ws2-calendar-day.has-data::after {
+    background: #1aff8c;
+}
+
+.scholarium-dashboard .ws2-calendar-day.today,
+.scholarium-dashboard .ws2-range-selector .active,
+.scholarium-dashboard .ws2-hm-cell.ws2-hm-done {
+    background: #0f3d28;
+    color: #1aff8c;
+}
+
+/* Materials, shared cards and idea library primitives */
+.scholarium-dashboard .mat-card,
+.scholarium-dashboard .mat-sidebar,
+.scholarium-dashboard .mat-toolbar,
+.scholarium-dashboard .sch-card,
+.scholarium-dashboard .sch-inset {
+    background: #141414 !important;
+    border-color: rgba(255, 255, 255, 0.07) !important;
+    box-shadow: none !important;
+}
+
+.scholarium-dashboard .sch-card--hover:hover,
+.scholarium-dashboard .mat-card:hover {
+    background: #1a1a1a !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    transform: none !important;
+}
+
+.scholarium-dashboard .sch-pill {
+    background: #1a1a1a !important;
+    color: #888888 !important;
+}
+
+/* Agent modals and plugin settings */
+.scholarium-chat-modal-wrap.modal,
+.scholarium-chat-modal-wrap .modal-content {
+    background: #0d0d0d;
+    color: #e8e8e8;
+}
+
+.scholarium-chat-modal-wrap .scholarium-chat-modal,
+.scholarium-chat-modal-wrap .chat-api-bar,
+.scholarium-chat-modal-wrap .chat-bubble,
+.scholarium-chat-modal-wrap .chat-image-agent,
+.scholarium-chat-modal-wrap .exp-preview {
+    background: #141414;
+    border-color: rgba(255, 255, 255, 0.07);
+    color: #e8e8e8;
+}
+
+.scholarium-chat-modal-wrap .chat-title {
+    color: #f0f0f0;
+    font-weight: 750;
+}
+
+.scholarium-chat-modal-wrap .chat-subtitle,
+.scholarium-chat-modal-wrap .preview-field,
+.scholarium-chat-modal-wrap .chat-image-subtitle {
+    color: #888888;
+}
+
+.scholarium-chat-modal-wrap .chat-api-ok {
+    color: #1aff8c;
+}
+
+.scholarium-settings {
+    background: #0a0a0a;
+    color: #e8e8e8;
+    padding: 20px;
+}
+
+.scholarium-settings h2,
+.scholarium-settings h3,
+.scholarium-settings .setting-item-name {
+    color: #f0f0f0;
+}
+
+.scholarium-settings .setting-item {
+    border-color: rgba(255, 255, 255, 0.07);
+}
+
+.scholarium-settings .setting-item-description {
+    color: #888888;
+}
+
+@media (max-width: 780px) {
+    .scholarium-dashboard .sch-brandbar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .scholarium-dashboard .sch-brandbar-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .scholarium-dashboard .ws2-sidebar {
+        width: 176px;
+    }
+
+    .scholarium-dashboard .rtl-grid {
+        grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    }
+}
+
+/* Final token bridge: keep the console layout while allowing both themes and every accent. */
+.scholarium-root.scholarium-dashboard,
+.scholarium-root.scholarium-settings,
+.scholarium-root.scholarium-chat-modal-wrap,
+.vertical-tab-content-container.scholarium-root {
+    --sch-bg: var(--bg-base);
+    --sch-bg-deep: var(--bg-panel);
+    --sch-surface: var(--bg-surface);
+    --sch-surface2: var(--bg-elevated);
+    --sch-line: var(--border);
+    --sch-line-soft: var(--border-soft);
+    --sch-ink: var(--text-primary);
+    --sch-ink2: var(--text-secondary);
+    --sch-mute: var(--text-muted);
+    --sch-mute-soft: var(--text-placeholder);
+    --sch-paper: var(--bg-base);
+    --sch-accent: var(--accent);
+    --sch-accent-soft: var(--accent-dim);
+    --sch-accent-ink: var(--accent);
+    --celn-accent: var(--accent);
+    --celn-accent-rgb: var(--accent-rgb);
+    --celn-accent-light: var(--accent);
+    --celn-accent-light-rgb: var(--accent-rgb);
+    --celn-accent-medium: var(--accent);
+    --celn-accent-medium-rgb: var(--accent-rgb);
+    --celn-accent-dark: var(--accent-deep);
+    --celn-accent-dark-rgb: var(--accent-rgb);
+    --nb-bg: var(--bg-base);
+    --nb-paper: var(--bg-surface);
+    --nb-paper-soft: var(--bg-elevated);
+    --nb-line: var(--border);
+    --nb-line-soft: var(--border-soft);
+    --background-primary: var(--bg-base);
+    --background-primary-alt: var(--bg-panel);
+    --background-secondary: var(--bg-surface);
+    --background-secondary-alt: var(--bg-elevated);
+    --background-modifier-border: var(--border);
+    --background-modifier-hover: var(--bg-elevated);
+    --text-normal: var(--text-primary);
+    --text-muted: var(--text-secondary);
+    --text-faint: var(--text-muted);
+    --interactive-accent: var(--accent);
+    --interactive-accent-hover: var(--accent);
+    color: var(--text-primary);
+}
+
+.scholarium-root.scholarium-dashboard,
+.scholarium-root .scholarium-main,
+.scholarium-root .scholarium-panel,
+.scholarium-root .ws2-root,
+.scholarium-root .ws2-layout,
+.scholarium-root .ws2-content,
+.scholarium-root .ws2-page,
+.scholarium-root .ws2-page-body,
+.vertical-tab-content-container.scholarium-root,
+.scholarium-root.scholarium-settings {
+    background: var(--bg-base);
+    color: var(--text-primary);
+}
+
+.scholarium-root.scholarium-chat-modal-wrap,
+.scholarium-root.scholarium-chat-modal-wrap .modal-content {
+    background: var(--bg-panel);
+    color: var(--text-primary);
+}
+
+.scholarium-root.scholarium-dashboard {
+    font-size: var(--scholarium-font-size) !important;
+}
+
+.scholarium-root.scholarium-settings {
+    font-size: var(--scholarium-font-size);
+}
+
+.scholarium-root .sch-brandbar,
+.scholarium-root .scholarium-header,
+.scholarium-root .scholarium-panel-switch,
+.scholarium-root .scholarium-action-bar,
+.scholarium-root .scholarium-panel.left-panel,
+.scholarium-root .ws2-sidebar,
+.scholarium-root .rtl-hero,
+.scholarium-root .rtl-nav {
+    background: var(--bg-panel);
+    border-color: var(--border);
+}
+
+.scholarium-root .sch-brandbar-logo,
+.scholarium-root .scholarium-logo,
+.scholarium-root .panel-title,
+.scholarium-root .detail-title,
+.scholarium-root .exp-board-title,
+.scholarium-root .exp-note-card-title,
+.scholarium-root .rtl-hero-title,
+.scholarium-root .rtl-section-title,
+.scholarium-root .rtl-card-title,
+.scholarium-root .ws2-logo-title,
+.scholarium-root .ws2-page-hero-title,
+.scholarium-root .ws2-overview-title,
+.scholarium-root.scholarium-settings h2,
+.scholarium-root.scholarium-settings h3,
+.scholarium-root.scholarium-settings .setting-item-name {
+    color: var(--text-primary);
+}
+
+.scholarium-root .scholarium-clock,
+.scholarium-root .exp-note-card-meta,
+.scholarium-root .exp-board-subtitle,
+.scholarium-root .results-text,
+.scholarium-root .notes-text,
+.scholarium-root .rtl-hero-sub,
+.scholarium-root .rtl-card-desc,
+.scholarium-root .rtl-card-link,
+.scholarium-root .ws2-logo-subtitle,
+.scholarium-root .ws2-logo-datetime,
+.scholarium-root .ws2-page-hero-sub,
+.scholarium-root.scholarium-settings .setting-item-description {
+    color: var(--text-secondary);
+}
+
+.scholarium-root .scholarium-btn,
+.scholarium-root .ws2-btn,
+.scholarium-root .rtl-secondary-btn,
+.scholarium-root .rtl-mini-btn,
+.scholarium-root.scholarium-settings button {
+    border-color: var(--border-strong);
+    background: transparent;
+    color: var(--text-primary);
+}
+
+.scholarium-root .scholarium-btn:hover,
+.scholarium-root .ws2-btn:hover:not(.ws2-btn-disabled),
+.scholarium-root .rtl-secondary-btn:hover,
+.scholarium-root .rtl-mini-btn:hover,
+.scholarium-root.scholarium-settings button:hover,
+.scholarium-root .sch-brandbar-tabs button:hover,
+.scholarium-root .scholarium-switch-btn:hover,
+.scholarium-root .ws2-nav-item:hover,
+.scholarium-root .rtl-nav-item:hover {
+    background: var(--bg-elevated);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+}
+
+.scholarium-root .exp-item,
+.scholarium-root .exp-board-stat,
+.scholarium-root .exp-note-card,
+.scholarium-root .detail-section,
+.scholarium-root .ws2-card,
+.scholarium-root .ws2-snapshot-card,
+.scholarium-root .ws2-summary-card:nth-child(n),
+.scholarium-root .ws2-big-num-card,
+.scholarium-root .ws2-period-card,
+.scholarium-root .ws2-timeblock-item,
+.scholarium-root .ws2-task-item,
+.scholarium-root .ws2-food-item,
+.scholarium-root .ws2-sub-card,
+.scholarium-root .ws2-kanban-col,
+.scholarium-root .ws2-chart,
+.scholarium-root .ws2-stack-chart-card,
+.scholarium-root .rtl-card,
+.scholarium-root .mat-card,
+.scholarium-root .mat-sidebar,
+.scholarium-root .mat-toolbar,
+.scholarium-root .sch-card,
+.scholarium-root .sch-inset {
+    background: var(--bg-surface) !important;
+    border-color: var(--border) !important;
+}
+
+.scholarium-root .exp-note-card-top {
+    border-color: var(--border-soft);
+}
+
+.scholarium-root .exp-note-card-footer,
+.scholarium-root .exp-board-empty,
+.scholarium-root .canvas-wrap,
+.scholarium-root .exp-preview,
+.scholarium-root .chat-api-bar {
+    background: var(--bg-surface) !important;
+    border-color: var(--border) !important;
+}
+
+.scholarium-root.scholarium-chat-modal-wrap .scholarium-chat-modal,
+.scholarium-root.scholarium-chat-modal-wrap .chat-api-bar,
+.scholarium-root.scholarium-chat-modal-wrap .chat-bubble,
+.scholarium-root.scholarium-chat-modal-wrap .chat-messages,
+.scholarium-root.scholarium-chat-modal-wrap .chat-image-agent,
+.scholarium-root.scholarium-chat-modal-wrap .exp-preview,
+.scholarium-root.scholarium-chat-modal-wrap .image-lab-preview,
+.scholarium-root.scholarium-chat-modal-wrap .image-lab-status {
+    background: var(--bg-surface) !important;
+    border-color: var(--border) !important;
+    color: var(--text-primary);
+}
+
+.scholarium-root.scholarium-chat-modal-wrap .chat-input,
+.scholarium-root.scholarium-chat-modal-wrap input,
+.scholarium-root.scholarium-chat-modal-wrap textarea {
+    background: var(--bg-elevated) !important;
+    border-color: var(--border) !important;
+    color: var(--text-primary);
+}
+
+.scholarium-root .exp-note-card-section,
+.scholarium-root .mat-toolbar,
+.scholarium-root .ws2-sidebar-header,
+.scholarium-root .ws2-page-hero {
+    border-color: var(--border) !important;
+}
+
+.scholarium-root .rtl-root {
+    --rtl-panel: var(--bg-surface);
+    --rtl-panel-strong: var(--bg-surface);
+    --rtl-line: var(--border);
+    --rtl-title: var(--text-primary);
+    --rtl-muted-final: var(--text-secondary);
+    background: var(--bg-base);
+    color: var(--text-primary);
+}
+
+.scholarium-root .rtl-card-actions {
+    background: var(--bg-surface);
+}
+
+.scholarium-root .exp-item:hover,
+.scholarium-root .exp-note-card:hover,
+.scholarium-root .ws2-card:hover,
+.scholarium-root .ws2-summary-card:hover,
+.scholarium-root .ws2-big-num-card:hover,
+.scholarium-root .ws2-period-card:hover,
+.scholarium-root .ws2-sub-card:hover,
+.scholarium-root .rtl-card:hover,
+.scholarium-root .mat-card:hover,
+.scholarium-root .sch-card--hover:hover {
+    background: var(--bg-elevated) !important;
+    border-color: var(--border-strong) !important;
+}
+
+.scholarium-root .scholarium-btn.primary,
+.scholarium-root .ws2-btn.ws2-btn-primary,
+.scholarium-root .rtl-add-btn,
+.scholarium-root .rtl-mini-btn.primary,
+.scholarium-root .scholarium-btn.ai-btn,
+.scholarium-root .sch-theme-preview-button {
+    background: var(--accent) !important;
+    border-color: var(--accent) !important;
+    color: var(--accent-text) !important;
+}
+
+.scholarium-root .sch-brandbar-tabs button.active,
+.scholarium-root .scholarium-switch-btn.active,
+.scholarium-root .filter-tab.active,
+.scholarium-root .ws2-nav-item.active,
+.scholarium-root .rtl-nav-item.active,
+.scholarium-root .exp-item.selected,
+.scholarium-root .exp-item.active {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.scholarium-root .sch-brandbar-tabs button.active,
+.scholarium-root .scholarium-switch-btn.active {
+    box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.scholarium-root .ws2-nav-item.active {
+    border-left-color: var(--accent);
+    background: var(--accent-dim);
+}
+
+.scholarium-root .ws2-logo-circle {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+    color: var(--accent);
+}
+
+.scholarium-root .ws2-page-hero {
+    border-color: var(--border);
+    background: var(--bg-base);
+}
+
+.scholarium-root .ws2-stack-bar-wrap {
+    background: var(--bg-elevated);
+}
+
+.scholarium-root .ws2-stats-bar,
+.scholarium-root .ws2-stat-chip,
+.scholarium-root .ws2-range-btn,
+.scholarium-root .ws2-calendar-day,
+.scholarium-root .ws2-habit-item,
+.scholarium-root .ws2-achievement-card,
+.scholarium-root .ws2-settings-key {
+    background: var(--bg-surface) !important;
+    border-color: var(--border) !important;
+    color: var(--text-primary) !important;
+}
+
+.scholarium-root .ws2-range-btn:hover,
+.scholarium-root .ws2-stat-chip:hover,
+.scholarium-root .ws2-calendar-day:hover,
+.scholarium-root .ws2-habit-item:hover {
+    background: var(--bg-elevated) !important;
+}
+
+.scholarium-root .ws2-range-btn.active {
+    background: var(--accent-deep) !important;
+    border-color: var(--accent) !important;
+    color: var(--accent) !important;
+}
+
+.scholarium-root .rtl-nav-item.active::before,
+.scholarium-root .rtl-section-head::before {
+    background: var(--accent);
+}
+
+.scholarium-root .rtl-nav-item.active {
+    border-color: transparent;
+}
+
+.scholarium-root .rtl-nav-item.active::before {
+    background: var(--accent);
+}
+
+.scholarium-root .rtl-nav-item.active .rtl-nav-count,
+.scholarium-root .rtl-section-count,
+.scholarium-root .status-badge.status-study,
+.scholarium-root .ws2-calendar-day.today,
+.scholarium-root .ws2-range-selector .active,
+.scholarium-root .ws2-hm-cell.ws2-hm-done {
+    background: var(--accent-deep);
+    color: var(--accent);
+}
+
+.scholarium-root .ws2-card-value,
+.scholarium-root .ws2-big-num-value,
+.scholarium-root .ws2-snapshot-value,
+.scholarium-root .ws2-stat-value-large,
+.scholarium-root .ws2-timeblock-time,
+.scholarium-root .chat-api-ok {
+    color: var(--accent);
+}
+
+.scholarium-root .ws2-stack-seg,
+.scholarium-root .ws2-habit-progress-bar,
+.scholarium-root .ws2-calendar-day.has-data::after {
+    background: var(--accent);
+}
+
+.scholarium-root .sch-pill {
+    border: 1px solid transparent;
+}
+
+.scholarium-root .idea-toolbar {
+    background: var(--bg-panel) !important;
+}
+
+.scholarium-root .idea-card {
+    --idea-color: var(--accent);
+    --idea-tint: var(--accent-dim);
+    background: linear-gradient(135deg, var(--idea-tint), var(--bg-surface) 42%) !important;
+    border-left: 3px solid var(--idea-color) !important;
+    transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.scholarium-root .idea-source-claude {
+    --idea-color: var(--sch-iris-fg);
+    --idea-tint: var(--sch-iris-bg);
+}
+
+.scholarium-root .idea-source-gpt {
+    --idea-color: var(--sch-moss-fg);
+    --idea-tint: var(--sch-moss-bg);
+}
+
+.scholarium-root .idea-source-paper {
+    --idea-color: var(--sch-sky-fg);
+    --idea-tint: var(--sch-sky-bg);
+}
+
+.scholarium-root .idea-source-manual {
+    --idea-color: var(--sch-coral-fg);
+    --idea-tint: var(--sch-coral-bg);
+}
+
+.scholarium-root .idea-card:hover {
+    background: linear-gradient(135deg, var(--idea-tint), var(--bg-surface) 58%) !important;
+    border-color: var(--idea-color) !important;
+    border-left-color: var(--idea-color) !important;
+}
+
+.scholarium-root .idea-card.is-selected {
+    border-color: var(--idea-color) !important;
+    border-left-color: var(--idea-color) !important;
+    box-shadow: 0 0 0 1px var(--idea-color) !important;
+}
+
+.scholarium-root input,
+.scholarium-root select,
+.scholarium-root textarea,
+.scholarium-root .ws2-input {
+    background: var(--bg-elevated);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+.scholarium-root input:focus,
+.scholarium-root select:focus,
+.scholarium-root textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.scholarium-root input::placeholder,
+.scholarium-root textarea::placeholder {
+    color: var(--text-placeholder);
+}
+
+/* The settings selector contains two label lines; generic button rules must not collapse it. */
+.scholarium-root.scholarium-settings .sch-theme-mode {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    height: auto !important;
+    min-height: 60px;
+    padding: 10px 14px !important;
+    line-height: 1.25;
+    white-space: normal;
+}
+
+.scholarium-root.scholarium-settings .sch-theme-mode-title,
+.scholarium-root.scholarium-settings .sch-theme-mode-desc {
+    display: block;
+    position: static;
+    line-height: 1.35;
+}
+
+/* Apply the user-selected interface scale to newer fixed-pixel UI regions. */
+.scholarium-root .sch-brandbar-tabs button,
+.scholarium-root .scholarium-switch-btn,
+.scholarium-root .scholarium-btn,
+.scholarium-root .ws2-btn,
+.scholarium-root .rtl-card-title,
+.scholarium-root .exp-note-card-title {
+    font-size: calc(13px * var(--scholarium-font-scale)) !important;
+}
+
+.scholarium-root .rtl-hero-title {
+    font-size: calc(30px * var(--scholarium-font-scale)) !important;
+}
+
+/* Keep long experiment cards scrollable without rendering dark inner rails. */
+.scholarium-root .exp-note-card-scroll {
+    scrollbar-width: none;
+}
+
+.scholarium-root .exp-note-card-scroll::-webkit-scrollbar {
+    display: none;
+    width: 0;
+}
+
+.scholarium-root.scholarium-settings .sch-accent-picker {
+    flex-wrap: wrap;
+    max-width: 520px;
+}
+
+.scholarium-root.scholarium-settings .sch-accent-swatch {
+    border-color: transparent;
+    background: transparent;
+}
+
+.scholarium-root.scholarium-settings .sch-accent-swatch.is-selected {
+    border-color: var(--swatch-color);
+    background: transparent;
+}
+
+.scholarium-root.scholarium-settings .sch-custom-accent {
+    max-width: 720px;
+    margin: 4px 0 18px;
+}
+
+/* Resizable experiment navigator. */
+.scholarium-root .scholarium-panel.left-panel {
+    min-width: 280px;
+}
+
+.scholarium-root .filter-tabs {
+    gap: 7px;
+}
+
+.scholarium-root .notebook-sidebar-resizer {
+    width: 7px;
+    margin-left: -4px;
+    margin-right: -3px;
+    z-index: 2;
+    flex: 0 0 7px;
+    cursor: col-resize;
+    position: relative;
+    background: transparent;
+}
+
+.scholarium-root .notebook-sidebar-resizer::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 1px;
+    background: var(--border);
+    transition: background 120ms ease, width 120ms ease;
+}
+
+.scholarium-root .notebook-sidebar-resizer:hover::after,
+.scholarium-root .notebook-sidebar-resizer.is-dragging::after {
+    width: 2px;
+    background: var(--accent);
+}
+
+body.scholarium-resizing-sidebar {
+    cursor: col-resize !important;
+    user-select: none;
+}
+
+/* The workbench role mark is a clean emoji, not a framed badge. */
+.scholarium-root .ws2-logo-circle {
+    width: auto;
+    height: auto;
+    display: block;
+    justify-content: initial;
+    border: 0 !important;
+    background: transparent !important;
+    color: inherit;
+    filter: none;
+}
+
+/* Settings chapters collapse into short, scannable accordions. */
+.scholarium-root.scholarium-settings .sch-settings-section {
+    margin: 12px 0;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-panel);
+    overflow: hidden;
+}
+
+.scholarium-root.scholarium-settings .sch-settings-section-summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 14px 17px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.scholarium-root.scholarium-settings .sch-settings-section-summary::-webkit-details-marker {
+    display: none;
+}
+
+.scholarium-root.scholarium-settings .sch-settings-section-summary::after {
+    content: "+";
+    color: var(--text-muted);
+    font-size: 20px;
+    line-height: 1;
+}
+
+.scholarium-root.scholarium-settings .sch-settings-section[open] .sch-settings-section-summary::after {
+    content: "-";
+    color: var(--accent);
+}
+
+.scholarium-root.scholarium-settings .sch-settings-section-summary h3 {
+    margin: 0 !important;
+    font-size: 18px;
+}
+
+.scholarium-root.scholarium-settings .sch-settings-section-body {
+    padding: 0 17px 14px;
+    border-top: 1px solid var(--border-soft);
+}
+
+/* Compact settings typography: settings should remain dense independently of dashboard scaling. */
+.scholarium-root.scholarium-settings {
+    font-size: max(11px, calc(var(--scholarium-font-size) * 0.78)) !important;
+    padding: 16px 18px 26px !important;
+}
+
+.scholarium-root.scholarium-settings > h2 {
+    font-size: 2.1em !important;
+    margin: 0 0 12px !important;
+    padding-bottom: 8px !important;
+}
+
+.scholarium-root.scholarium-settings .sch-settings-section {
+    margin: 6px 0;
+    border-radius: 8px;
+}
+
+.scholarium-root.scholarium-settings .sch-settings-section-summary {
+    padding: 7px 10px;
+}
+
+.scholarium-root.scholarium-settings .sch-settings-section-summary h3 {
+    font-size: 1.55em !important;
+}
+
+.scholarium-root.scholarium-settings .sch-settings-section-summary::after {
+    font-size: 14px;
+}
+
+.scholarium-root.scholarium-settings .sch-settings-section-body {
+    padding: 0 10px 8px;
+}
+
+.scholarium-root.scholarium-settings .setting-item {
+    min-height: 28px;
+    padding: 5px 8px !important;
+}
+
+.scholarium-root.scholarium-settings .setting-item-name {
+    font-size: 1.2em !important;
+}
+
+.scholarium-root.scholarium-settings .setting-item-description,
+.scholarium-root.scholarium-settings p {
+    font-size: 1.05em !important;
+    line-height: 1.4;
+}
+
+.scholarium-root.scholarium-settings button,
+.scholarium-root.scholarium-settings input,
+.scholarium-root.scholarium-settings select,
+.scholarium-root.scholarium-settings textarea {
+    font-size: 1.15em !important;
+}
+
+.scholarium-root.scholarium-settings button,
+.scholarium-root.scholarium-settings input:not([type="color"]),
+.scholarium-root.scholarium-settings select {
+    min-height: 24px !important;
+    height: 24px !important;
+    padding: 2px 8px !important;
+}
+
+.scholarium-root.scholarium-settings .sch-theme-mode {
+    min-height: 44px;
+    padding: 7px 10px !important;
+}
+
+/* Color choices stay circular even when compact controls set a global button height. */
+.scholarium-root.scholarium-settings .sch-accent-swatch {
+    width: 34px !important;
+    min-width: 34px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    aspect-ratio: 1;
+    padding: 4px !important;
+    border-radius: 50% !important;
+    flex: 0 0 34px;
+}
+
+.scholarium-root.scholarium-settings .sch-accent-custom .sch-accent-dot {
+    background: conic-gradient(from 90deg, #4d9fff, #a78bfa, #ff7c6e, #fbbf24, #1aff8c, #4d9fff);
+}
+
+.scholarium-root.scholarium-settings .sch-accent-custom-mark {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    display: grid;
+    place-items: center;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-strong);
+    color: var(--text-primary);
+    font-size: 11px;
+    line-height: 1;
+}
+
+.scholarium-root.scholarium-settings .sch-accent-custom.is-selected .sch-accent-custom-mark {
+    display: none;
+}
+
+.scholarium-root[data-theme="dark"] .filter-tab:not(.active),
+.scholarium-root[data-theme="dark"] .exp-item-date,
+.scholarium-root[data-theme="dark"] .exp-day-label,
+.scholarium-root[data-theme="dark"] .exp-day-count,
+.scholarium-root[data-theme="dark"] .exp-board-subtitle,
+.scholarium-root[data-theme="dark"] .exp-note-card-meta,
+.scholarium-root[data-theme="dark"] .exp-note-card-section h4,
+.scholarium-root[data-theme="dark"] .scholarium-clock {
+    color: var(--text-secondary) !important;
+}
+
+.scholarium-root[data-theme="dark"] .filter-tab:disabled,
+.scholarium-root[data-theme="dark"] .filter-tab[disabled] {
+    color: var(--text-secondary) !important;
+    opacity: 0.78;
+    background: var(--bg-elevated);
+}
+
+@media (max-width: 680px) {
+    .scholarium-root .notebook-sidebar-resizer {
+        display: none;
+    }
+
+    .scholarium-root .scholarium-panel.left-panel {
+        min-width: 0 !important;
+        width: 100% !important;
+    }
 }

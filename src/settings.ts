@@ -3,7 +3,8 @@ import ChemELNPlugin from './main';
 import type { CloudProviderType } from './cloud-sync';
 import { CloudSyncManager, buildSyncConfig } from './cloud-sync';
 import type { WritingProvider } from './vision-writer';
-import type { ThemeKey, AccentKey, DensityKey, Lang } from './theme/tokens';
+import { SCHOLARIUM_ACCENTS } from './theme/tokens';
+import type { ThemeKey, AccentKey, AccentPresetKey, DensityKey, Lang } from './theme/tokens';
 
 export type AIProvider = 'claude' | 'openai' | 'kimi' | 'deepseek' | 'minimax' | 'custom';
 
@@ -89,10 +90,11 @@ export interface ChemELNSettings {
     notebookLabel:      string;         // 实验记录/笔记栏标签（自定义时使用）
     workspaceTabLabel:  string;         // 工作台 Tab 自定义标签（仅 custom 模式）
     fontSize:           PluginFontSize; // 插件界面字号
+    notebookSidebarWidth: number;       // 实验记录导航栏宽度（可拖拽）
 
     // ─── 重设计：主题 / 密度 / 强调色 / 语言 ───
-    theme:            ThemeKey;          // 'light' | 'dark' | 'scholar'，默认 'scholar'
-    accent:           AccentKey;         // 'amber' | 'indigo' | 'emerald' | 'plum'
+    theme:            ThemeKey;          // 'light' | 'dark'
+    accent:           AccentKey;         // one of the shared light/dark accent presets
     density:          DensityKey;        // 'compact' | 'regular' | 'spacious'
     language:         Lang;              // 'zh' | 'en'
     notebookListView: NotebookListView;  // 实验列表默认样式
@@ -157,18 +159,19 @@ export const DEFAULT_SETTINGS: ChemELNSettings = {
     cloudAutoSync: false,
     cloudSyncInterval: 0,
     researchToolCategoryColors: DEFAULT_RESEARCH_TOOL_CATEGORY_COLORS,
-    themeAccent:   '#FF7043',
-    themeGradient: '#E64A19',
-    themeAlpha:    0.10,
+    themeAccent:   '#1AFF8C',
+    themeGradient: '#0F6E56',
+    themeAlpha:    0.06,
     workspaceRole:      'phd',
-    pluginDisplayName:  '🧪 实验记录本',
+    pluginDisplayName:  'scholarium',
     notebookLabel:      '实验记录',
     workspaceTabLabel:  '工作台',
     fontSize:           'medium',
-    // 重设计默认值（首次安装默认素雅主题）
-    theme:            'scholar',
-    accent:           'amber',
-    density:          'regular',
+    notebookSidebarWidth: 300,
+    // 重设计默认值
+    theme:            'dark',
+    accent:           'green',
+    density:          'compact',
     language:         'zh',
     notebookListView: 'cards',
     aiPanelForm:      'sidebar',
@@ -261,6 +264,7 @@ export function providerLabel(provider: AIProvider): string {
 
 export class ChemELNSettingTab extends PluginSettingTab {
     plugin: ChemELNPlugin;
+    private openSettingsSections = new Set<string>(['🎛️ 插件个性化']);
 
     constructor(app: App, plugin: ChemELNPlugin) {
         super(app, plugin);
@@ -273,11 +277,10 @@ export class ChemELNSettingTab extends PluginSettingTab {
         containerEl.addClass('scholarium-settings');
 
         const s = this.plugin.settings;
-        const roleIcon  = WORKSPACE_ROLE_ICONS[s.workspaceRole] ?? '⚙️';
-        const roleName  = s.workspaceRole !== 'custom'
-            ? WORKSPACE_ROLE_LABELS[s.workspaceRole]
-            : (s.workspaceTabLabel || '工作台');
-        containerEl.createEl('h2', { text: `${roleIcon} ${s.pluginDisplayName || '实验记录本'} — 设置` });
+        this.plugin.applyThemeAttributes(containerEl);
+        const settingsHost = containerEl.closest('.vertical-tab-content-container') as HTMLElement | null;
+        if (settingsHost) this.plugin.applyThemeAttributes(settingsHost);
+        containerEl.createEl('h2', { text: 'scholarium — 设置' });
 
         // ===== 插件个性化 =====
         containerEl.createEl('h3', { text: '🎛️ 插件个性化' });
@@ -292,9 +295,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
         const applyRole = async (role: WorkspaceRole) => {
             s.workspaceRole = role;
             if (role !== 'custom') {
-                const icon  = WORKSPACE_ROLE_ICONS[role];
                 const label = WORKSPACE_ROLE_LABELS[role];
-                s.pluginDisplayName = `${icon} ${label.replace('工作台', '记录本')}`;
                 s.notebookLabel     = role === 'advisor' ? '指导记录' : '实验记录';
                 s.workspaceTabLabel = label;
             }
@@ -323,19 +324,6 @@ export class ChemELNSettingTab extends PluginSettingTab {
             });
             btn.addEventListener('click', () => void applyRole(role));
         }
-
-        // ── 插件显示名称 ──
-        new Setting(containerEl)
-            .setName('插件显示名称')
-            .setDesc('显示在顶部 Logo 区域的名称，可以是任意专业的记录本')
-            .addText(t => t
-                .setPlaceholder('🧪 实验记录本')
-                .setValue(s.pluginDisplayName)
-                .onChange(async v => {
-                    s.pluginDisplayName  = v;
-                    s.workspaceRole      = 'custom';
-                    await this.plugin.saveSettings();
-                }));
 
         // ── 笔记/实验栏标签 ──
         new Setting(containerEl)
@@ -387,7 +375,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
             }
         });
         previewBox.createEl('div', { text: `📌 当前配置预览` , attr: { style: 'font-weight:600; color:var(--text-normal); margin-bottom:4px;' } });
-        previewBox.createEl('div', { text: `顶部名称：${s.pluginDisplayName || '实验记录本'}` });
+        previewBox.createEl('div', { text: '顶部名称：scholarium' });
         previewBox.createEl('div', { text: `笔记栏标签：${s.notebookLabel || '实验记录'}` });
         previewBox.createEl('div', { text: `工作台 Tab：${s.workspaceRole !== 'custom' ? WORKSPACE_ROLE_LABELS[s.workspaceRole] : (s.workspaceTabLabel || '工作台')}` });
 
@@ -799,106 +787,159 @@ export class ChemELNSettingTab extends PluginSettingTab {
         }
 
         // ═══════════════════════════
-        // 主题颜色配置
+        // 主题与强调色
         // ═══════════════════════════
-        containerEl.createEl('h3', { text: '🎨 主题颜色' });
+        containerEl.createEl('h3', { text: '主题与强调色' });
         containerEl.createEl('p', {
-            text: '自定义插件主色调、渐变色与背景透明度，支持预设和手动调色盘。',
-            attr: { style: 'font-size:0.85em; color: var(--text-muted); margin-bottom:12px;' },
+            text: '浅色与深色主题均完整支持强调色。选择后立即应用，无需额外保存。',
+            cls: 'setting-item-description',
         });
 
-        // ── 预设按钮 ──
-        const presets: Array<{ label: string; accent: string; gradient: string; alpha: number }> = [
-            { label: '🟠 橙红（默认）', accent: '#FF7043', gradient: '#E64A19', alpha: 0.10 },
-            { label: '🔵 学术蓝',       accent: '#1976D2', gradient: '#0D47A1', alpha: 0.10 },
-            { label: '🟢 翠绿',         accent: '#2E7D32', gradient: '#1B5E20', alpha: 0.10 },
-            { label: '🟣 薰衣草',       accent: '#7B1FA2', gradient: '#4A148C', alpha: 0.10 },
-            { label: '🩵 青色',         accent: '#00838F', gradient: '#006064', alpha: 0.10 },
-            { label: '🌸 玫瑰粉',       accent: '#C2185B', gradient: '#880E4F', alpha: 0.10 },
-            { label: '🤎 岩棕', accent: '#6B5B4D', gradient: '#3E342B', alpha: 0.10 },
-            { label: '💚 松石青', accent: '#008080', gradient: '#005454', alpha: 0.10 },
+        const modeRow = containerEl.createDiv({ cls: 'sch-theme-modes' });
+        const modes: Array<{ key: ThemeKey; label: string; desc: string }> = [
+            { key: 'light', label: '浅色', desc: '柔和暖白' },
+            { key: 'dark', label: '深色', desc: '沉静黑灰' },
         ];
-
-        const presetWrap = containerEl.createDiv({ attr: { style: 'display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;' } });
-
-        const applyPreset = async (p: typeof presets[0]) => {
-            this.plugin.settings.themeAccent   = p.accent;
-            this.plugin.settings.themeGradient = p.gradient;
-            this.plugin.settings.themeAlpha    = p.alpha;
-            await this.plugin.saveSettings();
-            this.display(); // re-render settings panel to update pickers
-        };
-
-        for (const p of presets) {
-            const btn = presetWrap.createEl('button', {
-                text: p.label,
-                attr: { style: `padding:5px 12px; border-radius:8px; border:2px solid ${p.accent}; background: ${p.accent}1a; color: var(--text-normal); cursor:pointer; font-size:0.82em; font-weight:600; transition:all 0.15s;` },
+        for (const mode of modes) {
+            const selected = s.theme === mode.key;
+            const button = modeRow.createEl('button', {
+                cls: `sch-theme-mode${selected ? ' is-selected' : ''}`,
+                attr: { 'aria-pressed': String(selected) },
             });
-            btn.addEventListener('click', () => void applyPreset(p));
+            button.createSpan({ cls: 'sch-theme-mode-title', text: mode.label });
+            button.createSpan({ cls: 'sch-theme-mode-desc', text: mode.desc });
+            button.addEventListener('click', async () => {
+                s.theme = mode.key;
+                await this.plugin.saveSettings();
+                this.display();
+            });
         }
 
-        // ── ➕ 自定义主题色（用户 DIY）──
+        containerEl.createEl('div', { text: '强调色', cls: 'sch-accent-label' });
+        const accentRow = containerEl.createDiv({ cls: 'sch-accent-picker', attr: { role: 'radiogroup', 'aria-label': '强调色' } });
+        const accents = Object.entries(SCHOLARIUM_ACCENTS) as Array<[AccentPresetKey, (typeof SCHOLARIUM_ACCENTS)[AccentPresetKey]]>;
+        for (const [key, preset] of accents) {
+            const selected = s.accent === key;
+            const button = accentRow.createEl('button', {
+                cls: `sch-accent-swatch${selected ? ' is-selected' : ''}`,
+                attr: {
+                    title: preset.name.zh,
+                    role: 'radio',
+                    'aria-checked': String(selected),
+                    'aria-label': preset.name.zh,
+                },
+            });
+            button.style.setProperty('--swatch-color', preset.base);
+            button.createSpan({ cls: 'sch-accent-dot' });
+            if (selected) button.createSpan({ cls: 'sch-accent-check', text: '✓' });
+            button.addEventListener('click', async () => {
+                s.accent = key;
+                s.themeAccent = preset.base;
+                s.themeGradient = preset.deep;
+                await this.plugin.saveSettings();
+                this.display();
+            });
+        }
+
         const darken = (hex: string): string => {
             const c = hex.replace('#', '');
             const f = (i: number) => Math.round(parseInt(c.slice(i, i + 2), 16) * 0.7).toString(16).padStart(2, '0');
             return `#${f(0)}${f(2)}${f(4)}`;
         };
-        const plusBtn = presetWrap.createEl('button', {
-            text: '➕ 自定义',
-            attr: { style: 'padding:5px 12px; border-radius:8px; border:2px dashed var(--background-modifier-border); background:transparent; color:var(--text-muted); cursor:pointer; font-size:0.82em; font-weight:600; transition:all 0.15s;' },
+        const customSelected = s.accent === 'custom';
+        const customButton = accentRow.createEl('button', {
+            cls: `sch-accent-swatch sch-accent-custom${customSelected ? ' is-selected' : ''}`,
+            attr: {
+                title: '自定义颜色',
+                role: 'radio',
+                'aria-checked': String(customSelected),
+                'aria-label': '自定义颜色',
+            },
         });
-        const hiddenColor = presetWrap.createEl('input', { attr: { type: 'color', style: 'position:absolute; width:0; height:0; opacity:0; pointer-events:none;' } }) as HTMLInputElement;
-        hiddenColor.value = this.plugin.settings.themeAccent || '#FF7043';
-        plusBtn.addEventListener('click', () => hiddenColor.click());
-        hiddenColor.addEventListener('change', async () => {
-            this.plugin.settings.themeAccent = hiddenColor.value;
-            this.plugin.settings.themeGradient = darken(hiddenColor.value);
+        customButton.style.setProperty('--swatch-color', s.themeAccent);
+        customButton.createSpan({ cls: 'sch-accent-dot' });
+        customButton.createSpan({ cls: 'sch-accent-custom-mark', text: '+' });
+        if (customSelected) customButton.createSpan({ cls: 'sch-accent-check', text: '✓' });
+        customButton.addEventListener('click', async () => {
+            s.accent = 'custom';
+            s.themeGradient = darken(s.themeAccent);
             await this.plugin.saveSettings();
             this.display();
         });
 
-        // ── 主色调 ──
-        new Setting(containerEl)
-            .setName('主色调')
-            .setDesc('侧边栏、强调色、按钮等使用的主色')
+        const customWrap = containerEl.createDiv({ cls: 'sch-custom-accent' });
+
+        new Setting(customWrap)
+            .setName('自定义主色')
+            .setDesc('选择任意颜色作为插件强调色。')
             .addColorPicker(cp => cp
-                .setValue(this.plugin.settings.themeAccent)
+                .setValue(s.themeAccent)
                 .onChange(async v => {
-                    this.plugin.settings.themeAccent = v;
+                    s.accent = 'custom';
+                    s.themeAccent = v;
+                    s.themeGradient = darken(v);
                     await this.plugin.saveSettings();
+                    this.display();
                 }));
 
-        // ── 渐变色 ──
-        new Setting(containerEl)
-            .setName('渐变结束色')
-            .setDesc('Hero Banner / 侧边栏渐变的深色端')
+        new Setting(customWrap)
+            .setName('自定义深色端')
+            .setDesc('用于高对比标签与渐变中的深色部分。')
             .addColorPicker(cp => cp
-                .setValue(this.plugin.settings.themeGradient)
+                .setValue(s.themeGradient)
                 .onChange(async v => {
-                    this.plugin.settings.themeGradient = v;
+                    s.accent = 'custom';
+                    s.themeGradient = v;
                     await this.plugin.saveSettings();
+                    this.display();
                 }));
 
-        // ── 背景透明度 ──
-        new Setting(containerEl)
-            .setName('背景透明度')
-            .setDesc(`控制彩色背景块的透明度（当前：${Math.round(this.plugin.settings.themeAlpha * 100)}%）`)
+        new Setting(customWrap)
+            .setName('强调背景透明度')
+            .setDesc(`当前：${Math.round(s.themeAlpha * 100)}%`)
             .addSlider(sl => sl
                 .setLimits(3, 30, 1)
-                .setValue(Math.round(this.plugin.settings.themeAlpha * 100))
+                .setValue(Math.round(s.themeAlpha * 100))
                 .setDynamicTooltip()
                 .onChange(async v => {
-                    this.plugin.settings.themeAlpha = v / 100;
+                    s.themeAlpha = v / 100;
                     await this.plugin.saveSettings();
                 }));
 
-        // ── 颜色预览 ──
-        const preview = containerEl.createDiv({ attr: { style: 'margin-top:12px; padding:14px; border-radius:12px; border:1px solid var(--background-modifier-border);' } });
-        const previewGrad = `linear-gradient(135deg, ${this.plugin.settings.themeAccent}, ${this.plugin.settings.themeGradient})`;
-        preview.createDiv({ attr: { style: `height:40px; border-radius:8px; background:${previewGrad}; margin-bottom:8px;` } });
-        preview.createEl('span', {
-            text: `主色 ${this.plugin.settings.themeAccent}  ·  渐变色 ${this.plugin.settings.themeGradient}  ·  透明度 ${Math.round(this.plugin.settings.themeAlpha * 100)}%`,
-            attr: { style: 'font-size:0.78em; color:var(--text-muted);' },
+        const preview = containerEl.createDiv({ cls: 'sch-theme-preview' });
+        preview.createDiv({ cls: 'sch-theme-preview-nav', text: '当前选中项目' });
+        preview.createDiv({ cls: 'sch-theme-preview-card', text: '卡片边框' });
+        preview.createEl('button', { cls: 'sch-theme-preview-button', text: '主要按钮' });
+        this.collapseSettingsSections(containerEl);
+    }
+
+    private collapseSettingsSections(containerEl: HTMLElement): void {
+        const headings = Array.from(containerEl.querySelectorAll(':scope > h3'));
+        headings.forEach((heading, index) => {
+            if (heading.parentElement !== containerEl) return;
+            const sectionName = heading.textContent?.trim() || `section-${index}`;
+            const details = document.createElement('details');
+            details.className = 'sch-settings-section';
+            details.open = this.openSettingsSections.has(sectionName);
+            const summary = details.createEl('summary', { cls: 'sch-settings-section-summary' });
+            const body = details.createDiv({ cls: 'sch-settings-section-body' });
+            const nextHeading = heading.nextElementSibling;
+            containerEl.insertBefore(details, heading);
+            summary.appendChild(heading);
+            details.addEventListener('toggle', () => {
+                if (details.open) {
+                    this.openSettingsSections.add(sectionName);
+                } else {
+                    this.openSettingsSections.delete(sectionName);
+                }
+            });
+
+            let node: Element | null = nextHeading;
+            while (node && !(node instanceof HTMLElement && node.tagName === 'H3')) {
+                const next = node.nextElementSibling;
+                body.appendChild(node);
+                node = next;
+            }
         });
     }
 }

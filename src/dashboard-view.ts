@@ -61,7 +61,7 @@ export class DashboardView extends ItemView {
     }
 
     getViewType() { return DASHBOARD_VIEW_TYPE; }
-    getDisplayText() { return this.plugin.settings.pluginDisplayName || '实验记录本'; }
+    getDisplayText() { return 'scholarium'; }
     getIcon() { return 'flask-conical'; }
 
     setSyncManager(manager: CloudSyncManager): void {
@@ -110,6 +110,7 @@ export class DashboardView extends ItemView {
         const container = this.contentEl;
         container.empty();
         container.addClass('scholarium-dashboard');
+        this.plugin.applyThemeAttributes(container);
 
         // ===== 顶部品牌栏（重设计：logo · 4 Tab · 搜索 · AI · 设置 · 头像）=====
         this.renderBrandBar(container);
@@ -159,6 +160,9 @@ export class DashboardView extends ItemView {
             // ── 实验记录（左右两栏）──
             // ── 左栏 ──
             const leftPanel = main.createDiv({ cls: 'scholarium-panel left-panel' });
+            const sidebarWidth = Math.min(440, Math.max(280, this.plugin.settings.notebookSidebarWidth || 300));
+            leftPanel.style.width = `${sidebarWidth}px`;
+            leftPanel.style.minWidth = `${sidebarWidth}px`;
             leftPanel.createEl('h3', { text: `📋 ${nbLabel}`, cls: 'panel-title' });
 
             // 搜索框
@@ -203,6 +207,9 @@ export class DashboardView extends ItemView {
             this.updateStats();
             this.renderExpList();
 
+            const resizeHandle = main.createDiv({ cls: 'notebook-sidebar-resizer', attr: { title: '拖拽调整侧栏宽度' } });
+            this.bindNotebookSidebarResize(resizeHandle, leftPanel);
+
             // ── 右栏 ──
             const rightPanel = main.createDiv({ cls: 'scholarium-panel right-panel' });
             this.detailPanel = rightPanel;
@@ -221,6 +228,34 @@ export class DashboardView extends ItemView {
         if (this.activePanel === panel) return;
         this.activePanel = panel;
         void this.render();
+    }
+
+    private bindNotebookSidebarResize(handle: HTMLElement, panel: HTMLElement): void {
+        handle.addEventListener('pointerdown', (event: PointerEvent) => {
+            event.preventDefault();
+            const startX = event.clientX;
+            const startWidth = panel.getBoundingClientRect().width;
+            handle.addClass('is-dragging');
+            document.body.addClass('scholarium-resizing-sidebar');
+
+            const move = (moveEvent: PointerEvent) => {
+                const width = Math.min(440, Math.max(280, startWidth + moveEvent.clientX - startX));
+                panel.style.width = `${width}px`;
+                panel.style.minWidth = `${width}px`;
+            };
+            const finish = () => {
+                document.removeEventListener('pointermove', move);
+                document.removeEventListener('pointerup', finish);
+                document.removeEventListener('pointercancel', finish);
+                handle.removeClass('is-dragging');
+                document.body.removeClass('scholarium-resizing-sidebar');
+                this.plugin.settings.notebookSidebarWidth = Math.round(panel.getBoundingClientRect().width);
+                void this.plugin.saveSettings();
+            };
+            document.addEventListener('pointermove', move);
+            document.addEventListener('pointerup', finish, { once: true });
+            document.addEventListener('pointercancel', finish, { once: true });
+        });
     }
 
     private brandIconButton(parent: HTMLElement, icon: string, title: string): HTMLButtonElement {
@@ -254,7 +289,7 @@ export class DashboardView extends ItemView {
         const logoIcon = iconSvg('flask', { size: 20 });
         logoIcon.style.color = 'var(--sch-accent)';
         logo.appendChild(logoIcon);
-        const logoText = logo.createSpan({ text: s.pluginDisplayName || 'Scholarium' });
+        const logoText = logo.createSpan({ text: 'scholarium' });
         Object.assign(logoText.style, {
             fontFamily: 'var(--sch-font-serif)', fontWeight: '600', fontSize: '16px',
             color: 'var(--sch-ink)', whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: '1.35',
@@ -322,8 +357,7 @@ export class DashboardView extends ItemView {
         });
 
         // avatar (initial)
-        const initial = (s.pluginDisplayName || 'S').replace(/[^\p{L}\p{N}]/gu, '').charAt(0).toUpperCase() || 'S';
-        makeAvatar(actions, initial, { size: 30 });
+        makeAvatar(actions, 'S', { size: 30 });
     }
 
     // ───── 统计 ─────
