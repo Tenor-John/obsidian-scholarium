@@ -1,8 +1,7 @@
-/* =====================================================
-   CSS 主题变量 — 由插件 JS 动态注入覆盖，此处为回退默认值
-   ===================================================== */
+﻿/* =====================================================
+   CSS 涓婚鍙橀噺 鈥?鐢辨彃浠?JS 鍔ㄦ€佹敞鍏ヨ鐩栵紝姝ゅ涓哄洖閫€榛樿鍊?   ===================================================== */
 :root {
-    /* 主色调：墨绿 Deep Sage Green — 学术极简 */
+    /* 涓昏壊璋冿細澧ㄧ豢 Deep Sage Green 鈥?瀛︽湳鏋佺畝 */
     --celn-accent:            #3D6149;
     --celn-accent-rgb:        61, 97, 73;
     --celn-accent-light:      #557A63;
@@ -25,88 +24,7 @@
 }
 
 /* =====================================================
-   Safety override: keep Obsidian native tab titles visible
-   even when themes (Minimal "single-tab compact" 等) 把
-   workspace-tab-header-inner-title 隐藏掉。
-   - 用 body.theme-* 提高选择器特异性，覆盖主题 CSS
-   - 强制 width / max-width / display / visibility / opacity
-   - 取消单标签时折叠 (--tab-stretch / --tab-collapsed-width 影响)
-   ===================================================== */
-body .workspace-tab-header,
-body .workspace .workspace-tab-header,
-body.minimal-theme .workspace-tab-header,
-body.theme-light .workspace-tab-header,
-body.theme-dark .workspace-tab-header {
-    min-width: 160px !important;
-    max-width: 320px !important;
-    width: auto !important;
-    flex: 0 1 auto !important;
-}
-
-body .workspace-tab-header .workspace-tab-header-inner,
-body .workspace-tab-header-inner {
-    width: 100% !important;
-    min-width: 0 !important;
-    gap: 6px !important;
-    display: flex !important;
-    align-items: center !important;
-    flex-direction: row !important;
-    padding-right: 6px !important;
-}
-
-body .workspace-tab-header-inner-title,
-body .workspace-tab-header.is-active .workspace-tab-header-inner-title,
-body.minimal-theme .workspace-tab-header-inner-title {
-    display: inline-block !important;
-    flex: 1 1 auto !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    width: auto !important;
-    max-width: 240px !important;
-    min-width: 60px !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-    color: var(--tab-text-color, var(--text-normal)) !important;
-    font-size: 0.86em !important;
-    line-height: 1.4 !important;
-}
-
-body .workspace-tab-header-inner-icon {
-    flex: 0 0 auto !important;
-    display: inline-flex !important;
-    align-items: center !important;
-}
-
-body .workspace-tab-header.is-active .workspace-tab-header-inner-title {
-    color: var(--tab-text-color-focused-active-current, var(--text-normal)) !important;
-    font-weight: 600 !important;
-}
-
-/* Minimal 主题在只有 1 个 tab 时会用 --tab-stretch / hidden 折叠它；强制取消 */
-body.is-mobile .workspace-tab-header,
-body .mod-root .workspace-tab-header,
-body .mod-root .workspace-tab-header-inner-title {
-    display: flex !important;
-}
-body .mod-root .workspace-tab-header-inner-title {
-    display: inline-block !important;
-}
-body .workspace-tab-header[hidden],
-body .workspace-tab-header-inner-title[hidden] {
-    display: inline-block !important;
-}
-
-/* 防御 Minimal "Hide tab titles when only one tab" 类规则 */
-body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-header-container .workspace-tab-header-inner-title {
-    display: inline-block !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-}
-
-/* =====================================================
-   模块 1：仪表盘基础布局（scholarium-）
-   ===================================================== */
+   妯″潡 1锛氫华琛ㄧ洏鍩虹甯冨眬锛坰cholarium-锛?   ===================================================== */
 
 .scholarium-dashboard {
     display: flex;
@@ -120,7 +38,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     container-name: scholarium-view;
 }
 
-/* 顶部标题栏 */
+/* 椤堕儴鏍囬鏍?*/
 .scholarium-header {
     display: flex;
     align-items: center;
@@ -152,7 +70,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .scholarium-weather { color: var(--text-muted); }
 .scholarium-stats { color: var(--text-faint); font-size: 0.9em; }
 
-/* 面板切换栏 */
+/* 闈㈡澘鍒囨崲鏍?*/
 .scholarium-panel-switch {
     display: flex;
     gap: 4px;
@@ -186,7 +104,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     font-weight: 700;
 }
 
-/* 操作栏 */
+/* 鎿嶄綔鏍?*/
 .scholarium-action-bar {
     display: flex;
     gap: 8px;
@@ -224,7 +142,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .scholarium-btn.ai-btn { background: linear-gradient(135deg, #7B61FF, var(--celn-accent)); color: #fff; border: none; }
 .scholarium-btn.smiles-copy-btn { font-size: 0.75em; padding: 3px 8px; }
 
-/* 主体区 */
+/* 涓讳綋鍖?*/
 .scholarium-main {
     flex: 1;
     display: flex;
@@ -268,8 +186,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 /* =====================================================
-   模块 2：实验记录列表
-   ===================================================== */
+   妯″潡 2锛氬疄楠岃褰曞垪琛?   ===================================================== */
 
 .exp-search-wrap { margin-bottom: 8px; }
 .exp-search-input {
@@ -305,7 +222,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .exp-item:hover { background: var(--background-primary); border-color: var(--background-modifier-border); }
 .exp-item.active { background: var(--background-primary); border-color: var(--celn-accent-light); box-shadow: 0 1px 6px rgba(var(--celn-accent-rgb),0.15); }
 
-/* ── 列表项删除按钮 ── */
+/* 鈹€鈹€ 鍒楄〃椤瑰垹闄ゆ寜閽?鈹€鈹€ */
 .exp-item-del-btn {
     display: none;          /* hidden by default */
     position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
@@ -318,7 +235,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .exp-item:hover .exp-item-del-btn { display: block; }
 .exp-item-del-btn:hover { background: rgba(220,50,50,0.12); color: #e53935; }
 
-/* ── 删除确认弹窗 ── */
+/* 鈹€鈹€ 鍒犻櫎纭寮圭獥 鈹€鈹€ */
 .exp-del-modal-overlay {
     position: fixed; inset: 0; z-index: 9999;
     background: rgba(0,0,0,0.45);
@@ -364,7 +281,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .exp-status-icon { font-size: 0.75em; }
 .exp-day-count { font-size: 0.7em; color: var(--text-faint); margin-left: auto; }
 
-/* ─ 状态徽章 ─ */
+/* 鈹€ 鐘舵€佸窘绔?鈹€ */
 .status-wrapper { display: inline-flex; align-items: center; position: relative; }
 .status-badge {
     display: inline-block; font-size: 0.7em; font-weight: 700;
@@ -392,8 +309,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .date-tag { font-size: 0.72em; color: var(--text-faint); }
 
 /* =====================================================
-   模块 3：实验详情面板
-   ===================================================== */
+   妯″潡 3锛氬疄楠岃鎯呴潰鏉?   ===================================================== */
 
 .detail-header { margin-bottom: 12px; }
 .detail-title { font-size: 1.05em; font-weight: 700; color: var(--text-normal); margin-bottom: 8px; line-height: 1.4; }
@@ -433,12 +349,12 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .steps-content { font-size: 0.83em; color: var(--text-normal); line-height: 1.7; white-space: pre-wrap; }
 .notes-text { font-size: 0.83em; color: var(--text-muted); line-height: 1.6; white-space: pre-wrap; }
 
-/* ─ 图片网格（原有 img-thumb / img-grid） ─ */
+/* 鈹€ 鍥剧墖缃戞牸锛堝師鏈?img-thumb / img-grid锛?鈹€ */
 .img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin-top: 4px; }
 .img-thumb { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid var(--background-modifier-border); transition: transform 0.15s, box-shadow 0.15s; }
 .img-thumb:hover { transform: scale(1.04); box-shadow: 0 4px 12px rgba(0,0,0,0.18); }
 
-/* ─ 详情顶部大图（img-thumb-top / img-thumb-wrap） ─ */
+/* 鈹€ 璇︽儏椤堕儴澶у浘锛坕mg-thumb-top / img-thumb-wrap锛?鈹€ */
 .img-grid-top { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin-bottom: 4px; }
 
 .img-thumb-wrap { position: relative; cursor: zoom-in; border-radius: 4px; overflow: hidden; }
@@ -449,7 +365,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .img-thumb-wrap:hover .img-thumb-overlay { opacity: 1; }
 .img-zoom-icon { font-size: 1.8em; line-height: 1; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5)); }
 
-/* ─ 灯箱（全屏） ─ */
+/* 鈹€ 鐏锛堝叏灞忥級 鈹€ */
 .img-lightbox-backdrop { position: fixed; inset: 0; z-index: 99999; background: rgba(0,0,0,0); display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
 .img-lightbox-backdrop.img-lightbox-show { background: rgba(0,0,0,0.88); }
 .img-lightbox-backdrop.img-lightbox-hide { background: rgba(0,0,0,0) !important; }
@@ -464,7 +380,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .img-lightbox-prev { left: 24px; }
 .img-lightbox-next { right: 24px; }
 
-/* ─ 笔记内联编辑表单 ─ */
+/* 鈹€ 绗旇鍐呰仈缂栬緫琛ㄥ崟 鈹€ */
 .edit-form { display: flex; flex-direction: column; gap: 10px; }
 .edit-group { display: flex; flex-direction: column; gap: 4px; }
 .edit-label { font-size: 0.75em; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -482,7 +398,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .chat-subtitle.chat-subtitle-edit { color: var(--celn-accent); font-weight: 600; }
 
 /* =====================================================
-   模块 4：AI 对话弹窗
+   妯″潡 4锛欰I 瀵硅瘽寮圭獥
    ===================================================== */
 
 .chat-title { font-size: 1.1em; font-weight: 700; margin-bottom: 4px; }
@@ -506,12 +422,11 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .preview-field.smiles { font-family: var(--font-monospace); word-break: break-all; }
 
 /* =====================================================
-   模块 5：素材库（mat-）
-   ===================================================== */
+   妯″潡 5锛氱礌鏉愬簱锛坢at-锛?   ===================================================== */
 
 .mat-root {
     display: flex;
-    flex-direction: column;   /* ← toolbar above main, not beside it */
+    flex-direction: column;   /* 鈫?toolbar above main, not beside it */
     flex: 1;
     min-height: 0;
     overflow: hidden;
@@ -1103,8 +1018,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 /* =====================================================
-   模块 6：PhD 工作台（ws2-） ★最重要★
-   ===================================================== */
+   妯″潡 6锛歅hD 宸ヤ綔鍙帮紙ws2-锛?鈽呮渶閲嶈鈽?   ===================================================== */
 
 .ws2-layout {
     display: flex;
@@ -1289,7 +1203,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     color: var(--text-normal);
 }
 
-/* ─ 总览页（ws2-overview） ─ */
+/* 鈹€ 鎬昏椤碉紙ws2-overview锛?鈹€ */
 
 .ws2-overview {}
 
@@ -1326,7 +1240,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     flex: 1;
     overflow-y: auto;
     padding: 28px 32px;
-    /* 不再限制内容最大宽度，随容器宽度自适应填满。 */
+    /* 涓嶅啀闄愬埗鍐呭鏈€澶у搴︼紝闅忓鍣ㄥ搴﹁嚜閫傚簲濉弧銆?*/
     max-width: none;
     width: 100%;
     box-sizing: border-box;
@@ -1388,7 +1302,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     color: var(--text-normal);
 }
 
-/* ─ 签到页（checkin） ─ */
+/* 鈹€ 绛惧埌椤碉紙checkin锛?鈹€ */
 
 .ws2-checkin-container {
     display: flex;
@@ -1488,7 +1402,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     margin-top: 6px;
 }
 
-/* ─ 时间块页（timeblock） ─ */
+/* 鈹€ 鏃堕棿鍧楅〉锛坱imeblock锛?鈹€ */
 
 .ws2-timeblock-container {
     display: flex;
@@ -1588,7 +1502,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     color: var(--text-muted);
 }
 
-/* ─ 专注页（focus） ─ */
+/* 鈹€ 涓撴敞椤碉紙focus锛?鈹€ */
 
 .ws2-focus-container {
     display: flex;
@@ -1679,7 +1593,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     margin-top: 8px;
 }
 
-/* ─ 习惯页（habits） ─ */
+/* 鈹€ 涔犳儻椤碉紙habits锛?鈹€ */
 
 .ws2-habits-container {
     display: flex;
@@ -1761,7 +1675,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     font-size: 0.83em;
 }
 
-/* ─ 情绪页（emotions） ─ */
+/* 鈹€ 鎯呯华椤碉紙emotions锛?鈹€ */
 
 .ws2-emotions-container {
     display: flex;
@@ -1811,7 +1725,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     margin-top: 8px;
 }
 
-/* ─ 手机管控页（phone） ─ */
+/* 鈹€ 鎵嬫満绠℃帶椤碉紙phone锛?鈹€ */
 
 .ws2-phone-container {
     display: flex;
@@ -1839,7 +1753,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     margin: 12px 0;
 }
 
-/* ─ 论文投稿页（submission） ─ */
+/* 鈹€ 璁烘枃鎶曠椤碉紙submission锛?鈹€ */
 
 .ws2-submission-container {
     display: flex;
@@ -1889,7 +1803,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     flex-wrap: wrap;
 }
 
-/* ─ 食物/饮食页（food） ─ */
+/* 鈹€ 椋熺墿/楗椤碉紙food锛?鈹€ */
 
 .ws2-food-content {}
 
@@ -1914,7 +1828,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     font-size: 0.82em;
 }
 
-/* ─ 数据统计页（dashboard stats） ─ */
+/* 鈹€ 鏁版嵁缁熻椤碉紙dashboard stats锛?鈹€ */
 
 .ws2-dashboard-container {
     display: flex;
@@ -1940,7 +1854,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     margin-bottom: 8px;
 }
 
-/* ─ 成就系统（achievements） ─ */
+/* 鈹€ 鎴愬氨绯荤粺锛坅chievements锛?鈹€ */
 
 .ws2-achievements {}
 
@@ -1967,7 +1881,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     margin-top: 2px;
 }
 
-/* ─ 设置页（settings） ─ */
+/* 鈹€ 璁剧疆椤碉紙settings锛?鈹€ */
 
 .ws2-settings-container {
     display: flex;
@@ -1981,7 +1895,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     margin-bottom: 4px;
 }
 
-/* ─ 看板（kanban） ─ */
+/* 鈹€ 鐪嬫澘锛坘anban锛?鈹€ */
 
 .ws2-kanban {
     display: flex;
@@ -2010,7 +1924,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     font-size: 0.8em;
 }
 
-/* ─ 日历（calendar） ─ */
+/* 鈹€ 鏃ュ巻锛坈alendar锛?鈹€ */
 
 .ws2-calendar-month {
     max-width: 320px;
@@ -2088,7 +2002,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     cursor: default;
 }
 
-/* ─ 范围选择器（range-selector） ─ */
+/* 鈹€ 鑼冨洿閫夋嫨鍣紙range-selector锛?鈹€ */
 
 .ws2-range-selector {
     display: flex;
@@ -2097,7 +2011,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     flex-wrap: wrap;
 }
 
-/* ─ 通用按钮/输入（ws2-btn, ws2-input 等） ─ */
+/* 鈹€ 閫氱敤鎸夐挳/杈撳叆锛坵s2-btn, ws2-input 绛夛級 鈹€ */
 
 .ws2-btn {
     padding: 7px 16px;
@@ -2211,7 +2125,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 /* =====================================================
-   现有 RC（研究画布）样式 - Preserved
+   鐜版湁 RC锛堢爺绌剁敾甯冿級鏍峰紡 - Preserved
    ===================================================== */
 
 .mat-sync-btn:disabled {
@@ -2219,11 +2133,11 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     cursor: not-allowed;
 }
 
-/* ──────────────────────────────────────────── */
-/* 🗺️ 研究画布 - Research Canvas Styles        */
-/* ──────────────────────────────────────────── */
+/* 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* 馃椇锔?鐮旂┒鐢诲竷 - Research Canvas Styles        */
+/* 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
-/* 全宽面板容器 */
+/* 鍏ㄥ闈㈡澘瀹瑰櫒 */
 .rc-full-panel {
     width: 100%;
     height: 100%;
@@ -2232,7 +2146,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     overflow: hidden;
 }
 
-/* 工具栏 */
+/* 宸ュ叿鏍?*/
 .rc-toolbar {
     display: flex;
     align-items: center;
@@ -2328,7 +2242,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     text-align: right;
 }
 
-/* 画布视口 */
+/* 鐢诲竷瑙嗗彛 */
 .rc-viewport {
     flex: 1;
     overflow: hidden;
@@ -2347,7 +2261,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     background-image: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
 }
 
-/* 画布层（可缩放、平移） */
+/* 鐢诲竷灞傦紙鍙缉鏀俱€佸钩绉伙級 */
 .rc-canvas-layer {
     position: absolute;
     top: 0;
@@ -2357,8 +2271,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     height: 4000px;
 }
 
-/* SVG 连线层 - DOM 顺序排在卡片之后，天然在视觉上方；
-   pointer-events: none 让 SVG 空白区域的点击穿透到下方卡片 */
+/* SVG 杩炵嚎灞?- DOM 椤哄簭鎺掑湪鍗＄墖涔嬪悗锛屽ぉ鐒跺湪瑙嗚涓婃柟锛?   pointer-events: none 璁?SVG 绌虹櫧鍖哄煙鐨勭偣鍑荤┛閫忓埌涓嬫柟鍗＄墖 */
 .rc-svg-layer {
     position: absolute;
     top: 0;
@@ -2385,7 +2298,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     pointer-events: none;
 }
 
-/* 分组标题 */
+/* 鍒嗙粍鏍囬 */
 .rc-stage-header {
     position: absolute;
     font-size: 0.88em;
@@ -2401,7 +2314,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     z-index: 50;
 }
 
-/* 卡片 */
+/* 鍗＄墖 */
 .rc-card {
     position: absolute;
     width: 220px;
@@ -2432,7 +2345,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-/* 卡片头部 - 阶段徽章 */
+/* 鍗＄墖澶撮儴 - 闃舵寰界珷 */
 .rc-card-header {
     margin-bottom: 6px;
 }
@@ -2447,7 +2360,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     display: inline-block;
 }
 
-/* 卡片标题 */
+/* 鍗＄墖鏍囬 */
 .rc-card-title {
     font-size: 0.82em;
     font-weight: 700;
@@ -2460,7 +2373,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     margin-bottom: 6px;
 }
 
-/* 卡片元数据（期刊+年份） */
+/* 鍗＄墖鍏冩暟鎹紙鏈熷垔+骞翠唤锛?*/
 .rc-card-meta {
     font-size: 0.72em;
     color: var(--celn-accent);
@@ -2473,7 +2386,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     font-weight: 400;
 }
 
-/* 卡片摘要 */
+/* 鍗＄墖鎽樿 */
 .rc-card-abstract {
     font-size: 0.72em;
     color: var(--text-muted);
@@ -2485,7 +2398,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     margin-bottom: 6px;
 }
 
-/* 卡片标签 */
+/* 鍗＄墖鏍囩 */
 .rc-card-tags {
     display: flex;
     flex-wrap: wrap;
@@ -2501,7 +2414,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     color: var(--text-muted);
 }
 
-/* 卡片底部操作 */
+/* 鍗＄墖搴曢儴鎿嶄綔 */
 .rc-card-footer {
     display: flex;
     justify-content: flex-end;
@@ -2527,7 +2440,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     background: rgba(255, 112, 67, 0.1);
 }
 
-/* 空状态 */
+/* 绌虹姸鎬?*/
 .rc-empty {
     display: flex;
     flex-direction: column;
@@ -2542,9 +2455,9 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     font-size: 3em;
 }
 
-/* ─────────────────────────────────────── */
-/*   研究画布 — 分区 Zone System           */
-/* ─────────────────────────────────────── */
+/* 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/*   鐮旂┒鐢诲竷 鈥?鍒嗗尯 Zone System           */
+/* 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 .rc-zone {
     position: absolute;
@@ -2561,7 +2474,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     box-shadow: 0 0 0 4px rgba(66,165,245,0.2);
 }
 
-/* Zone header — drag handle */
+/* Zone header 鈥?drag handle */
 .rc-zone-header {
     position: absolute;
     top: 0; left: 0; right: 0;
@@ -2635,7 +2548,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     background: rgba(239,83,80,0.12);
 }
 
-/* Resize handle — bottom-right corner */
+/* Resize handle 鈥?bottom-right corner */
 .rc-zone-resize {
     position: absolute;
     bottom: 5px; right: 5px;
@@ -2702,9 +2615,9 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     justify-content: flex-end;
 }
 
-/* ─────────────────────────────────────── */
-/*   研究画布 — 连线模式 Connection Mode  */
-/* ─────────────────────────────────────── */
+/* 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/*   鐮旂┒鐢诲竷 鈥?杩炵嚎妯″紡 Connection Mode  */
+/* 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 /* Connect button active state */
 .rc-btn-connect {
@@ -2746,7 +2659,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     outline: none;
 }
 .rc-card.rc-card-connect-source::before {
-    content: '🔗 源';
+    content: '馃敆 婧?;
     position: absolute;
     top: -24px; left: 50%;
     transform: translateX(-50%);
@@ -2766,9 +2679,9 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .rc-conn-group:hover { opacity: 1 !important; }
 
 
-/* ═════════════════════════════════════════════════════════════════════════════ */
+/* 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?*/
 /* Port nodes and connection control points (new drag-to-connect system)         */
-/* ═════════════════════════════════════════════════════════════════════════════ */
+/* 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?*/
 
 /* Port nodes - circular handles on card edges */
 .rc-port {
@@ -2795,7 +2708,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     opacity: 1 !important;
 }
 
-/* 鼠标悬停在端口上时保持正确的 transform（不能覆盖位置 transform） */
+/* 榧犳爣鎮仠鍦ㄧ鍙ｄ笂鏃朵繚鎸佹纭殑 transform锛堜笉鑳借鐩栦綅缃?transform锛?*/
 .rc-port-top:hover    { transform: translateX(-50%) scale(1.5) !important; }
 .rc-port-right:hover  { transform: translateY(-50%) scale(1.5) !important; }
 .rc-port-bottom:hover { transform: translateX(-50%) scale(1.5) !important; }
@@ -2841,10 +2754,10 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     transform: translateY(-50%) scale(1.4);
 }
 
-/* Control Point (CP) handles - 始终可见，不依赖 group hover */
+/* Control Point (CP) handles - 濮嬬粓鍙锛屼笉渚濊禆 group hover */
 .rc-cp-handle {
     cursor: grab;
-    opacity: 0.45;          /* 永远可见 */
+    opacity: 0.45;          /* 姘歌繙鍙 */
     transition: opacity 0.1s, transform 0.1s;
 }
 
@@ -2855,7 +2768,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     transform: scale(1.4);
 }
 
-/* Guide lines - hover 连线或菱形时显示 */
+/* Guide lines - hover 杩炵嚎鎴栬彵褰㈡椂鏄剧ず */
 .rc-cp-guide {
     opacity: 0;
     transition: opacity 0.15s;
@@ -2877,7 +2790,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 /* =========================================================
-   Research Canvas – Shape & Shape Panel Styles
+   Research Canvas 鈥?Shape & Shape Panel Styles
    ========================================================= */
 
 /* Active shape-type button */
@@ -2932,7 +2845,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     overflow: hidden;
 }
 
-/* Inner text div — keeps text horizontal and centered inside the shape */
+/* Inner text div 鈥?keeps text horizontal and centered inside the shape */
 .rc-shape-text-inner {
     width: 100%;
     min-height: 1em;
@@ -3030,9 +2943,9 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 
-/* ══════════════════════════════════════════════════════════════════════════════
+/* 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
    TIMETABLE (tt-*)
-   ══════════════════════════════════════════════════════════════════════════════ */
+   鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲 */
 
 .tt-full-panel { display:flex; flex-direction:row; height:100%; overflow:hidden; }
 
@@ -3045,7 +2958,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     font-family: var(--font-interface);
 }
 
-/* ── Sidebar ── */
+/* 鈹€鈹€ Sidebar 鈹€鈹€ */
 .tt-sidebar {
     width: 230px;
     min-width: 200px;
@@ -3180,7 +3093,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     padding: 4px 2px;
 }
 
-/* ── Main grid ── */
+/* 鈹€鈹€ Main grid 鈹€鈹€ */
 .tt-main {
     flex: 1;
     display: flex;
@@ -3422,7 +3335,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 
 /* === Phase 2: Precision Refinements === */
 
-/* ── Monospace: 数据/时间/数字 ── */
+/* 鈹€鈹€ Monospace: 鏁版嵁/鏃堕棿/鏁板瓧 鈹€鈹€ */
 .ws2-snapshot-value,
 .ws2-card-value,
 .ws2-sleep-val,
@@ -3439,7 +3352,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     letter-spacing: 0.02em;
 }
 
-/* ── Serif: 页面大标题/卡片主标题 ── */
+/* 鈹€鈹€ Serif: 椤甸潰澶ф爣棰?鍗＄墖涓绘爣棰?鈹€鈹€ */
 .ws2-page-hero-title,
 .ws2-logo-title,
 .ws2-sub-title {
@@ -3448,7 +3361,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     letter-spacing: -0.01em;
 }
 
-/* ── 衬线大数字：专注时长、睡眠时长 ── */
+/* 鈹€鈹€ 琛嚎澶ф暟瀛楋細涓撴敞鏃堕暱銆佺潯鐪犳椂闀?鈹€鈹€ */
 .ws2-focus-big-num,
 .ws2-sleep-val {
     font-family: var(--celn-mono);
@@ -3458,7 +3371,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 
-/* ── Ghost Button 系统 ── */
+/* 鈹€鈹€ Ghost Button 绯荤粺 鈹€鈹€ */
 .ws2-btn {
     padding: 5px 14px;
     border: 1px solid rgba(var(--celn-accent-rgb), 0.35);
@@ -3528,7 +3441,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 
-/* ── Priority: Tufte style — line + letter, no color blocks ── */
+/* 鈹€鈹€ Priority: Tufte style 鈥?line + letter, no color blocks 鈹€鈹€ */
 .ws2-priority-tag {
     display: inline-flex;
     align-items: center;
@@ -3561,7 +3474,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 
-/* ── Ultra-thin dividers ── */
+/* 鈹€鈹€ Ultra-thin dividers 鈹€鈹€ */
 .ws2-divider,
 .ws2-layout hr {
     border: none;
@@ -3576,7 +3489,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 
-/* ── Instrument Detail: version watermark ── */
+/* 鈹€鈹€ Instrument Detail: version watermark 鈹€鈹€ */
 .ws2-sidebar::after {
     content: attr(data-version);
     position: absolute;
@@ -3600,7 +3513,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 /* =====================================================
-   Habit Matrix (ws2-hm-*) — 手帐式周矩阵
+   Habit Matrix (ws2-hm-*) 鈥?鎵嬪笎寮忓懆鐭╅樀
    ===================================================== */
 
 .ws2-habit-matrix-card {
@@ -3824,13 +3737,13 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
    ===================================================== */
 
 :root {
-    --cat-focus:    #CDE8D2;  /* 专注学习 — 草绿 */
-    --cat-prep:     #D1E8FF;  /* 预备学习 — 淡蓝 */
-    --cat-leisure:  #FFF2CC;  /* 娱乐活动 — 淡黄 */
-    --cat-exercise: #FAD7D4;  /* 运动健康 — 肉粉 */
-    --cat-social:   #FFE5D9;  /* 亲友社交 — 淡橙 */
-    --cat-rest:     #E8D1FF;  /* 休息睡眠 — 淡紫 */
-    --cat-other:    #E0ECE4;  /* 其他     — 浅灰绿 */
+    --cat-focus:    #CDE8D2;  /* 涓撴敞瀛︿範 鈥?鑽夌豢 */
+    --cat-prep:     #D1E8FF;  /* 棰勫瀛︿範 鈥?娣¤摑 */
+    --cat-leisure:  #FFF2CC;  /* 濞变箰娲诲姩 鈥?娣￠粍 */
+    --cat-exercise: #FAD7D4;  /* 杩愬姩鍋ュ悍 鈥?鑲夌矇 */
+    --cat-social:   #FFE5D9;  /* 浜插弸绀句氦 鈥?娣℃ */
+    --cat-rest:     #E8D1FF;  /* 浼戞伅鐫＄湢 鈥?娣＄传 */
+    --cat-other:    #E0ECE4;  /* 鍏朵粬     鈥?娴呯伆缁?*/
 
     --cat-focus-text:    #3A6B4A;
     --cat-prep-text:     #2A5C8A;
@@ -3842,33 +3755,33 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 /* Apply category colors to timeblock items */
-.ws2-timeblock-item[data-cat="专注"],
-.ws2-timeblock-item[data-cat="学习"] {
+.ws2-timeblock-item[data-cat="涓撴敞"],
+.ws2-timeblock-item[data-cat="瀛︿範"] {
     background: var(--cat-focus);
     border-left-color: var(--cat-focus-text);
     color: var(--cat-focus-text);
 }
 
-.ws2-timeblock-item[data-cat="预备"],
-.ws2-timeblock-item[data-cat="阅读"] {
+.ws2-timeblock-item[data-cat="棰勫"],
+.ws2-timeblock-item[data-cat="闃呰"] {
     background: var(--cat-prep);
     border-left-color: var(--cat-prep-text);
 }
 
-.ws2-timeblock-item[data-cat="娱乐"],
-.ws2-timeblock-item[data-cat="休息"] {
+.ws2-timeblock-item[data-cat="濞变箰"],
+.ws2-timeblock-item[data-cat="浼戞伅"] {
     background: var(--cat-leisure);
     border-left-color: var(--cat-leisure-text);
 }
 
-.ws2-timeblock-item[data-cat="运动"],
-.ws2-timeblock-item[data-cat="健身"] {
+.ws2-timeblock-item[data-cat="杩愬姩"],
+.ws2-timeblock-item[data-cat="鍋ヨ韩"] {
     background: var(--cat-exercise);
     border-left-color: var(--cat-exercise-text);
 }
 
-.ws2-timeblock-item[data-cat="社交"],
-.ws2-timeblock-item[data-cat="会议"] {
+.ws2-timeblock-item[data-cat="绀句氦"],
+.ws2-timeblock-item[data-cat="浼氳"] {
     background: var(--cat-social);
     border-left-color: var(--cat-social-text);
 }
@@ -3880,7 +3793,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 /* =====================================================
-   Big Number Cards (Overview) — 大字数据卡片
+   Big Number Cards (Overview) 鈥?澶у瓧鏁版嵁鍗＄墖
    ===================================================== */
 
 .ws2-big-num-grid {
@@ -4531,7 +4444,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     font-size: 1em;
     font-weight: 700;
     line-height: 1.35;
-    /* 允许换行，绝不截断标题（之前出现 'TiO2@Au 复合材料的' 被截断的问题） */
+    /* 鍏佽鎹㈣锛岀粷涓嶆埅鏂爣棰橈紙涔嬪墠鍑虹幇 'TiO2@Au 澶嶅悎鏉愭枡鐨? 琚埅鏂殑闂锛?*/
     overflow-wrap: anywhere !important;
     word-break: break-word !important;
     white-space: normal !important;
@@ -4749,7 +4662,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 .ws2-page-body {
-    /* 自适应：占满父容器宽度，不再限制为 1044px。 */
+    /* 鑷€傚簲锛氬崰婊＄埗瀹瑰櫒瀹藉害锛屼笉鍐嶉檺鍒朵负 1044px銆?*/
     width: 100%;
     max-width: none;
     box-sizing: border-box;
@@ -5071,7 +4984,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 .ws2-page-body {
-    /* 自适应：占满父容器宽度，不再限制为 1060px。 */
+    /* 鑷€傚簲锛氬崰婊＄埗瀹瑰櫒瀹藉害锛屼笉鍐嶉檺鍒朵负 1060px銆?*/
     box-sizing: border-box;
     width: 100%;
     max-width: none;
@@ -5462,13 +5375,40 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 
 /* Settings page cleanup */
 .scholarium-settings {
-    --settings-paper: var(--bg-surface);
-    --settings-line: var(--border);
-    --settings-soft: var(--bg-elevated);
+    --settings-paper: var(--background-primary);
+    --settings-line: var(--background-modifier-border);
+    --settings-soft: var(--background-secondary);
+    --text-primary: var(--text-normal);
+    --text-secondary: var(--text-muted);
+    --text-placeholder: var(--text-faint);
+    --bg-base: var(--background-primary);
+    --bg-panel: var(--background-secondary);
+    --bg-surface: var(--background-primary);
+    --bg-elevated: var(--background-secondary);
+    --border: var(--background-modifier-border);
+    --border-soft: var(--background-modifier-border);
+    --border-strong: var(--background-modifier-border-hover, var(--background-modifier-border));
+    --scholarium-font-scale: 1;
+    --scholarium-font-size: var(--font-ui-medium, 14px);
+    --sch-font-serif: var(--font-interface), system-ui, sans-serif;
+    --sch-font-mono: var(--font-monospace), ui-monospace, monospace;
+    --accent: var(--interactive-accent);
+    --accent-rgb: var(--interactive-accent-rgb, 26, 255, 140);
+    --accent-dim: rgba(var(--accent-rgb), 0.10);
+    --accent-deep: var(--interactive-accent-hover, var(--interactive-accent));
+    --accent-text: var(--text-on-accent, var(--text-normal));
+    --celn-accent: var(--accent);
+    --celn-accent-rgb: var(--accent-rgb);
+    --celn-accent-light: var(--accent);
+    --celn-accent-light-rgb: var(--accent-rgb);
+    --celn-accent-medium: var(--accent);
+    --celn-accent-medium-rgb: var(--accent-rgb);
+    --celn-accent-dark: var(--accent-deep);
+    --celn-accent-dark-rgb: var(--accent-rgb);
     max-width: 980px;
     margin: 0 auto;
     padding: 28px 34px 44px;
-    background: var(--bg-surface);
+    background: var(--background-primary);
     color: var(--text-primary);
 }
 
@@ -5543,9 +5483,42 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     min-height: 220px;
 }
 
-.modal-content:has(.scholarium-settings),
-.vertical-tab-content-container:has(.scholarium-settings) {
-    background: var(--bg-surface);
+.scholarium-settings {
+    background: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.scholarium-settings {
+    --bg-base: var(--background-primary);
+    --bg-panel: var(--background-secondary);
+    --bg-surface: var(--background-primary);
+    --bg-elevated: var(--background-secondary);
+    --text-primary: var(--text-normal);
+    --text-secondary: var(--text-muted);
+    --text-placeholder: var(--text-faint);
+    --border: var(--background-modifier-border);
+    --border-soft: var(--background-modifier-border);
+    --border-strong: var(--background-modifier-border-hover, var(--background-modifier-border));
+}
+
+.scholarium-settings button,
+.scholarium-settings input:not([type="color"]),
+.scholarium-settings select,
+.scholarium-settings textarea {
+    background: var(--background-primary);
+    border-color: var(--background-modifier-border);
+    color: var(--text-normal);
+}
+
+.scholarium-settings button:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
+    color: var(--text-normal);
+}
+
+.scholarium-settings input::placeholder,
+.scholarium-settings textarea::placeholder {
+    color: var(--text-faint);
 }
 
 .sch-theme-modes {
@@ -5996,13 +5969,13 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 .chat-processing-step.is-done::before {
-    content: "✓";
+    content: "鉁?;
     margin-right: 7px;
     color: #23864a;
 }
 
 .chat-processing-step.is-pending::before {
-    content: "○";
+    content: "鈼?;
     margin-right: 7px;
     color: var(--celn-accent, var(--interactive-accent));
 }
@@ -6041,9 +6014,8 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     }
 }
 
-/* ─────────────────────────────────────────────
-   模块：科研库（rtl-）
-   ───────────────────────────────────────────── */
+/* 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+   妯″潡锛氱鐮斿簱锛坮tl-锛?   鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 .scholarium-panel.rtl-full-panel {
     width: 100%;
     padding: 0;
@@ -6198,8 +6170,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     display: grid;
     grid-template-columns: 210px minmax(0, 1fr);
     gap: 16px;
-    /* 必须 stretch：让左侧 .rtl-nav-col 拉伸到与右栏等高，
-       这样内部的 sticky .rtl-nav 才能一路挂到底而不会半途消失。 */
+    /* 蹇呴』 stretch锛氳宸︿晶 .rtl-nav-col 鎷変几鍒颁笌鍙虫爮绛夐珮锛?       杩欐牱鍐呴儴鐨?sticky .rtl-nav 鎵嶈兘涓€璺寕鍒板簳鑰屼笉浼氬崐閫旀秷澶便€?*/
     align-items: stretch;
 }
 
@@ -6260,8 +6231,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 
 .rtl-grid-wrap {
     padding: 14px;
-    /* 移除 overflow:auto：避免在内部形成新的滚动容器，否则会切断 sticky 的滚动祖先链，
-       导致左侧 .rtl-nav 无法粘住顶部。整页只用 .scholarium-panel 一层滚动。 */
+    /* 绉婚櫎 overflow:auto锛氶伩鍏嶅湪鍐呴儴褰㈡垚鏂扮殑婊氬姩瀹瑰櫒锛屽惁鍒欎細鍒囨柇 sticky 鐨勬粴鍔ㄧ鍏堥摼锛?       瀵艰嚧宸︿晶 .rtl-nav 鏃犳硶绮樹綇椤堕儴銆傛暣椤靛彧鐢?.scholarium-panel 涓€灞傛粴鍔ㄣ€?*/
     min-width: 0;
 }
 
@@ -6873,15 +6843,14 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     display: grid;
     grid-template-columns: 210px minmax(0, 1fr);
     gap: 18px;
-    /* 关键：让左侧 grid 单元格拉伸到与右侧等高 —— 这样里面的 .rtl-nav (sticky)
-       才有足够长的 containing block 可以一路贴顶；否则单元格只有 nav 自然高度，
-       滚到这个高度尽头 sticky 就跟着出去了。 */
+    /* 鍏抽敭锛氳宸︿晶 grid 鍗曞厓鏍兼媺浼稿埌涓庡彸渚х瓑楂?鈥斺€?杩欐牱閲岄潰鐨?.rtl-nav (sticky)
+       鎵嶆湁瓒冲闀跨殑 containing block 鍙互涓€璺创椤讹紱鍚﹀垯鍗曞厓鏍煎彧鏈?nav 鑷劧楂樺害锛?       婊氬埌杩欎釜楂樺害灏藉ご sticky 灏辫窡鐫€鍑哄幓浜嗐€?*/
     align-items: stretch;
     padding-left: 0;
     position: relative;
 }
 
-/* 占位列：被 grid 拉伸到整列高度，作为 sticky 的 containing block */
+/* 鍗犱綅鍒楋細琚?grid 鎷変几鍒版暣鍒楅珮搴︼紝浣滀负 sticky 鐨?containing block */
 .rtl-nav-col {
     position: relative;
     min-width: 0;
@@ -6892,10 +6861,9 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     position: sticky;
     top: 16px;
     width: auto;
-    /* 让导航栏在视口内顶到底（占满上下空间）。
-       sticky 元素必须短于视口高度才能贴顶，所以用 max-height 而不是 height。 */
+    /* 璁╁鑸爮鍦ㄨ鍙ｅ唴椤跺埌搴曪紙鍗犳弧涓婁笅绌洪棿锛夈€?       sticky 鍏冪礌蹇呴』鐭簬瑙嗗彛楂樺害鎵嶈兘璐撮《锛屾墍浠ョ敤 max-height 鑰屼笉鏄?height銆?*/
     max-height: calc(100vh - 32px);
-    /* 整个 nav 用列方向 flex：上面是 toolbar（固定），下面是分类列表（可滚） */
+    /* 鏁翠釜 nav 鐢ㄥ垪鏂瑰悜 flex锛氫笂闈㈡槸 toolbar锛堝浐瀹氾級锛屼笅闈㈡槸鍒嗙被鍒楄〃锛堝彲婊氾級 */
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -6906,11 +6874,11 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
     backdrop-filter: blur(10px);
     z-index: 8;
-    /* nav 自身不滚动；滚动交给内部 .rtl-nav-list */
+    /* nav 鑷韩涓嶆粴鍔紱婊氬姩浜ょ粰鍐呴儴 .rtl-nav-list */
     overflow: hidden;
 }
 
-/* 左侧导航栏顶部工具区：搜索 + 添加 + 新建分类 */
+/* 宸︿晶瀵艰埅鏍忛《閮ㄥ伐鍏峰尯锛氭悳绱?+ 娣诲姞 + 鏂板缓鍒嗙被 */
 .rtl-nav-toolbar {
     display: flex;
     flex-direction: column;
@@ -6944,13 +6912,13 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     text-overflow: ellipsis;
 }
 
-/* 分类列表：填满 nav 剩余空间，自身负责滚动 */
+/* 鍒嗙被鍒楄〃锛氬～婊?nav 鍓╀綑绌洪棿锛岃嚜韬礋璐ｆ粴鍔?*/
 .rtl-nav-list {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-right: 2px; /* 给滚动条留空隙 */
+    padding-right: 2px; /* 缁欐粴鍔ㄦ潯鐣欑┖闅?*/
 }
 
 .rtl-nav-title {
@@ -7222,9 +7190,8 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     }
 }
 
-/* ─────────────────────────────────────────────
-   模块：科研库 - 编辑弹窗中的 Emoji 选择器（.rtl-icon-field）
-   ───────────────────────────────────────────── */
+/* 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+   妯″潡锛氱鐮斿簱 - 缂栬緫寮圭獥涓殑 Emoji 閫夋嫨鍣紙.rtl-icon-field锛?   鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 .rtl-icon-field {
     position: relative;
     margin-bottom: 6px;
@@ -7376,8 +7343,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
    Signal console theme - dark research workspace
    ===================================================== */
 .scholarium-dashboard.scholarium-dashboard,
-.scholarium-chat-modal-wrap,
-.scholarium-settings {
+.scholarium-chat-modal-wrap {
     --celn-accent: #1aff8c;
     --celn-accent-rgb: 26, 255, 140;
     --celn-accent-light: #57ffa9;
@@ -7513,8 +7479,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .scholarium-dashboard .ws2-btn,
 .scholarium-dashboard .rtl-add-btn,
 .scholarium-dashboard .rtl-secondary-btn,
-.scholarium-chat-modal-wrap .scholarium-btn,
-.scholarium-settings button {
+.scholarium-chat-modal-wrap .scholarium-btn {
     min-height: 34px;
     padding: 0 12px;
     border: 1px solid rgba(255, 255, 255, 0.15);
@@ -7531,8 +7496,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .scholarium-dashboard .ws2-btn:hover:not(.ws2-btn-disabled),
 .scholarium-dashboard .rtl-add-btn:hover,
 .scholarium-dashboard .rtl-secondary-btn:hover,
-.scholarium-chat-modal-wrap .scholarium-btn:hover,
-.scholarium-settings button:hover {
+.scholarium-chat-modal-wrap .scholarium-btn:hover {
     background: #1a1a1a;
     border-color: rgba(255, 255, 255, 0.25);
     color: #f0f0f0;
@@ -7568,9 +7532,6 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .scholarium-chat-modal-wrap input,
 .scholarium-chat-modal-wrap select,
 .scholarium-chat-modal-wrap textarea,
-.scholarium-settings input,
-.scholarium-settings select,
-.scholarium-settings textarea,
 .scholarium-dashboard .ws2-input {
     background: #1a1a1a;
     border: 1px solid rgba(255, 255, 255, 0.10);
@@ -7581,8 +7542,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 
 .scholarium-dashboard input::placeholder,
 .scholarium-dashboard textarea::placeholder,
-.scholarium-chat-modal-wrap textarea::placeholder,
-.scholarium-settings input::placeholder {
+.scholarium-chat-modal-wrap textarea::placeholder {
     color: #555555;
 }
 
@@ -7590,9 +7550,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .scholarium-dashboard select:focus,
 .scholarium-dashboard textarea:focus,
 .scholarium-chat-modal-wrap input:focus,
-.scholarium-chat-modal-wrap textarea:focus,
-.scholarium-settings input:focus,
-.scholarium-settings textarea:focus {
+.scholarium-chat-modal-wrap textarea:focus {
     border-color: #1aff8c;
     box-shadow: 0 0 0 2px rgba(26, 255, 140, 0.10);
     outline: none;
@@ -8075,23 +8033,23 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 .scholarium-settings {
-    background: #0a0a0a;
-    color: #e8e8e8;
+    background: var(--background-primary);
+    color: var(--text-normal);
     padding: 20px;
 }
 
 .scholarium-settings h2,
 .scholarium-settings h3,
 .scholarium-settings .setting-item-name {
-    color: #f0f0f0;
+    color: var(--text-normal);
 }
 
 .scholarium-settings .setting-item {
-    border-color: rgba(255, 255, 255, 0.07);
+    border-color: var(--background-modifier-border);
 }
 
 .scholarium-settings .setting-item-description {
-    color: #888888;
+    color: var(--text-muted);
 }
 
 @media (max-width: 780px) {
@@ -8116,9 +8074,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 
 /* Final token bridge: keep the console layout while allowing both themes and every accent. */
 .scholarium-root.scholarium-dashboard,
-.scholarium-root.scholarium-settings,
-.scholarium-root.scholarium-chat-modal-wrap,
-.vertical-tab-content-container.scholarium-root {
+.scholarium-root.scholarium-chat-modal-wrap {
     --sch-bg: var(--bg-base);
     --sch-bg-deep: var(--bg-panel);
     --sch-surface: var(--bg-surface);
@@ -8167,9 +8123,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .scholarium-root .ws2-layout,
 .scholarium-root .ws2-content,
 .scholarium-root .ws2-page,
-.scholarium-root .ws2-page-body,
-.vertical-tab-content-container.scholarium-root,
-.scholarium-root.scholarium-settings {
+.scholarium-root .ws2-page-body {
     background: var(--bg-base);
     color: var(--text-primary);
 }
@@ -8184,7 +8138,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     font-size: var(--scholarium-font-size) !important;
 }
 
-.scholarium-root.scholarium-settings {
+.scholarium-settings {
     font-size: var(--scholarium-font-size);
 }
 
@@ -8212,10 +8166,10 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .scholarium-root .ws2-logo-title,
 .scholarium-root .ws2-page-hero-title,
 .scholarium-root .ws2-overview-title,
-.scholarium-root.scholarium-settings h2,
-.scholarium-root.scholarium-settings h3,
-.scholarium-root.scholarium-settings .setting-item-name {
-    color: var(--text-primary);
+.scholarium-settings h2,
+.scholarium-settings h3,
+.scholarium-settings .setting-item-name {
+    color: var(--text-primary, var(--text-normal));
 }
 
 .scholarium-root .scholarium-clock,
@@ -8229,32 +8183,32 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 .scholarium-root .ws2-logo-subtitle,
 .scholarium-root .ws2-logo-datetime,
 .scholarium-root .ws2-page-hero-sub,
-.scholarium-root.scholarium-settings .setting-item-description {
-    color: var(--text-secondary);
+.scholarium-settings .setting-item-description {
+    color: var(--text-secondary, var(--text-muted));
 }
 
 .scholarium-root .scholarium-btn,
 .scholarium-root .ws2-btn,
 .scholarium-root .rtl-secondary-btn,
 .scholarium-root .rtl-mini-btn,
-.scholarium-root.scholarium-settings button {
-    border-color: var(--border-strong);
+.scholarium-settings button {
+    border-color: var(--border-strong, var(--background-modifier-border));
     background: transparent;
-    color: var(--text-primary);
+    color: var(--text-primary, var(--text-normal));
 }
 
 .scholarium-root .scholarium-btn:hover,
 .scholarium-root .ws2-btn:hover:not(.ws2-btn-disabled),
 .scholarium-root .rtl-secondary-btn:hover,
 .scholarium-root .rtl-mini-btn:hover,
-.scholarium-root.scholarium-settings button:hover,
+.scholarium-settings button:hover,
 .scholarium-root .sch-brandbar-tabs button:hover,
 .scholarium-root .scholarium-switch-btn:hover,
 .scholarium-root .ws2-nav-item:hover,
 .scholarium-root .rtl-nav-item:hover {
-    background: var(--bg-elevated);
-    border-color: var(--border-strong);
-    color: var(--text-primary);
+    background: var(--bg-elevated, var(--background-modifier-hover));
+    border-color: var(--border-strong, var(--background-modifier-border));
+    color: var(--text-primary, var(--text-normal));
 }
 
 .scholarium-root .exp-item,
@@ -8533,7 +8487,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
 }
 
 /* The settings selector contains two label lines; generic button rules must not collapse it. */
-.scholarium-root.scholarium-settings .sch-theme-mode {
+.scholarium-settings .sch-theme-mode {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -8545,8 +8499,8 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     white-space: normal;
 }
 
-.scholarium-root.scholarium-settings .sch-theme-mode-title,
-.scholarium-root.scholarium-settings .sch-theme-mode-desc {
+.scholarium-settings .sch-theme-mode-title,
+.scholarium-settings .sch-theme-mode-desc {
     display: block;
     position: static;
     line-height: 1.35;
@@ -8576,22 +8530,22 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
     width: 0;
 }
 
-.scholarium-root.scholarium-settings .sch-accent-picker {
+.scholarium-settings .sch-accent-picker {
     flex-wrap: wrap;
     max-width: 520px;
 }
 
-.scholarium-root.scholarium-settings .sch-accent-swatch {
+.scholarium-settings .sch-accent-swatch {
     border-color: transparent;
     background: transparent;
 }
 
-.scholarium-root.scholarium-settings .sch-accent-swatch.is-selected {
+.scholarium-settings .sch-accent-swatch.is-selected {
     border-color: var(--swatch-color);
     background: transparent;
 }
 
-.scholarium-root.scholarium-settings .sch-custom-accent {
+.scholarium-settings .sch-custom-accent {
     max-width: 720px;
     margin: 4px 0 18px;
 }
@@ -8651,7 +8605,7 @@ body.scholarium-resizing-sidebar {
 }
 
 /* Settings chapters collapse into short, scannable accordions. */
-.scholarium-root.scholarium-settings .sch-settings-section {
+.scholarium-settings .sch-settings-section {
     margin: 12px 0;
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -8659,7 +8613,7 @@ body.scholarium-resizing-sidebar {
     overflow: hidden;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section-summary {
+.scholarium-settings .sch-settings-section-summary {
     list-style: none;
     cursor: pointer;
     padding: 14px 17px;
@@ -8669,102 +8623,102 @@ body.scholarium-resizing-sidebar {
     gap: 10px;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section-summary::-webkit-details-marker {
+.scholarium-settings .sch-settings-section-summary::-webkit-details-marker {
     display: none;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section-summary::after {
+.scholarium-settings .sch-settings-section-summary::after {
     content: "+";
     color: var(--text-muted);
     font-size: 20px;
     line-height: 1;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section[open] .sch-settings-section-summary::after {
+.scholarium-settings .sch-settings-section[open] .sch-settings-section-summary::after {
     content: "-";
     color: var(--accent);
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section-summary h3 {
+.scholarium-settings .sch-settings-section-summary h3 {
     margin: 0 !important;
     font-size: 18px;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section-body {
+.scholarium-settings .sch-settings-section-body {
     padding: 0 17px 14px;
     border-top: 1px solid var(--border-soft);
 }
 
 /* Compact settings typography: settings should remain dense independently of dashboard scaling. */
-.scholarium-root.scholarium-settings {
+.scholarium-settings {
     font-size: max(11px, calc(var(--scholarium-font-size) * 0.78)) !important;
     padding: 16px 18px 26px !important;
 }
 
-.scholarium-root.scholarium-settings > h2 {
+.scholarium-settings > h2 {
     font-size: 2.1em !important;
     margin: 0 0 12px !important;
     padding-bottom: 8px !important;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section {
+.scholarium-settings .sch-settings-section {
     margin: 6px 0;
     border-radius: 8px;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section-summary {
+.scholarium-settings .sch-settings-section-summary {
     padding: 7px 10px;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section-summary h3 {
+.scholarium-settings .sch-settings-section-summary h3 {
     font-size: 1.55em !important;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section-summary::after {
+.scholarium-settings .sch-settings-section-summary::after {
     font-size: 14px;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section-body {
+.scholarium-settings .sch-settings-section-body {
     padding: 0 10px 8px;
 }
 
-.scholarium-root.scholarium-settings .setting-item {
+.scholarium-settings .setting-item {
     min-height: 28px;
     padding: 5px 8px !important;
 }
 
-.scholarium-root.scholarium-settings .setting-item-name {
+.scholarium-settings .setting-item-name {
     font-size: 1.2em !important;
 }
 
-.scholarium-root.scholarium-settings .setting-item-description,
-.scholarium-root.scholarium-settings p {
+.scholarium-settings .setting-item-description,
+.scholarium-settings p {
     font-size: 1.05em !important;
     line-height: 1.4;
 }
 
-.scholarium-root.scholarium-settings button,
-.scholarium-root.scholarium-settings input,
-.scholarium-root.scholarium-settings select,
-.scholarium-root.scholarium-settings textarea {
+.scholarium-settings button,
+.scholarium-settings input,
+.scholarium-settings select,
+.scholarium-settings textarea {
     font-size: 1.15em !important;
 }
 
-.scholarium-root.scholarium-settings button,
-.scholarium-root.scholarium-settings input:not([type="color"]),
-.scholarium-root.scholarium-settings select {
+.scholarium-settings button,
+.scholarium-settings input:not([type="color"]),
+.scholarium-settings select {
     min-height: 24px !important;
     height: 24px !important;
     padding: 2px 8px !important;
 }
 
-.scholarium-root.scholarium-settings .sch-theme-mode {
+.scholarium-settings .sch-theme-mode {
     min-height: 44px;
     padding: 7px 10px !important;
 }
 
 /* Color choices stay circular even when compact controls set a global button height. */
-.scholarium-root.scholarium-settings .sch-accent-swatch {
+.scholarium-settings .sch-accent-swatch {
     width: 34px !important;
     min-width: 34px !important;
     height: 34px !important;
@@ -8775,11 +8729,11 @@ body.scholarium-resizing-sidebar {
     flex: 0 0 34px;
 }
 
-.scholarium-root.scholarium-settings .sch-accent-custom .sch-accent-dot {
+.scholarium-settings .sch-accent-custom .sch-accent-dot {
     background: conic-gradient(from 90deg, #4d9fff, #a78bfa, #ff7c6e, #fbbf24, #1aff8c, #4d9fff);
 }
 
-.scholarium-root.scholarium-settings .sch-accent-custom-mark {
+.scholarium-settings .sch-accent-custom-mark {
     position: absolute;
     right: -2px;
     bottom: -2px;
@@ -8795,7 +8749,7 @@ body.scholarium-resizing-sidebar {
     line-height: 1;
 }
 
-.scholarium-root.scholarium-settings .sch-accent-custom.is-selected .sch-accent-custom-mark {
+.scholarium-settings .sch-accent-custom.is-selected .sch-accent-custom-mark {
     display: none;
 }
 
@@ -8826,4 +8780,63 @@ body.scholarium-resizing-sidebar {
         min-width: 0 !important;
         width: 100% !important;
     }
+}
+
+/* Scholarium settings layout rescue: keep Obsidian's native settings pane geometry. */
+.modal.mod-settings .vertical-tab-content-container:has(.scholarium-settings),
+.modal.mod-settings .vertical-tab-content:has(.scholarium-settings) {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+}
+
+.modal.mod-settings .vertical-tab-content-container .scholarium-settings,
+.modal.mod-settings .vertical-tab-content .scholarium-settings,
+.scholarium-settings {
+    display: block !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: var(--size-4-6, 24px) var(--size-4-8, 32px) !important;
+    overflow: visible !important;
+    transform: none !important;
+    position: static !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    background: var(--background-primary) !important;
+    color: var(--text-normal) !important;
+}
+
+.scholarium-settings > *,
+.scholarium-settings .sch-settings-section,
+.scholarium-settings .sch-settings-section-body,
+.scholarium-settings .setting-item {
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    transform: none !important;
+}
+
+.scholarium-settings .sch-settings-section {
+    display: block !important;
+    overflow: visible !important;
+}
+
+.scholarium-settings .setting-item {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+}
+
+.scholarium-settings .setting-item-info,
+.scholarium-settings .setting-item-control {
+    min-width: 0 !important;
+    max-width: 100% !important;
 }
