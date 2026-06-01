@@ -11,10 +11,11 @@ if you want to view the source, please visit the github repository of this plugi
 
 const prod = process.argv[2] === "production";
 
-const common = {
+const context = await esbuild.context({
 	banner: {
 		js: banner,
 	},
+	entryPoints: ["src/main.ts"],
 	bundle: true,
 	external: [
 		"obsidian",
@@ -44,26 +45,13 @@ const common = {
 	},
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
-	minify: prod,
-};
-
-const mainContext = await esbuild.context({
-	...common,
-	entryPoints: ["src/main.ts"],
 	outfile: "main.js",
-});
-
-const ketcherContext = await esbuild.context({
-	...common,
-	entryPoints: ["src/chem/ketcher-runtime.ts"],
-	outfile: "ketcher-runtime.cjs",
+	minify: prod,
 });
 
 if (prod) {
-	await mainContext.rebuild();
-	await ketcherContext.rebuild();
+	await context.rebuild();
 	process.exit(0);
 } else {
-	await mainContext.watch();
-	await ketcherContext.watch();
+	await context.watch();
 }

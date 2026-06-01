@@ -1,5 +1,5 @@
 import type { ChemBlock } from './chem-block';
-import type { KetcherRuntimeHandle } from './ketcher-runtime';
+import { mountKetcherRuntime, type KetcherRuntimeHandle } from './ketcher-runtime';
 import type ChemELNPlugin from '../main';
 
 export interface KetcherHost {
@@ -7,40 +7,14 @@ export interface KetcherHost {
     destroy(): void;
 }
 
-interface KetcherRuntimeModule {
-    mountKetcherRuntime(container: HTMLElement, initial: ChemBlock): KetcherRuntimeHandle;
-}
-
-declare const require: (id: string) => unknown;
-
-export async function mountKetcher(plugin: ChemELNPlugin, container: HTMLElement, initial: ChemBlock): Promise<KetcherHost> {
-    const runtime = loadKetcherRuntime(plugin);
-    return runtime.mountKetcherRuntime(container, initial);
-}
-
-function loadKetcherRuntime(plugin: ChemELNPlugin): KetcherRuntimeModule {
+export async function mountKetcher(_plugin: ChemELNPlugin, container: HTMLElement, initial: ChemBlock): Promise<KetcherHost> {
     try {
         ensureBrowserGlobals();
-        const runtimePath = getRuntimePath(plugin);
-        return require(runtimePath) as KetcherRuntimeModule;
+        return mountKetcherRuntime(container, initial);
     } catch (error) {
-        console.error('[Scholarium] Unable to load ketcher-runtime.js:', error);
-        throw new Error(`Ketcher runtime is missing: ${(error as Error).message}`);
+        console.error('[Scholarium] Unable to mount Ketcher:', error);
+        throw new Error(`Ketcher failed to mount: ${(error as Error).message}`);
     }
-}
-
-function getRuntimePath(plugin: ChemELNPlugin): string {
-    const manifestWithDir = plugin.manifest as typeof plugin.manifest & { dir?: string };
-    if (!manifestWithDir.dir) {
-        throw new Error('Plugin manifest directory is unavailable.');
-    }
-
-    const adapter = plugin.app.vault.adapter as typeof plugin.app.vault.adapter & {
-        getFullPath?: (normalizedPath: string) => string;
-    };
-    const pluginRelativePath = `${manifestWithDir.dir}/ketcher-runtime.cjs`;
-    const fullPath = adapter.getFullPath ? adapter.getFullPath(pluginRelativePath) : pluginRelativePath;
-    return fullPath.replace(/\\/g, '/');
 }
 
 function ensureBrowserGlobals(): void {
