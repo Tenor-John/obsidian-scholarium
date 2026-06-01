@@ -6,7 +6,8 @@ import type { ExperimentContext } from './ai-assistant-modal';
 import { CloudSyncManager, buildSyncConfig } from './cloud-sync';
 import { AIChatModal } from './ai-chat-modal';
 import { SCHOLARIUM_ACCENTS, accentVarsFromHex, scholariumThemeCss } from './theme/tokens';
-import type { AccentKey } from './theme/tokens';
+import type { AccentKey, ThemeKey } from './theme/tokens';
+import { openInsertChemModal, registerChemMarkdown } from './chem/chem-markdown';
 
 export default class ChemELNPlugin extends Plugin {
     settings: ChemELNSettings;
@@ -59,6 +60,7 @@ export default class ChemELNPlugin extends Plugin {
         const medium = toHex(ac.r * 0.90, ac.g * 0.90, ac.b * 0.90);
         const deeper = toHex(ac.r * 0.70, ac.g * 0.70, ac.b * 0.70);
 
+        const resolvedTheme = this.resolveTheme();
         const style = document.createElement('style');
         style.id = 'scholarium-theme-vars';
         style.textContent = `
@@ -77,16 +79,18 @@ export default class ChemELNPlugin extends Plugin {
     --scholarium-font-size:   ${14 * fontScale}px;
     --scholarium-space-scale: ${Math.max(1, fontScale)};
 }
-${scholariumThemeCss(this.settings.theme, this.settings.accent, this.settings.density, this.settings.themeAccent)}`;
+${scholariumThemeCss(resolvedTheme, this.settings.accent, this.settings.density, this.settings.themeAccent)}`;
         document.head.appendChild(style);
         document.querySelectorAll<HTMLElement>('.scholarium-root').forEach((root) => this.applyThemeAttributes(root));
     }
 
     applyThemeAttributes(root: HTMLElement): void {
         root.addClass('scholarium-root');
-        root.dataset.theme = this.settings.theme;
+        const resolvedTheme = this.resolveTheme();
+        root.dataset.theme = resolvedTheme;
+        root.dataset.themeMode = this.settings.theme;
         root.dataset.accent = this.settings.accent;
-        const customAccent = accentVarsFromHex(this.settings.themeAccent, this.settings.theme);
+        const customAccent = accentVarsFromHex(this.settings.themeAccent, resolvedTheme);
         const accent = this.settings.accent === 'custom'
             ? {
                 ...customAccent,
@@ -101,14 +105,29 @@ ${scholariumThemeCss(this.settings.theme, this.settings.accent, this.settings.de
         root.style.setProperty('--accent-text', accent.text);
     }
 
+    resolveTheme(): ThemeKey {
+        if (this.settings.theme === 'light' || this.settings.theme === 'dark') return this.settings.theme;
+        if (document.body.classList.contains('theme-dark')) return 'dark';
+        if (document.body.classList.contains('theme-light')) return 'light';
+        return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
     async onload() {
         await this.loadSettings();
         this.injectThemeVars();
+        this.registerEvent(this.app.workspace.on('css-change', () => this.injectThemeVars()));
+        const colorScheme = window.matchMedia?.('(prefers-color-scheme: dark)');
+        const handleColorSchemeChange = () => {
+            if (this.settings.theme === 'system') this.injectThemeVars();
+        };
+        colorScheme?.addEventListener('change', handleColorSchemeChange);
+        this.register(() => colorScheme?.removeEventListener('change', handleColorSchemeChange));
 
         this.registerView(
             DASHBOARD_VIEW_TYPE,
             (leaf) => new DashboardView(leaf, this)
         );
+        registerChemMarkdown(this);
 
         this.addRibbonIcon('flask-conical', '打开 Scholarium', () => {
             void this.activateDashboard();
@@ -138,6 +157,12 @@ ${scholariumThemeCss(this.settings.theme, this.settings.accent, this.settings.de
             id: 'image-to-experiment',
             name: '图片识别生成实验记录',
             callback: () => this.openImageLab(),
+        });
+
+        this.addCommand({
+            id: 'insert-chem-structure',
+            name: '插入化学结构',
+            callback: () => openInsertChemModal(this, 'reaction'),
         });
 
         this.addSettingTab(new ChemELNSettingTab(this.app, this));
@@ -191,7 +216,7 @@ ${scholariumThemeCss(this.settings.theme, this.settings.accent, this.settings.de
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<ChemELNSettings>);
         this.settings.pluginDisplayName = 'scholarium';
         this.settings.notebookSidebarWidth = Math.min(440, Math.max(280, Number(this.settings.notebookSidebarWidth) || 300));
-        this.settings.theme = this.settings.theme === 'dark' ? 'dark' : 'light';
+        if (!['system', 'light', 'dark'].includes(this.settings.theme)) this.settings.theme = 'system';
         const legacyAccents: Record<string, AccentKey> = {
             emerald: 'green',
             indigo: 'blue',

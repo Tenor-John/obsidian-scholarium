@@ -1,4 +1,4 @@
-import { fetchWithTimeout, safeParseJson } from './utils/network';
+import { fetchWithTimeout, requestUrlWithTimeout, safeParseJson } from './utils/network';
 
 export type WritingProvider = 'deepseek' | 'claude' | 'openai' | 'gemini' | 'custom';
 
@@ -125,6 +125,93 @@ async function callClaude(ocrText: string, settings: WriterSettings): Promise<st
 
     const data = await response.json() as { content?: Array<{ text?: string }> };
     return data.content?.[0]?.text ?? '';
+}
+
+// ───────────────────────────────────────────────
+// 通用文献总结（复用同一套 provider 配置）
+// ───────────────────────────────────────────────
+const SUMMARY_SYSTEM = `你是一名科研文献助手。用户会给你一篇论文的标题、作者与摘要或正文。
+请用中文输出结构化要点，帮助科研人员快速判断是否值得精读。
+要求：直接给要点，不要寒暄；用简洁的 Markdown 列表。包含：
+- **一句话结论**：核心发现
+- **问题/动机**
+- **方法/体系**
+- **关键结果**（含关键数据/指标）
+- **创新点与局限**（能判断时）
+总长度控制在 300 字以内。`;
+
+// 带重试的 requestUrl（应对 ERR_CONNECTION_RESET 等瞬时网络错误）
+async function postWithRetry(req: Parameters<typeof requestUrlWithTimeout>[0], retries = 2): Promise<Awaited<ReturnType<typeof requestUrlWithTimeout>>> {
+    let lastErr: unknown;
+    for (let i = 0; i <= retries; i++) {
+        try {
+            return await requestUrlWithTimeout(req);
+        } catch (e) {
+            lastErr = e;
+            const msg = String((e as Error)?.message || e);
+            // 仅对网络层错误重试
+            if (!/RESET|ECONNRESET|ETIMEDOUT|network|timed out|ENOTFOUND|EAI_AGAIN/i.test(msg)) throw e;
+            await new Promise(r => setTimeout(r, 800 * (i + 1)));
+        }
+    }
+    throw lastErr;
+}
+
+// 用 Obsidian requestUrl（绕过浏览器 CORS）
+async function chatComplete(systemPrompt: string, userContent: string, settings: WriterSettings): Promise<string> {
+    if (settings.provider === 'claude') {
+        if (!settings.apiKey.trim()) throw new Error('请填写 Claude API Key');
+        const res = await postWithRetry({
+            url: ENDPOINTS.claude,
+            method: 'POST',
+            throw: false,
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': settings.apiKey.trim(),
+                'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify({
+                model: settings.model || DEFAULT_MODELS.claude,
+                max_tokens: 1200,
+                system: systemPrompt,
+                messages: [{ role: 'user', content: userContent }],
+            }),
+        });
+        if (res.status >= 400) throw new Error(`Claude API 错误 ${res.status}: ${(res.text || '').slice(0, 200)}`);
+        const data = res.json as { content?: Array<{ text?: string }> } | undefined;
+        return data?.content?.[0]?.text ?? '';
+    }
+
+    const endpoint = settings.provider === 'custom' ? (settings.customEndpoint ?? '') : ENDPOINTS[settings.provider];
+    if (!endpoint.trim()) throw new Error('请填写 AI 模型的自定义端点');
+    if (!settings.apiKey.trim()) throw new Error('请填写 AI 模型 API Key（或在主 AI 设置里配置 DeepSeek Key）');
+    const model = settings.model || DEFAULT_MODELS[settings.provider];
+    if (!model.trim()) throw new Error('请填写 AI 模型型号');
+    const res = await postWithRetry({
+        url: endpoint,
+        method: 'POST',
+        throw: false,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.apiKey.trim()}` },
+        body: JSON.stringify({
+            model,
+            temperature: 0.3,
+            max_tokens: 1200,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userContent },
+            ],
+        }),
+    });
+    if (res.status >= 400) throw new Error(`${settings.provider}(${model}) API 错误 ${res.status}: ${(res.text || '').slice(0, 200)}`);
+    const data = res.json as { choices?: Array<{ message?: { content?: string } }> } | undefined;
+    return data?.choices?.[0]?.message?.content ?? '';
+}
+
+export async function summarizeArticle(text: string, settings: WriterSettings, systemPrompt?: string): Promise<string> {
+    const input = text.trim();
+    if (!input) throw new Error('没有可总结的文本');
+    const out = await chatComplete((systemPrompt && systemPrompt.trim()) || SUMMARY_SYSTEM, `请总结以下论文内容：\n\n${input.slice(0, 12000)}`, settings);
+    return out.trim();
 }
 
 export async function rewriteOcrToAgent(

@@ -11,12 +11,27 @@ import { t } from './i18n';
 import { iconSvg } from './icons';
 import { avatar as makeAvatar, segmented, card as uiCard, sectionHeader, pill, button as uiButton, input as uiInput, insetBlock } from './components/ui';
 import { IdeaLibrary } from './idea-library';
+import { RssFeedBoard } from './rss-feed-board';
+import { openInsertChemModalForFile } from './chem/chem-markdown';
+import { parseChemBlock, CHEM_CODE_BLOCK } from './chem/chem-block';
 
 // 本地打包 smiles-drawer（兼容 esbuild 的 ESM→CJS 转换）
+// sync-touch: chem block dashboard preview
 // @ts-ignore
 import _SD from 'smiles-drawer';
 // esbuild 打包时 default export 可能挂在 .default 上
 const SD = (_SD as { default?: unknown } & Record<string, unknown>)?.default ?? _SD;
+
+// 给 SmiDrawer 生成的 SVG 扩展 viewBox，避免左侧的隐式氢（如 HBr/HCl 的 H）被裁切
+export function padSvgViewBox(svg: SVGSVGElement, ratio = 0.06, min = 1.5): void {
+    const vb = svg.getAttribute('viewBox');
+    if (!vb) return;
+    const p = vb.split(/[\s,]+/).map(Number);
+    if (p.length !== 4 || p.some(isNaN)) return;
+    const [x = 0, y = 0, w = 0, h = 0] = p;
+    const pad = Math.max(Math.max(w, h) * ratio, min);
+    svg.setAttribute('viewBox', `${x - pad} ${y - pad} ${w + pad * 2} ${h + pad * 2}`);
+}
 
 export const DASHBOARD_VIEW_TYPE = 'scholarium-dashboard';
 
@@ -51,8 +66,10 @@ export class DashboardView extends ItemView {
     private researchToolLib: ResearchToolLibrary | null = null;
     // 想法库（Notebook → Ideas，重设计 M5）
     private ideaLib: IdeaLibrary | null = null;
+    // 文献订阅工作台（RSS）
+    private rssBoard: RssFeedBoard | null = null;
     private notebookMode: 'experiments' | 'ideas' = 'experiments';
-    private activePanel: 'lab' | 'workspace' | 'materials' | 'tools' = 'lab';
+    private activePanel: 'lab' | 'feeds' | 'workspace' | 'materials' | 'tools' = 'lab';
     private resizeTimer: number | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: ChemELNPlugin) {
@@ -84,6 +101,9 @@ export class DashboardView extends ItemView {
             // 想法库
             this.ideaLib = new IdeaLibrary(this.app, this.plugin);
             await this.ideaLib.load();
+            // 文献订阅工作台
+            this.rssBoard = new RssFeedBoard(this.app, this.plugin);
+            await this.rssBoard.load();
             await this.render();
             this.clockInterval = this.registerInterval(window.setInterval(() => this.updateClock(), 60000));
             // 窗口/叶子尺寸变化（如折叠侧边栏）时防抖重渲染，让按窗口测量的高度与布局自适应
@@ -104,6 +124,7 @@ export class DashboardView extends ItemView {
         this.workspace?.destroy();
         this.materialLib?.destroy();
         this.researchToolLib?.destroy();
+        this.rssBoard?.destroy();
     }
 
     async render() {
@@ -119,7 +140,11 @@ export class DashboardView extends ItemView {
         // ===== 主体区 =====
         const main = container.createDiv({ cls: 'scholarium-main' });
 
-        if (this.activePanel === 'workspace') {
+        if (this.activePanel === 'feeds') {
+            // ── 文献订阅工作台（全宽）──
+            const rssPanel = main.createDiv({ cls: 'scholarium-panel rss-full-panel' });
+            if (this.rssBoard) this.rssBoard.render(rssPanel);
+        } else if (this.activePanel === 'workspace') {
             // ── PhD 工作台（全宽）──
             const wsPanel = main.createDiv({ cls: 'scholarium-panel ws-full-panel' });
             if (this.workspace) this.workspace.render(wsPanel);
@@ -224,7 +249,7 @@ export class DashboardView extends ItemView {
     }
 
     // ───── 顶部品牌栏（重设计 M3）─────
-    private switchTab(panel: 'lab' | 'workspace' | 'materials' | 'tools'): void {
+    private switchTab(panel: 'lab' | 'feeds' | 'workspace' | 'materials' | 'tools'): void {
         if (this.activePanel === panel) return;
         this.activePanel = panel;
         void this.render();
@@ -301,8 +326,9 @@ export class DashboardView extends ItemView {
         const roleLabel = s.workspaceRole !== 'custom'
             ? (WORKSPACE_ROLE_LABELS[s.workspaceRole] ?? t('workspace', lang))
             : (s.workspaceTabLabel || t('workspace', lang));
-        const tabs: Array<{ key: 'lab' | 'workspace' | 'materials' | 'tools'; icon: string; label: string }> = [
+        const tabs: Array<{ key: 'lab' | 'feeds' | 'workspace' | 'materials' | 'tools'; icon: string; label: string }> = [
             { key: 'lab',        icon: 'notebook',  label: s.notebookLabel || t('notebook', lang) },
+            { key: 'feeds',      icon: 'rss',       label: lang === 'zh' ? '文献订阅' : 'Feeds' },
             { key: 'workspace',  icon: 'workspace', label: roleLabel },
             { key: 'materials',  icon: 'folder',    label: t('materials', lang) },
             { key: 'tools',      icon: 'tool',      label: t('tools', lang) },
@@ -503,6 +529,9 @@ export class DashboardView extends ItemView {
             }
         }
 
+        // 卡片中渲染正文里的 scholarium-chem 结构（紧凑缩略图）
+        this.renderChemBlocksOnCard(body, noteBody);
+
         const rawSmiles = exp.noteType === 'experiment' ? (exp.reaction_smiles || exp.smiles) : '';
         const smilesStr = (rawSmiles || '').replace(/^["']|["']$/g, '').trim();
         if (smilesStr && smilesStr !== '""') {
@@ -529,8 +558,11 @@ export class DashboardView extends ItemView {
         for (const heading of exp.noteType === 'research-learning'
             ? ['摘要', '核心概念', '方法理解', '关键结论', '问题与思考', '参考文献']
             : ['实验目的', '目的', '实验步骤', '步骤', '观察与现象', '下一步计划', '注意事项', '备注', '参考文献']) {
-            const content = sections.get(heading);
-            if (!content || content.length < 2) continue;
+            let content = sections.get(heading);
+            if (!content) continue;
+            // 去掉 scholarium-chem 代码块（已用结构图单独渲染），避免显示原始代码文本
+            content = content.replace(new RegExp('```' + CHEM_CODE_BLOCK + '[\\s\\S]*?```', 'g'), '').trim();
+            if (content.length < 2) continue;
             const sec = body.createDiv({ cls: 'exp-note-card-section' });
             sec.createEl('h4', { text: heading });
             const div = sec.createDiv({ cls: 'exp-note-card-text' });
@@ -722,6 +754,8 @@ export class DashboardView extends ItemView {
         if (exp.noteType === 'experiment') {
             const drawBtn = btnGroup.createEl('button', { text: '📐 绘图', cls: 'scholarium-btn' });
             drawBtn.onclick = () => this.openExcalidraw(exp);
+            btnGroup.createEl('button', { text: '添加化学结构', cls: 'scholarium-btn' })
+                .onclick = () => openInsertChemModalForFile(this.plugin, exp.file, 'reaction');
             btnGroup.createEl('button', { text: '✏️ 编辑', cls: 'scholarium-btn' })
                 .onclick = () => this.showDetailEdit(panel, exp);
         }
@@ -762,6 +796,9 @@ export class DashboardView extends ItemView {
             const isReaction = !!(exp.reaction_smiles && exp.reaction_smiles.replace(/^["']|["']$/g, '').trim());
             this.renderSmilesSection(panel, smilesStr, isReaction);
         }
+
+        // —— 2b. 笔记正文里的化学方程代码块（scholarium-chem）——
+        this.renderChemBlocksFromBody(panel, noteBody);
 
         // —— 3. 试剂 ——
         if (exp.reagents?.length) {
@@ -1103,17 +1140,106 @@ export class DashboardView extends ItemView {
         requestAnimationFrame(() => backdrop.classList.add('img-lightbox-show'));
     }
 
+    // ───── 提取并渲染正文中的 scholarium-chem 代码块 ─────
+    renderChemBlocksFromBody(panel: HTMLElement, noteBody: string) {
+        if (!noteBody) return;
+        const fence = new RegExp('```' + CHEM_CODE_BLOCK + '\\r?\\n([\\s\\S]*?)```', 'g');
+        let match: RegExpExecArray | null;
+        let idx = 0;
+        while ((match = fence.exec(noteBody)) !== null) {
+            try {
+                const block = parseChemBlock(match[1] ?? '');
+                const smiles = (block.reactionSmiles || block.smiles || '').trim();
+                if (!smiles) continue;
+                idx++;
+                const sec = panel.createDiv({ cls: 'detail-section' });
+                const isReaction = !!block.reactionSmiles || block.type === 'reaction';
+                sec.createEl('h4', { text: `⚗️ ${block.title || (isReaction ? '反应方程式' : '化学结构')}`, cls: 'section-title' });
+                const wrap = sec.createDiv({ cls: 'canvas-wrap' });
+                this.drawSmilesSvg(wrap, smiles, isReaction);
+                sec.createEl('code', { text: smiles, cls: 'smiles-text' });
+            } catch (e) {
+                console.warn('[Scholarium] renderChemBlocksFromBody:', e);
+            }
+        }
+    }
+
+    // ───── 卡片中渲染正文里的 scholarium-chem 结构（紧凑缩略图）─────
+    renderChemBlocksOnCard(body: HTMLElement, noteBody: string) {
+        if (!noteBody) return;
+        const fence = new RegExp('```' + CHEM_CODE_BLOCK + '\\r?\\n([\\s\\S]*?)```', 'g');
+        let match: RegExpExecArray | null;
+        while ((match = fence.exec(noteBody)) !== null) {
+            try {
+                const block = parseChemBlock(match[1] ?? '');
+                const smiles = (block.reactionSmiles || block.smiles || '').trim();
+                if (!smiles) continue;
+                const isReaction = !!block.reactionSmiles || block.type === 'reaction';
+                const sec = body.createDiv({ cls: 'exp-note-card-section' });
+                sec.createEl('h4', { text: block.title || (isReaction ? '反应式' : '化学结构') });
+                const wrap = sec.createDiv({ cls: 'canvas-wrap exp-card-chem' });
+                this.drawSmilesSvg(wrap, smiles, isReaction);
+            } catch (e) {
+                console.warn('[Scholarium] renderChemBlocksOnCard:', e);
+            }
+        }
+    }
+
+    // ───── 用 SmiDrawer 渲染到 SVG（可正确绘制整条反应式），失败回退 canvas ─────
+    drawSmilesSvg(container: HTMLElement, smiles: string, isReaction: boolean) {
+        const lib = SD as Record<string, unknown>;
+        const SmiDrawer = lib.SmiDrawer as (new (mol: object, rxn: object) => {
+            draw(s: string, t: SVGElement | string, theme: string, ok: ((x: unknown) => void) | null, err: ((e: unknown) => void) | null, w?: unknown): void;
+        }) | undefined;
+        if (typeof SmiDrawer === 'function') {
+            const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg') as SVGSVGElement;
+            svgEl.addClass('smiles-svg');
+            container.appendChild(svgEl);
+            setTimeout(() => {
+                try {
+                    const sd = new SmiDrawer({}, {});
+                    sd.draw(smiles, svgEl, 'light', () => {
+                        // 让 viewBox 驱动缩放：移除内联固定宽高，避免结构被裁切
+                        svgEl.style.removeProperty('width');
+                        svgEl.style.removeProperty('height');
+                        svgEl.removeAttribute('width');
+                        svgEl.removeAttribute('height');
+                        svgEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+                        padSvgViewBox(svgEl);
+                    }, (err) => {
+                        console.warn('[Scholarium] SmiDrawer failed, fallback to canvas:', err);
+                        svgEl.remove();
+                        this.drawSmilesCanvasFallback(container, smiles, isReaction);
+                    });
+                } catch (e) {
+                    console.warn('[Scholarium] SmiDrawer threw, fallback to canvas:', e);
+                    svgEl.remove();
+                    this.drawSmilesCanvasFallback(container, smiles, isReaction);
+                }
+            }, 60);
+            return;
+        }
+        this.drawSmilesCanvasFallback(container, smiles, isReaction);
+    }
+
+    private drawSmilesCanvasFallback(container: HTMLElement, smiles: string, isReaction: boolean) {
+        const canvas = container.createEl('canvas', { cls: 'smiles-canvas' });
+        canvas.width = isReaction ? 600 : 480;
+        canvas.height = isReaction ? 240 : 200;
+        canvas.id = 'scholarium-canvas-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+        setTimeout(() => {
+            if (isReaction) this.drawReactionSmiles(smiles, canvas);
+            else this.drawSmiles(smiles, canvas);
+        }, 60);
+    }
+
     // ───── 化学结构渲染入口 ─────
     renderSmilesSection(panel: HTMLElement, smiles: string, isReaction: boolean) {
         const sec = panel.createDiv({ cls: 'detail-section' });
         sec.createEl('h4', { text: isReaction ? '⚗️ 反应方程式' : '⚗️ 化学结构', cls: 'section-title' });
 
         const canvasWrap = sec.createDiv({ cls: 'canvas-wrap' });
-        const canvas = canvasWrap.createEl('canvas', { cls: 'smiles-canvas' });
-        canvas.width  = isReaction ? 600 : 480;
-        canvas.height = isReaction ? 240 : 200;
-        // 分配唯一 ID，供 smiles-drawer 使用
-        canvas.id = 'scholarium-canvas-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+        this.drawSmilesSvg(canvasWrap, smiles, isReaction);
 
         sec.createEl('code', { text: smiles, cls: 'smiles-text' });
 
@@ -1124,12 +1250,6 @@ export class DashboardView extends ItemView {
                 setTimeout(() => copyBtn.setText('📋 复制 SMILES'), 2000);
             });
         };
-
-        // 延迟渲染（等 canvas 挂载到 DOM）
-        setTimeout(() => {
-            if (isReaction) this.drawReactionSmiles(smiles, canvas);
-            else            this.drawSmiles(smiles, canvas);
-        }, 150);
     }
 
     // ───── 解析 smiles-drawer 的 API 结构（支持 namespace / class 两种模式）─────

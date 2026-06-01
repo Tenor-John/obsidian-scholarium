@@ -1,6 +1,6 @@
 import esbuild from "esbuild";
 import process from "process";
-import { builtinModules } from 'node:module';
+import { builtinModules } from "node:module";
 
 const banner =
 `/*
@@ -9,7 +9,7 @@ if you want to view the source, please visit the github repository of this plugi
 */
 `;
 
-const prod = (process.argv[2] === "production");
+const prod = process.argv[2] === "production";
 
 const context = await esbuild.context({
 	banner: {
@@ -31,10 +31,18 @@ const context = await esbuild.context({
 		"@lezer/common",
 		"@lezer/highlight",
 		"@lezer/lr",
-		...builtinModules],
+		...builtinModules,
+	],
 	format: "cjs",
 	target: "es2018",
 	logLevel: "info",
+	loader: {
+		".css": "empty",
+		".less": "empty",
+	},
+	define: {
+		"process.env.NODE_ENV": prod ? '"production"' : '"development"',
+	},
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
 	outfile: "main.js",

@@ -146,6 +146,7 @@ function normalizeFileName(fileName: string | undefined, mediaType: string): str
         'image/webp': '.webp',
         'image/gif': '.gif',
         'image/bmp': '.bmp',
+        'application/pdf': '.pdf',
     };
     const ext = extFromType[mediaType.toLowerCase()] ?? '.png';
     const cleaned = (fileName || `image${ext}`)
