@@ -3,6 +3,7 @@
 // by main.ts injectThemeVars(); imperative-DOM components read those variables.
 
 export type ThemeKey = 'light' | 'dark';
+export type ThemeModeKey = ThemeKey | 'system';
 export type AccentKey = AccentPresetKey | 'custom';
 export type AccentPresetKey =
     | 'green' | 'teal' | 'blue' | 'purple' | 'amber' | 'coral'

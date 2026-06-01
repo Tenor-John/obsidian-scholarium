@@ -4,7 +4,7 @@ import type { CloudProviderType } from './cloud-sync';
 import { CloudSyncManager, buildSyncConfig } from './cloud-sync';
 import type { WritingProvider } from './vision-writer';
 import { SCHOLARIUM_ACCENTS } from './theme/tokens';
-import type { ThemeKey, AccentKey, AccentPresetKey, DensityKey, Lang } from './theme/tokens';
+import type { ThemeModeKey, AccentKey, AccentPresetKey, DensityKey, Lang } from './theme/tokens';
 
 export type AIProvider = 'claude' | 'openai' | 'kimi' | 'deepseek' | 'minimax' | 'custom';
 
@@ -66,6 +66,12 @@ export interface ChemELNSettings {
     writingApiKey: string;
     writingModel: string;
     writingCustomEndpoint: string;
+    // 文献订阅（RSS）专用 AI 设置
+    rssAiProvider: WritingProvider;
+    rssAiApiKey: string;
+    rssAiModel: string;
+    rssAiCustomEndpoint: string;
+    rssAiPrompt: string;
     cloudProvider: CloudProviderType;
     cloudWebdavUrl: string;
     cloudWebdavUser: string;
@@ -93,7 +99,7 @@ export interface ChemELNSettings {
     notebookSidebarWidth: number;       // 实验记录导航栏宽度（可拖拽）
 
     // ─── 重设计：主题 / 密度 / 强调色 / 语言 ───
-    theme:            ThemeKey;          // 'light' | 'dark'
+    theme:            ThemeModeKey;      // 'system' | 'light' | 'dark'
     accent:           AccentKey;         // one of the shared light/dark accent presets
     density:          DensityKey;        // 'compact' | 'regular' | 'spacious'
     language:         Lang;              // 'zh' | 'en'
@@ -128,6 +134,18 @@ export const DEFAULT_AI_SYSTEM_PROMPT =
 }
 \`\`\``;
 
+// 文献订阅 AI 总结默认提示词
+export const DEFAULT_RSS_AI_PROMPT =
+`你是一名科研文献助手。用户会给你一篇论文的标题、作者与摘要或正文。
+请用中文输出结构化要点，帮助科研人员快速判断是否值得精读。
+要求：直接给要点，不要寒暄；用简洁的 Markdown 列表。包含：
+- **一句话结论**：核心发现
+- **问题/动机**
+- **方法/体系**
+- **关键结果**（含关键数据/指标）
+- **创新点与局限**（能判断时）
+总长度控制在 300 字以内。`;
+
 export const DEFAULT_SETTINGS: ChemELNSettings = {
     experimentsFolder: 'Experiments',
     openOnStartup: false,
@@ -145,6 +163,11 @@ export const DEFAULT_SETTINGS: ChemELNSettings = {
     writingApiKey: '',
     writingModel: '',
     writingCustomEndpoint: '',
+    rssAiProvider: 'deepseek',
+    rssAiApiKey: '',
+    rssAiModel: '',
+    rssAiCustomEndpoint: '',
+    rssAiPrompt: '',
     cloudProvider: 'none',
     cloudWebdavUrl: '',
     cloudWebdavUser: '',
@@ -584,6 +607,109 @@ export class ChemELNSettingTab extends PluginSettingTab {
             cls: 'setting-item-description'
         }).style.cssText = 'font-size:0.8em;margin:0;';
 
+        // ===== 文献订阅 (RSS) =====
+        containerEl.createEl('h3', { text: '📡 文献订阅（RSS）' });
+        containerEl.createEl('p', {
+            text: '批量/单条导入订阅源（RSS/Atom 地址或期刊 ISSN），并配置文献 AI 总结的模型与提示词（独立于实验记录 AI）。导入后到「文献订阅」点「全部刷新」抓取。',
+            cls: 'setting-item-description',
+        });
+
+        const addRssFeeds = async (lines: string[]): Promise<number> => {
+            let added = 0;
+            await this.plugin.updateData((data: Record<string, unknown>) => {
+                const board = (data.rssBoard as { feeds?: unknown[]; articles?: unknown[] }) || {};
+                if (!Array.isArray(board.feeds)) board.feeds = [];
+                if (!Array.isArray(board.articles)) board.articles = [];
+                const feeds = board.feeds as Array<Record<string, unknown>>;
+                const urls = new Set(feeds.map((f) => f.url));
+                for (const raw of lines) {
+                    const line = raw.trim();
+                    if (!line) continue;
+                    const issn = line.replace(/^issn[:\s]*/i, '').trim();
+                    const id = 'feed-' + Date.now() + '-' + Math.floor(Math.random() * 1e4);
+                    if (/^\d{4}-\d{3}[\dxX]$/.test(issn)) {
+                        const I = issn.toUpperCase();
+                        if (feeds.some((f) => f.sourceType === 'crossref' && f.issn === I)) continue;
+                        feeds.push({ id, title: 'ISSN ' + I, url: 'crossref:' + I, sourceType: 'crossref', issn: I, addedAt: Date.now() });
+                        added++;
+                    } else {
+                        const url = line.replace(/^feed:\/\//i, 'https://');
+                        if (urls.has(url)) continue;
+                        feeds.push({ id, title: url, url, sourceType: 'rss', addedAt: Date.now() });
+                        urls.add(url);
+                        added++;
+                    }
+                }
+                data.rssBoard = board;
+            });
+            return added;
+        };
+
+        let singleVal = '';
+        new Setting(containerEl)
+            .setName('单条导入订阅源')
+            .setDesc('粘贴一个 RSS/Atom 地址或期刊 ISSN（如 0002-7863）。')
+            .addText(t => t.setPlaceholder('https://... 或 0002-7863').onChange(v => { singleVal = v; }))
+            .addButton(b => b.setButtonText('添加').setCta().onClick(async () => {
+                if (!singleVal.trim()) return;
+                const n = await addRssFeeds([singleVal]);
+                new Notice(n ? `已添加 ${n} 个订阅源，去「文献订阅」点全部刷新抓取。` : '该订阅源已存在或无效。');
+                singleVal = '';
+                this.display();
+            }));
+
+        const batchWrap = containerEl.createDiv();
+        batchWrap.createEl('div', { text: '批量导入订阅源（每行一个，地址或 ISSN）', attr: { style: 'margin:6px 0 4px;font-weight:600;font-size:0.9em;' } });
+        const batchTa = batchWrap.createEl('textarea');
+        batchTa.rows = 6;
+        batchTa.placeholder = 'https://www.nature.com/nchem.rss\n0002-7863\n1433-7851';
+        batchTa.style.cssText = 'width:100%;font-size:0.85em;line-height:1.6;resize:vertical;padding:8px;border-radius:6px;border:1px solid var(--background-modifier-border);background:var(--background-primary);color:var(--text-normal);box-sizing:border-box;';
+        const batchBtn = batchWrap.createEl('button', { text: '批量导入', cls: 'scholarium-btn' });
+        batchBtn.style.cssText = 'margin-top:8px;padding:5px 14px;';
+        batchBtn.onclick = async () => {
+            const n = await addRssFeeds(batchTa.value.split('\n'));
+            new Notice(n ? `已批量添加 ${n} 个订阅源，去「文献订阅」点全部刷新抓取。` : '没有新的订阅源被添加。');
+            batchTa.value = '';
+            this.display();
+        };
+
+        new Setting(containerEl)
+            .setName('文献 AI 总结模型')
+            .setDesc('用于「文献订阅」的 AI 总结，独立于实验记录 AI。')
+            .addDropdown(d => d
+                .addOption('deepseek', 'DeepSeek')
+                .addOption('claude', 'Claude')
+                .addOption('openai', 'OpenAI / GPT')
+                .addOption('gemini', 'Gemini')
+                .addOption('custom', '自定义 OpenAI 兼容端点')
+                .setValue(s.rssAiProvider)
+                .onChange(async v => { s.rssAiProvider = v as WritingProvider; await this.plugin.saveSettings(); this.display(); }));
+
+        new Setting(containerEl)
+            .setName('文献 AI API Key')
+            .addText(t => { t.inputEl.type = 'password'; return t.setPlaceholder('API Key').setValue(s.rssAiApiKey).onChange(async v => { s.rssAiApiKey = v; await this.plugin.saveSettings(); }); });
+
+        new Setting(containerEl)
+            .setName('文献 AI 型号')
+            .setDesc('留空用默认，如 deepseek-chat / gpt-4o。')
+            .addText(t => t.setPlaceholder('留空 = 默认').setValue(s.rssAiModel).onChange(async v => { s.rssAiModel = v; await this.plugin.saveSettings(); }));
+
+        if (s.rssAiProvider === 'custom') {
+            new Setting(containerEl)
+                .setName('文献 AI 自定义端点')
+                .addText(t => t.setPlaceholder('https://example.com/v1/chat/completions').setValue(s.rssAiCustomEndpoint).onChange(async v => { s.rssAiCustomEndpoint = v; await this.plugin.saveSettings(); }));
+        }
+
+        containerEl.createEl('div', { text: '文献 AI 总结提示词', attr: { style: 'margin:10px 0 4px;font-weight:600;font-size:0.9em;' } });
+        const rssPromptTa = containerEl.createEl('textarea');
+        rssPromptTa.value = s.rssAiPrompt || DEFAULT_RSS_AI_PROMPT;
+        rssPromptTa.rows = 10;
+        rssPromptTa.style.cssText = 'width:100%;font-size:0.82em;line-height:1.6;resize:vertical;padding:10px;border-radius:6px;border:1px solid var(--background-modifier-border);background:var(--background-primary);color:var(--text-normal);box-sizing:border-box;';
+        rssPromptTa.addEventListener('input', async () => { s.rssAiPrompt = rssPromptTa.value; await this.plugin.saveSettings(); });
+        const rssResetBtn = containerEl.createEl('button', { text: '↩ 恢复默认提示词', cls: 'scholarium-btn' });
+        rssResetBtn.style.cssText = 'margin-top:8px;padding:4px 12px;font-size:0.82em;';
+        rssResetBtn.onclick = async () => { rssPromptTa.value = DEFAULT_RSS_AI_PROMPT; s.rssAiPrompt = DEFAULT_RSS_AI_PROMPT; await this.plugin.saveSettings(); new Notice('✅ 已恢复默认提示词'); };
+
         // ===== 科研库 =====
         containerEl.createEl('h3', { text: '🧰 科研库' });
         containerEl.createEl('p', {
@@ -796,7 +922,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
         });
 
         const modeRow = containerEl.createDiv({ cls: 'sch-theme-modes' });
-        const modes: Array<{ key: ThemeKey; label: string; desc: string }> = [
+        const modes: Array<{ key: ThemeModeKey; label: string; desc: string }> = [
             { key: 'light', label: '浅色', desc: '柔和暖白' },
             { key: 'dark', label: '深色', desc: '沉静黑灰' },
         ];

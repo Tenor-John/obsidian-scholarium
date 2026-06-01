@@ -11,6 +11,10 @@ node_modules
 # Don't include the compiled main.js file in the repo.
 # They should be uploaded to GitHub releases instead.
 main.js
+ketcher-runtime.cjs
+ketcher-runtime.js
+main.build.js
+*.bak
 
 # Exclude sourcemaps
 *.map
@@ -21,6 +25,9 @@ data.json
 # local scratch / vault exports
 backup/
 build-out.txt
+output/
+promotion/
+src/__probe.txt
 囍樂-公开版/
 
 # Exclude macOS Finder (System Explorer) View States

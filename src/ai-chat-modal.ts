@@ -7,6 +7,14 @@ import { fetchWithTimeout } from './utils/network';
 
 interface Message { role: 'user' | 'assistant'; content: string; }
 
+// 识别支持的文件：图片或 PDF（PDF 由 MinerU 原生解析）
+function isPdfFile(file: File): boolean {
+    return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+}
+function isSupportedDocFile(file: File): boolean {
+    return file.type.startsWith('image/') || isPdfFile(file);
+}
+
 interface ExperimentData {
     noteType?: 'experiment' | 'research-learning';
     title?: string;
@@ -210,10 +218,10 @@ export class AIChatModal extends Modal {
         const drop = body.createDiv({ cls: 'chat-image-drop' });
         const copy = drop.createDiv({ cls: 'chat-image-drop-copy' });
         copy.createEl('div', { text: '选择、拖入或粘贴图片', cls: 'chat-image-drop-title' });
-        copy.createEl('div', { text: '支持 PNG / JPG / WEBP；复制截图后在此窗口按 Ctrl+V，可直接识别整理。', cls: 'chat-image-drop-sub' });
+        copy.createEl('div', { text: '支持 PNG / JPG / WEBP / PDF；复制截图后在此窗口按 Ctrl+V，可直接识别整理。', cls: 'chat-image-drop-sub' });
         const fileInput = drop.createEl('input', {
             cls: 'chat-image-file',
-            attr: { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,image/bmp', multiple: 'true' },
+            attr: { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif,image/bmp,application/pdf,.pdf', multiple: 'true' },
         }) as HTMLInputElement;
         fileInput.onchange = () => {
             const files = Array.from(fileInput.files ?? []);
@@ -230,7 +238,7 @@ export class AIChatModal extends Modal {
             event.preventDefault();
             drop.removeClass('is-dragging');
             const files = Array.from(event.dataTransfer?.files ?? [])
-                .filter((file) => file.type.startsWith('image/'));
+                .filter((file) => isSupportedDocFile(file));
             if (files.length) this.addSelectedImageFiles(files);
         });
         this.modalEl.addEventListener('paste', (event: ClipboardEvent) => {
@@ -259,12 +267,12 @@ export class AIChatModal extends Modal {
     }
 
     private addSelectedImageFiles(files: File[]) {
-        const images = files.filter((file) => file.type.startsWith('image/'));
-        if (!images.length) {
-            new Notice('剪贴板或所选文件中没有图片');
+        const accepted = files.filter((file) => isSupportedDocFile(file));
+        if (!accepted.length) {
+            new Notice('剪贴板或所选文件中没有图片或 PDF');
             return;
         }
-        this.selectedImageFiles.push(...images);
+        this.selectedImageFiles.push(...accepted);
         this.renderSelectedImageFiles();
     }
 
@@ -274,7 +282,11 @@ export class AIChatModal extends Modal {
         const gallery = this.imagePreviewEl.createDiv({ cls: 'chat-image-preview-grid' });
         this.selectedImageFiles.forEach((file, index) => {
             const preview = gallery.createDiv({ cls: 'chat-image-preview-card' });
-            preview.createEl('img', { attr: { src: URL.createObjectURL(file), alt: file.name } });
+            if (isPdfFile(file)) {
+                preview.createDiv({ cls: 'chat-image-pdf-thumb', text: 'PDF' });
+            } else {
+                preview.createEl('img', { attr: { src: URL.createObjectURL(file), alt: file.name } });
+            }
             const info = preview.createDiv({ cls: 'chat-image-file-info' });
             info.createEl('strong', { text: file.name });
             info.createEl('span', { text: `${Math.max(1, Math.round(file.size / 1024))} KB` });
