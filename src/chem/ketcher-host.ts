@@ -1,5 +1,5 @@
 import type { ChemBlock } from './chem-block';
-import { mountKetcherRuntime, type KetcherRuntimeHandle } from './ketcher-runtime';
+import type { KetcherRuntimeHandle } from './ketcher-runtime';
 import type ChemELNPlugin from '../main';
 
 export interface KetcherHost {
@@ -10,7 +10,8 @@ export interface KetcherHost {
 export async function mountKetcher(_plugin: ChemELNPlugin, container: HTMLElement, initial: ChemBlock): Promise<KetcherHost> {
     try {
         ensureBrowserGlobals();
-        return mountKetcherRuntime(container, initial);
+        const runtime = await import('./ketcher-runtime');
+        return runtime.mountKetcherRuntime(container, initial);
     } catch (error) {
         console.error('[Scholarium] Unable to mount Ketcher:', error);
         throw new Error(`Ketcher failed to mount: ${(error as Error).message}`);
