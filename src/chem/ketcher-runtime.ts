@@ -5,6 +5,8 @@ import * as KetcherStandalone from 'ketcher-standalone';
 import type { Ketcher } from 'ketcher-core';
 import type { ChemBlock } from './chem-block';
 
+ensureKetcherGlobals();
+
 export interface KetcherRuntimeHandle {
     getBlock(): Promise<ChemBlock>;
     destroy(): void;
@@ -79,4 +81,16 @@ async function safeExport(exporter: () => Promise<string>, fallback: string): Pr
 
 async function blobToText(blob: Blob): Promise<string> {
     return await blob.text();
+}
+
+function ensureKetcherGlobals(): void {
+    const root = globalThis as unknown as {
+        global?: typeof globalThis;
+        process?: { env?: Record<string, string | undefined> };
+    };
+
+    root.global ??= globalThis;
+    root.process ??= { env: {} };
+    root.process.env ??= {};
+    root.process.env.NODE_ENV ??= 'production';
 }

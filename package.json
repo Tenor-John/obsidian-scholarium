@@ -3,7 +3,6 @@
 	"version": "2.0.0",
 	"description": "A scholarly electronic lab notebook plugin for Obsidian",
 	"main": "main.js",
-	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
