@@ -192,7 +192,7 @@ export const DEFAULT_SETTINGS: ChemELNSettings = {
     fontSize:           'medium',
     notebookSidebarWidth: 300,
     // 重设计默认值
-    theme:            'dark',
+    theme:            'system',
     accent:           'green',
     density:          'compact',
     language:         'zh',
@@ -917,14 +917,14 @@ export class ChemELNSettingTab extends PluginSettingTab {
         // ═══════════════════════════
         containerEl.createEl('h3', { text: '主题与强调色' });
         containerEl.createEl('p', {
-            text: '浅色与深色主题均完整支持强调色。选择后立即应用，无需额外保存。',
+            text: 'Scholarium 会跟随 Obsidian 当前主题：Obsidian 为浅色时使用浅色，Obsidian 为深色时使用深色。',
             cls: 'setting-item-description',
         });
 
+        s.theme = 'system';
         const modeRow = containerEl.createDiv({ cls: 'sch-theme-modes' });
         const modes: Array<{ key: ThemeModeKey; label: string; desc: string }> = [
-            { key: 'light', label: '浅色', desc: '柔和暖白' },
-            { key: 'dark', label: '深色', desc: '沉静黑灰' },
+            { key: 'system', label: '跟随 Obsidian', desc: '随 Obsidian 深浅色自动切换' },
         ];
         for (const mode of modes) {
             const selected = s.theme === mode.key;

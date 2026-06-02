@@ -13,6 +13,7 @@ export default class ChemELNPlugin extends Plugin {
     settings: ChemELNSettings;
     syncManager: CloudSyncManager | null = null;
     private saveQueue: Promise<void> = Promise.resolve();
+    private themeObserver: MutationObserver | null = null;
 
     updateData(mutator: (data: Record<string, unknown>) => void): Promise<void> {
         const run = this.saveQueue.then(async () => {
@@ -116,9 +117,15 @@ ${scholariumThemeCss(resolvedTheme, this.settings.accent, this.settings.density,
         await this.loadSettings();
         this.injectThemeVars();
         this.registerEvent(this.app.workspace.on('css-change', () => this.injectThemeVars()));
+        this.themeObserver = new MutationObserver(() => this.injectThemeVars());
+        this.themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        this.register(() => {
+            this.themeObserver?.disconnect();
+            this.themeObserver = null;
+        });
         const colorScheme = window.matchMedia?.('(prefers-color-scheme: dark)');
         const handleColorSchemeChange = () => {
-            if (this.settings.theme === 'system') this.injectThemeVars();
+            this.injectThemeVars();
         };
         colorScheme?.addEventListener('change', handleColorSchemeChange);
         this.register(() => colorScheme?.removeEventListener('change', handleColorSchemeChange));
@@ -216,7 +223,7 @@ ${scholariumThemeCss(resolvedTheme, this.settings.accent, this.settings.density,
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<ChemELNSettings>);
         this.settings.pluginDisplayName = 'scholarium';
         this.settings.notebookSidebarWidth = Math.min(440, Math.max(280, Number(this.settings.notebookSidebarWidth) || 300));
-        if (!['system', 'light', 'dark'].includes(this.settings.theme)) this.settings.theme = 'system';
+        this.settings.theme = 'system';
         const legacyAccents: Record<string, AccentKey> = {
             emerald: 'green',
             indigo: 'blue',
