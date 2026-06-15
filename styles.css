@@ -1,7 +1,12 @@
 /* =====================================================
    CSS 主题变量 — 由插件 JS 动态注入覆盖，此处为回退默认值
    ===================================================== */
-:root {
+.scholarium-dashboard,
+.scholarium-chat-modal-wrap,
+.scholarium-settings,
+.exp-del-modal-overlay,
+.img-lightbox-backdrop,
+.mat-lightbox-modal-wrap {
     /* 主色调：墨绿 Deep Sage Green — 学术极简 */
     --celn-accent:            #3D6149;
     --celn-accent-rgb:        61, 97, 73;
@@ -22,86 +27,6 @@
     --celn-paper:             #F8F8F6;
     --celn-ink:               #1A1A18;
     --celn-border:            rgba(0, 0, 0, 0.08);
-}
-
-/* =====================================================
-   Safety override: keep Obsidian native tab titles visible
-   even when themes (Minimal "single-tab compact" 等) 把
-   workspace-tab-header-inner-title 隐藏掉。
-   - 用 body.theme-* 提高选择器特异性，覆盖主题 CSS
-   - 强制 width / max-width / display / visibility / opacity
-   - 取消单标签时折叠 (--tab-stretch / --tab-collapsed-width 影响)
-   ===================================================== */
-body .workspace-tab-header,
-body .workspace .workspace-tab-header,
-body.minimal-theme .workspace-tab-header,
-body.theme-light .workspace-tab-header,
-body.theme-dark .workspace-tab-header {
-    min-width: 160px !important;
-    max-width: 320px !important;
-    width: auto !important;
-    flex: 0 1 auto !important;
-}
-
-body .workspace-tab-header .workspace-tab-header-inner,
-body .workspace-tab-header-inner {
-    width: 100% !important;
-    min-width: 0 !important;
-    gap: 6px !important;
-    display: flex !important;
-    align-items: center !important;
-    flex-direction: row !important;
-    padding-right: 6px !important;
-}
-
-body .workspace-tab-header-inner-title,
-body .workspace-tab-header.is-active .workspace-tab-header-inner-title,
-body.minimal-theme .workspace-tab-header-inner-title {
-    display: inline-block !important;
-    flex: 1 1 auto !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    width: auto !important;
-    max-width: 240px !important;
-    min-width: 60px !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-    color: var(--tab-text-color, var(--text-normal)) !important;
-    font-size: 0.86em !important;
-    line-height: 1.4 !important;
-}
-
-body .workspace-tab-header-inner-icon {
-    flex: 0 0 auto !important;
-    display: inline-flex !important;
-    align-items: center !important;
-}
-
-body .workspace-tab-header.is-active .workspace-tab-header-inner-title {
-    color: var(--tab-text-color-focused-active-current, var(--text-normal)) !important;
-    font-weight: 600 !important;
-}
-
-/* Minimal 主题在只有 1 个 tab 时会用 --tab-stretch / hidden 折叠它；强制取消 */
-body.is-mobile .workspace-tab-header,
-body .mod-root .workspace-tab-header,
-body .mod-root .workspace-tab-header-inner-title {
-    display: flex !important;
-}
-body .mod-root .workspace-tab-header-inner-title {
-    display: inline-block !important;
-}
-body .workspace-tab-header[hidden],
-body .workspace-tab-header-inner-title[hidden] {
-    display: inline-block !important;
-}
-
-/* 防御 Minimal "Hide tab titles when only one tab" 类规则 */
-body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-header-container .workspace-tab-header-inner-title {
-    display: inline-block !important;
-    visibility: visible !important;
-    opacity: 1 !important;
 }
 
 /* =====================================================
@@ -4024,7 +3949,7 @@ body .workspace-split.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-
    Morandi / Macaron Category Color System
    ===================================================== */
 
-:root {
+.scholarium-dashboard {
     --cat-focus:    #CDE8D2;  /* 专注学习 — 草绿 */
     --cat-prep:     #D1E8FF;  /* 预备学习 — 淡蓝 */
     --cat-leisure:  #FFF2CC;  /* 娱乐活动 — 淡黄 */

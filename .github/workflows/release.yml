@@ -29,12 +29,16 @@ jobs:
       - name: Build plugin
         run: npm run build
 
+      - name: Create install archive
+        run: zip -j "scholarium-${{ github.ref_name }}.zip" main.js manifest.json styles.css
+
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: |
             main.js
             styles.css
+            scholarium-${{ github.ref_name }}.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -44,3 +48,4 @@ jobs:
             main.js
             manifest.json
             styles.css
+            scholarium-${{ github.ref_name }}.zip
