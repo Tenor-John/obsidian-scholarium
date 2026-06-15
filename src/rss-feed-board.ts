@@ -1,6 +1,5 @@
 // rss-feed-board.ts — 文献订阅工作台（RSS / Atom / Crossref）
 import { App, Notice, Modal, TFile, requestUrl } from 'obsidian';
-/* eslint-disable obsidianmd/no-static-styles-assignment -- Feed cards use runtime-computed image and layout values. */
 import type ChemELNPlugin from './main';
 import { iconSvg } from './icons';
 import { htmlToMarkdownArticle } from './web-clip';
@@ -243,7 +242,7 @@ export class RssFeedBoard {
             b.onclick = () => { this.filter = key; this.rerender(); };
         }
         const spacer = bar.createDiv({ cls: 'rss-filter-spacer' });
-        spacer.style.flex = '1';
+        spacer.setCssProps({ "flex": '1' });
         const visible = this.getVisibleArticles();
         if (visible.some(a => !a.read)) {
             const mark = bar.createEl('button', { cls: 'rss-filter', text: '全部标为已读' });

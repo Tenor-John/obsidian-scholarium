@@ -1,4 +1,3 @@
-/* eslint-disable obsidianmd/no-static-styles-assignment -- Canvas dimensions and user-selected colors are calculated at runtime. */
 import { ItemView, WorkspaceLeaf, TFile, Notice, MarkdownRenderer, getFrontMatterInfo, parseYaml } from 'obsidian';
 import ChemELNPlugin from './main';
 import { WORKSPACE_ROLE_LABELS, WORKSPACE_ROLE_ICONS } from './settings';
@@ -332,7 +331,7 @@ export class DashboardView extends ItemView {
         const logo = bar.createDiv({ cls: 'sch-brandbar-logo' });
         Object.assign(logo.style, { display: 'flex', alignItems: 'center', gap: '8px', flex: '0 1 auto', minWidth: '0' });
         const logoIcon = iconSvg('flask', { size: 20 });
-        logoIcon.style.color = 'var(--sch-accent)';
+        logoIcon.setCssProps({ "color": 'var(--sch-accent)' });
         logo.appendChild(logoIcon);
         const logoText = logo.createSpan({ text: 'scholarium' });
         Object.assign(logoText.style, {
@@ -1224,7 +1223,7 @@ export class DashboardView extends ItemView {
                         svgEl.removeAttribute('height');
                         svgEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
                         padSvgViewBox(svgEl);
-                        svgEl.style.overflow = 'visible';
+                        svgEl.setCssProps({ "overflow": 'visible' });
                         svgEl.setAttribute('overflow', 'visible');
                     }, (err) => {
                         console.warn('[Scholarium] SmiDrawer failed, fallback to canvas:', err);

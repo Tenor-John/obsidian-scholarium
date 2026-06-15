@@ -1,4 +1,3 @@
-/* eslint-disable obsidianmd/no-static-styles-assignment -- Runtime sizing reflects the rendered chemical structure and cannot be represented by fixed CSS classes. */
 import { MarkdownView, Notice, TFile } from 'obsidian';
 import type { MarkdownPostProcessorContext } from 'obsidian';
 import type ChemELNPlugin from '../main';
@@ -102,7 +101,7 @@ function renderSmilesPreview(container: HTMLElement, smiles: string, isReaction:
                             svgEl.setAttribute('viewBox', `${x - pad} ${y - pad} ${w + pad * 2} ${h + pad * 2}`);
                         }
                     }
-                    svgEl.style.overflow = 'visible';
+                    svgEl.setCssProps({ "overflow": 'visible' });
                     svgEl.setAttribute('overflow', 'visible');
                 }, (err) => {
                     console.warn('[Scholarium] SmiDrawer failed, fallback to canvas:', err);
@@ -252,7 +251,7 @@ function prepareChemSvg(svg: SVGSVGElement): void {
     svg.removeAttribute('width');
     svg.removeAttribute('height');
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    svg.style.overflow = 'visible';
+    svg.setCssProps({ "overflow": 'visible' });
     svg.setAttribute('overflow', 'visible');
     padSvgViewBox(svg);
 }

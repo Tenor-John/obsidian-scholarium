@@ -1,4 +1,3 @@
-/* eslint-disable obsidianmd/no-static-styles-assignment -- Material previews require runtime-computed dimensions and colors. */
 import { App, Modal, Notice, TFile, TFolder } from 'obsidian';
 import ChemELNPlugin from './main';
 import type { CloudSyncManager } from './cloud-sync';
@@ -563,7 +562,7 @@ class MaterialAddModal extends Modal {
 
         // ── 新建分类输入框（独立 wrapper，默认隐藏）──
         const newCatWrap = contentEl.createDiv({ cls: 'mat-modal-newcat-wrap' });
-        newCatWrap.style.display = 'none';
+        newCatWrap.setCssProps({ "display": 'none' });
         newCatWrap.createEl('label', { text: '新分类名称', cls: 'mat-modal-label' });
         const newCatInput = newCatWrap.createEl('input', {
             cls: 'mat-modal-input',

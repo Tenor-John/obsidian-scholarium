@@ -1,6 +1,6 @@
 {
 	"name": "scholarium",
-	"version": "2.0.1",
+	"version": "2.0.2",
 	"description": "A scholarly electronic lab notebook plugin for Obsidian",
 	"main": "main.js",
 	"scripts": {
@@ -24,12 +24,7 @@
 	},
 	"dependencies": {
 		"@mozilla/readability": "^0.6.0",
-		"ketcher-core": "^3.12.0",
-		"ketcher-react": "^3.12.0",
-		"ketcher-standalone": "^3.12.0",
 		"obsidian": "latest",
-		"react": "^18.3.1",
-		"react-dom": "^18.3.1",
 		"smiles-drawer": "^2.2.1",
 		"turndown": "^7.2.4",
 		"turndown-plugin-gfm": "^1.0.2"

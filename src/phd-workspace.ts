@@ -1,4 +1,3 @@
-/* eslint-disable obsidianmd/no-static-styles-assignment -- Charts and progress indicators use values calculated from workspace data. */
 import { App, Notice, Modal } from 'obsidian';
 import ChemELNPlugin from './main';
 import { t } from './i18n';
@@ -345,7 +344,7 @@ export class PhDWorkspace {
         const nav = el.createDiv({ cls: 'ws2-nav sch-subnav' });
         for (const group of groups) {
             const groupEl = nav.createDiv();
-            groupEl.style.marginBottom = '14px';
+            groupEl.setCssProps({ "margin-bottom": '14px' });
             const head = groupEl.createDiv({ text: t(group.key, lang) });
             Object.assign(head.style, {
                 fontSize: '10.5px', fontWeight: '700', letterSpacing: '.12em',
@@ -366,12 +365,12 @@ export class PhDWorkspace {
                 });
                 const ic = iconSvg(it.icon, { size: 16 });
                 ic.style.color = active ? 'var(--sch-accent-ink)' : 'var(--sch-mute)';
-                ic.style.flexShrink = '0';
+                ic.setCssProps({ "flex-shrink": '0' });
                 item.appendChild(ic);
                 item.appendChild(document.createTextNode(label));
                 if (!active) {
-                    item.addEventListener('mouseenter', () => { item.style.background = 'var(--sch-surface2)'; });
-                    item.addEventListener('mouseleave', () => { item.style.background = 'transparent'; });
+                    item.addEventListener('mouseenter', () => { item.setCssProps({ "background": 'var(--sch-surface2)' }); });
+                    item.addEventListener('mouseleave', () => { item.setCssProps({ "background": 'transparent' }); });
                 }
                 item.onclick = () => { this.activePage = it.page; this.rerender(); };
             }
@@ -533,11 +532,11 @@ export class PhDWorkspace {
         Object.assign(spineHead.style, { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', padding: 'var(--sch-pad)', borderBottom: '1px solid var(--sch-line-soft)' });
         const { right: shRight } = sectionHeader(spineHead, { eyebrow: t('today_spine', lang), title: lang === 'zh' ? '从早到晚，一条主线串起' : 'One thread, dawn to dusk', level: 2 });
         // sectionHeader adds marginBottom; neutralize inside flex
-        (spineHead.firstElementChild as HTMLElement).style.marginBottom = '0';
+        (spineHead.firstElementChild as HTMLElement).setCssProps({ "margin-bottom": '0' });
         pill(shRight, lang === 'zh' ? `专注 ${fh}h ${fm}m` : `${fh}h ${fm}m focus`, 'accent');
         this.renderTimelineRangePicker(shRight, lang);
         const spineBody = spineCard.createDiv();
-        spineBody.style.padding = 'var(--sch-pad)';
+        spineBody.setCssProps({ "padding": 'var(--sch-pad)' });
         this.renderTimeSpine(spineBody, td, lang, this.timelineRange);
 
         // 右栏
@@ -737,8 +736,8 @@ export class PhDWorkspace {
         const updateNow = () => {
             const n = new Date();
             const frac = (n.getHours() - startHour) + n.getMinutes() / 60;
-            if (frac < 0 || frac > hourCount) { nowLine.style.display = 'none'; return; }
-            nowLine.style.display = 'block';
+            if (frac < 0 || frac > hourCount) { nowLine.setCssProps({ "display": 'none' }); return; }
+            nowLine.setCssProps({ "display": 'block' });
             nowLine.style.top = (frac * ROW_H - 1) + 'px';
             nowPill.setText(`${t('now', lang)} ${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`);
         };
@@ -945,8 +944,8 @@ export class PhDWorkspace {
         const update = () => {
             const n = new Date();
             const frac = (n.getHours() - startHour) + n.getMinutes() / 60;
-            if (frac < 0 || frac > hours) { line.style.display = 'none'; return; }
-            line.style.display = 'block';
+            if (frac < 0 || frac > hours) { line.setCssProps({ "display": 'none' }); return; }
+            line.setCssProps({ "display": 'block' });
             line.style.top = (frac * rowH) + 'px';
             label.setText(`${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`);
         };
@@ -1058,7 +1057,7 @@ export class PhDWorkspace {
             const s = tokens.createSpan({ text: tk });
             Object.assign(s.style, { fontFamily: 'var(--sch-font-mono)', fontSize: '10.5px', color: 'var(--sch-ink2)', background: 'var(--sch-surface)', border: '1px solid var(--sch-line-soft)', padding: '2px 6px', borderRadius: '4px' });
         }
-        if (segs.length === 0) tokens.createSpan({ text: lang === 'zh' ? '尚未打卡' : 'No check-ins yet' }).style.color = 'var(--sch-mute)';
+        if (segs.length === 0) tokens.createSpan({ text: lang === 'zh' ? '尚未打卡' : 'No check-ins yet' }).setCssProps({ "color": 'var(--sch-mute)' });
     }
 
     private renderFocusTimerCard(host: HTMLElement, lang: 'zh' | 'en') {
@@ -2648,7 +2647,7 @@ ${existing}`;
         svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
         svg.setAttribute('width', '100%');
         svg.setAttribute('height', String(H));
-        svg.style.maxWidth = '100%';
+        svg.setCssProps({ "max-width": '100%' });
 
         if (data.length === 0) {
             const t = document.createElementNS(svgNS, 'text');
@@ -2729,10 +2728,10 @@ class TimeBlockEditModal extends Modal {
         c.createEl('h3', { text: zh ? '编辑时间块' : 'Edit time block' });
 
         const mk = (label: string, value: string, type = 'text'): HTMLInputElement => {
-            const w = c.createDiv(); w.style.marginBottom = '10px';
+            const w = c.createDiv(); w.setCssProps({ "margin-bottom": '10px' });
             w.createEl('div', { text: label, attr: { style: 'font-size:12px;color:var(--text-muted);margin-bottom:4px;' } });
             const inp = w.createEl('input', { cls: 'ws2-input', attr: { type } }) as HTMLInputElement;
-            inp.value = value; inp.style.width = '100%';
+            inp.value = value; inp.setCssProps({ "width": '100%' });
             return inp;
         };
         const titleIn = mk(zh ? '标题' : 'Title', this.block.title);
@@ -2740,15 +2739,15 @@ class TimeBlockEditModal extends Modal {
         const endIn = mk(zh ? '结束' : 'End', this.block.endTime, 'time');
         const catIn = mk(zh ? '分类' : 'Category', this.block.category);
 
-        const noteW = c.createDiv(); noteW.style.marginBottom = '10px';
+        const noteW = c.createDiv(); noteW.setCssProps({ "margin-bottom": '10px' });
         noteW.createEl('div', { text: zh ? '备注' : 'Note', attr: { style: 'font-size:12px;color:var(--text-muted);margin-bottom:4px;' } });
         const noteIn = noteW.createEl('textarea', { cls: 'ws2-input' }) as HTMLTextAreaElement;
-        noteIn.value = this.block.note || ''; noteIn.style.width = '100%'; noteIn.rows = 3;
+        noteIn.value = this.block.note || ''; noteIn.setCssProps({ "width": '100%' }); noteIn.rows = 3;
 
         const btns = c.createDiv();
         Object.assign(btns.style, { display: 'flex', gap: '8px', justifyContent: 'space-between', marginTop: '12px' });
         const del = btns.createEl('button', { text: zh ? '删除' : 'Delete' });
-        del.style.color = 'var(--text-error)';
+        del.setCssProps({ "color": 'var(--text-error)' });
         del.onclick = async () => { await this.onDeleteCb(); this.close(); };
         const right = btns.createDiv();
         Object.assign(right.style, { display: 'flex', gap: '8px' });

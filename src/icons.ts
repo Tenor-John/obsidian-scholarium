@@ -1,7 +1,6 @@
 // icons.ts — Lucide-style inline SVG icon registry (ported from prototype components.jsx SCHOLARIUM_ICONS)
 // Stored as inner-SVG markup strings; rendered into a stroked <svg> via iconSvg().
 
-/* eslint-disable obsidianmd/no-static-styles-assignment -- SVG sizing is selected by callers at runtime. */
 export const SCHOLARIUM_ICONS: Record<string, string> = {
     // file / system
     flask:        '<path d="M9 3h6"/><path d="M10 3v6.5L4.5 18A2 2 0 0 0 6.3 21h11.4a2 2 0 0 0 1.8-3L14 9.5V3"/><path d="M7 14h10"/>',
@@ -89,7 +88,7 @@ export function iconSvg(name: string, opts: IconOptions = {}): SVGSVGElement {
     svg.setAttribute('stroke-width', String(stroke));
     svg.setAttribute('stroke-linecap', 'round');
     svg.setAttribute('stroke-linejoin', 'round');
-    svg.style.flexShrink = '0';
+    svg.setCssProps({ "flex-shrink": '0' });
     const inner = SCHOLARIUM_ICONS[name];
     if (inner) {
         const parsed = new DOMParser().parseFromString(`<svg xmlns="${SVG_NS}">${inner}</svg>`, 'image/svg+xml');

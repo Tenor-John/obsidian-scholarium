@@ -3,7 +3,6 @@
 // file under <experimentsFolder>/_ideas/IDEA-<n>.md (front-matter + a cleaned
 // note + the original markdown source preserved verbatim).
 
-/* eslint-disable obsidianmd/no-static-styles-assignment -- Idea cards use runtime-computed colors and dimensions from user data. */
 import { App, Modal, Notice, TFile, TFolder, normalizePath, Component, MarkdownRenderer } from 'obsidian';
 import ChemELNPlugin from './main';
 import { PROVIDER_CONFIG } from './settings';
@@ -301,7 +300,7 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         });
 
         const tb = root.createDiv();
-        tb.style.flexShrink = '0';
+        tb.setCssProps({ "flex-shrink": '0' });
         this.renderToolbar(tb);
 
         const body = root.createDiv();
@@ -332,7 +331,7 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' });
 
         const searchWrap = row.createDiv();
-        searchWrap.style.flex = '1 1 200px';
+        searchWrap.setCssProps({ "flex": '1 1 200px' });
         const { input: si } = uiInput(searchWrap, { value: this.filterText, placeholder: zh ? '搜索想法、标签…' : 'Search ideas, tags…', iconName: 'search' });
         si.addEventListener('input', () => { this.filterText = si.value; this.refreshCardsOnly(); });
 
@@ -389,12 +388,12 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         Object.assign(titleRow.style, { display: 'flex', alignItems: 'flex-start', gap: '6px', justifyContent: 'space-between' });
         const ttl = titleRow.createDiv({ text: idea.title });
         Object.assign(ttl.style, { fontFamily: 'var(--sch-font-serif)', fontSize: '15px', fontWeight: '500', color: 'var(--sch-ink)', lineHeight: '1.3' });
-        if (idea.pinned) { const p = iconSvg('pin', { size: 13 }); p.style.color = 'var(--sch-iris)'; p.style.flexShrink = '0'; titleRow.appendChild(p); }
+        if (idea.pinned) { const p = iconSvg('pin', { size: 13 }); p.setCssProps({ "color": 'var(--sch-iris)' }); p.setCssProps({ "flex-shrink": '0' }); titleRow.appendChild(p); }
         const ex = c.createDiv({ text: idea.excerpt });
         Object.assign(ex.style, { marginTop: '6px', fontSize: '12.5px', color: 'var(--sch-ink2)', lineHeight: '1.5', overflow: 'hidden' });
-        ex.style.display = '-webkit-box';
-        ex.style.setProperty('-webkit-line-clamp', '3');
-        ex.style.setProperty('-webkit-box-orient', 'vertical');
+        ex.setCssProps({ "display": '-webkit-box' });
+        ex.setCssProps({ "-webkit-line-clamp": '3' });
+        ex.setCssProps({ "-webkit-box-orient": 'vertical' });
         if (idea.tags.length) {
             const tagRow = c.createDiv();
             Object.assign(tagRow.style, { display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '8px' });
@@ -456,13 +455,13 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         // connections
         if (idea.relatedExp.length || idea.relatedNotes.length || idea.relatedChapter) {
             const conn = c.createDiv();
-            conn.style.marginBottom = '10px';
+            conn.setCssProps({ "margin-bottom": '10px' });
             const lbl = conn.createDiv({ text: zh ? '关联' : 'Connections' });
             Object.assign(lbl.style, { fontSize: '10.5px', fontWeight: '700', letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--sch-mute)', marginBottom: '6px' });
             for (const ex of idea.relatedExp) {
                 const link = conn.createDiv();
                 Object.assign(link.style, { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: 'var(--sch-accent-ink)', padding: '3px 0' });
-                const ic = iconSvg('link', { size: 13 }); ic.style.color = 'var(--sch-accent-ink)';
+                const ic = iconSvg('link', { size: 13 }); ic.setCssProps({ "color": 'var(--sch-accent-ink)' });
                 link.appendChild(ic);
                 const ref = this.experimentIndex.find(e => e.id === ex);
                 link.appendChild(document.createTextNode(ref ? `${ex} · ${ref.title}` : ex));
@@ -470,7 +469,7 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
             for (const note of idea.relatedNotes) {
                 const link = conn.createDiv();
                 Object.assign(link.style, { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: 'var(--sch-accent-ink)', padding: '3px 0', cursor: 'pointer' });
-                const ic = iconSvg('notebook', { size: 13 }); ic.style.color = 'var(--sch-accent-ink)';
+                const ic = iconSvg('notebook', { size: 13 }); ic.setCssProps({ "color": 'var(--sch-accent-ink)' });
                 link.appendChild(ic);
                 link.appendChild(document.createTextNode(note));
                 link.addEventListener('click', async () => {
@@ -487,7 +486,7 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         // raw source — rendered preview, collapsible
         if (idea.raw) {
             const det = c.createEl('details');
-            det.style.margin = '4px 0 12px';
+            det.setCssProps({ "margin": '4px 0 12px' });
             const sum = det.createEl('summary', { text: zh ? '原始来源' : 'Raw source' });
             Object.assign(sum.style, { fontSize: '12px', color: 'var(--sch-mute)', cursor: 'pointer', fontWeight: '600' });
             const rawBody = det.createDiv({ cls: 'markdown-rendered' });
@@ -513,7 +512,7 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         uiButton(hr, { iconName: 'close', variant: 'ghost', size: 'sm', title: zh ? '取消' : 'Cancel', onClick: () => { this.editing = false; this.rerender(); } });
 
         const field = (label: string): HTMLElement => {
-            const w = c.createDiv(); w.style.marginBottom = '10px';
+            const w = c.createDiv(); w.setCssProps({ "margin-bottom": '10px' });
             const l = w.createDiv({ text: label });
             Object.assign(l.style, { fontSize: '11.5px', fontWeight: '600', color: 'var(--sch-mute)', marginBottom: '4px' });
             return w;
@@ -627,8 +626,8 @@ class ChatCaptureDialog extends Modal {
             Object.assign(wrap.style, { padding: '48px 0', textAlign: 'center' });
             const sp = wrap.createDiv();
             Object.assign(sp.style, { width: '34px', height: '34px', margin: '0 auto 16px', border: '3px solid var(--sch-line)', borderTopColor: 'var(--sch-accent)', borderRadius: '50%', animation: 'sch-spin 1s linear infinite' });
-            wrap.createDiv({ text: zh ? '正在整理成自然的研究笔记…' : 'Cleaning this into a natural research note…' }).style.color = 'var(--sch-ink2)';
-            wrap.createDiv({ text: zh ? '原文会按 Markdown 原样保存，不会被改写' : 'The original markdown will be saved verbatim' }).style.cssText = 'color:var(--sch-mute);font-size:12px;margin-top:6px';
+            wrap.createDiv({ text: zh ? '正在整理成自然的研究笔记…' : 'Cleaning this into a natural research note…' }).setCssProps({ "color": 'var(--sch-ink2)' });
+            wrap.createDiv({ text: zh ? '原文会按 Markdown 原样保存，不会被改写' : 'The original markdown will be saved verbatim' }).setCssProps({ "color": "var(--sch-mute)", "font-size": "12px", "margin-top": "6px" });
         } else {
             this.renderReview();
         }
@@ -640,7 +639,7 @@ class ChatCaptureDialog extends Modal {
         sectionHeader(c, { eyebrow: zh ? '复核' : 'Review', title: zh ? '确认这条想法' : 'Confirm this idea', level: 2 });
 
         const field = (label: string) => {
-            const w = c.createDiv(); w.style.marginBottom = '10px';
+            const w = c.createDiv(); w.setCssProps({ "margin-bottom": '10px' });
             const l = w.createDiv({ text: label });
             Object.assign(l.style, { fontSize: '11.5px', fontWeight: '600', color: 'var(--sch-mute)', marginBottom: '4px' });
             return w;

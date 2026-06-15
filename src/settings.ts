@@ -1,5 +1,3 @@
-/* eslint-disable obsidianmd/no-static-styles-assignment -- Color previews reflect user-selected values at runtime. */
-/* eslint-disable obsidianmd/settings-tab/no-manual-html-headings -- The existing settings page uses nested explanatory sections that are not individual Setting rows. */
 import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import ChemELNPlugin from './main';
 import type { CloudProviderType } from './cloud-sync';
@@ -305,10 +303,10 @@ export class ChemELNSettingTab extends PluginSettingTab {
         this.plugin.applyThemeAttributes(containerEl);
         const settingsHost = containerEl.closest('.vertical-tab-content-container') as HTMLElement | null;
         if (settingsHost) this.plugin.applyThemeAttributes(settingsHost);
-        containerEl.createEl('h2', { text: 'scholarium — 设置' });
+        new Setting(containerEl).setName('scholarium — 设置').setHeading();
 
         // ===== 插件个性化 =====
-        containerEl.createEl('h3', { text: '🎛️ 插件个性化' });
+        new Setting(containerEl).setName('🎛️ 插件个性化').setHeading();
         containerEl.createEl('p', {
             text: '将本插件定制为适合你专业与角色的工作台，也可以完全自定义标签名称。',
             attr: { style: 'font-size:0.85em; color:var(--text-muted); margin-bottom:12px;' },
@@ -405,7 +403,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
         previewBox.createEl('div', { text: `工作台 Tab：${s.workspaceRole !== 'custom' ? WORKSPACE_ROLE_LABELS[s.workspaceRole] : (s.workspaceTabLabel || '工作台')}` });
 
         // ===== 基础设置 =====
-        containerEl.createEl('h3', { text: '📁 基础设置' });
+        new Setting(containerEl).setName('📁 基础设置').setHeading();
         new Setting(containerEl)
             .setName('实验记录文件夹')
             .setDesc('新建实验笔记存放的文件夹（留空则存放在库根目录）')
@@ -419,7 +417,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
                 .onChange(async v => { this.plugin.settings.openOnStartup = v; await this.plugin.saveSettings(); }));
 
         // ===== 天气设置 =====
-        containerEl.createEl('h3', { text: '🌤 天气设置' });
+        new Setting(containerEl).setName('🌤 天气设置').setHeading();
         containerEl.createEl('p', { text: '留空则根据 IP 自动定位，手动输入坐标可提高精度。', cls: 'setting-item-description' });
         new Setting(containerEl).setName('城市名称').setDesc('仅显示用')
             .addText(t => t.setPlaceholder('例如：广州').setValue(this.plugin.settings.cityName)
@@ -432,7 +430,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
                 .onChange(async v => { this.plugin.settings.longitude = v ? parseFloat(v) : null; await this.plugin.saveSettings(); }));
 
         // ===== AI 设置 =====
-        containerEl.createEl('h3', { text: '🤖 AI 实验助手' });
+        new Setting(containerEl).setName('🤖 AI 实验助手').setHeading();
         containerEl.createEl('p', {
             text: '配置 AI 服务商后，点击仪表盘的"🤖 AI 助手"按钮，用自然语言描述实验即可自动填写记录。',
             cls: 'setting-item-description'
@@ -503,14 +501,14 @@ export class ChemELNSettingTab extends PluginSettingTab {
         });
 
         // ===== AI 提示词设置 =====
-        containerEl.createEl('h3', { text: '📝 AI 提示词（System Prompt）' });
+        new Setting(containerEl).setName('📝 AI 提示词（System Prompt）').setHeading();
         containerEl.createEl('p', {
             text: '控制 AI 的输出风格与格式。{{date}} 会自动替换为今日日期。修改后立即生效，无需重启插件。',
             cls: 'setting-item-description'
         });
 
         // 提示词编辑框
-        containerEl.createEl('h3', { text: '图片识别实验记录' });
+        new Setting(containerEl).setName('图片识别实验记录').setHeading();
         containerEl.createEl('p', {
             text: '双阶段流程：MinerU 负责 OCR 提取，AI 重写模型负责整理为实验记录。选择 DeepSeek 时可复用上方主 AI Key。',
             cls: 'setting-item-description'
@@ -586,7 +584,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
         const promptTextarea = promptWrap.createEl('textarea', { cls: 'scholarium-prompt-textarea' });
         promptTextarea.value = this.plugin.settings.aiSystemPrompt || DEFAULT_AI_SYSTEM_PROMPT;
         promptTextarea.rows = 18;
-        promptTextarea.style.cssText = 'width:100%;font-family:var(--font-monospace);font-size:0.82em;line-height:1.6;resize:vertical;padding:10px;border-radius:6px;border:1px solid var(--background-modifier-border);background:var(--background-primary);color:var(--text-normal);box-sizing:border-box;';
+        promptTextarea.setCssProps({ "width": "100%", "font-family": "var(--font-monospace)", "font-size": "0.82em", "line-height": "1.6", "resize": "vertical", "padding": "10px", "border-radius": "6px", "border": "1px solid var(--background-modifier-border)", "background": "var(--background-primary)", "color": "var(--text-normal)", "box-sizing": "border-box" });
 
         promptTextarea.addEventListener('input', async () => {
             this.plugin.settings.aiSystemPrompt = promptTextarea.value;
@@ -595,9 +593,9 @@ export class ChemELNSettingTab extends PluginSettingTab {
 
         // 重置按钮
         const resetRow = promptWrap.createDiv();
-        resetRow.style.cssText = 'display:flex;gap:8px;margin-top:8px;align-items:center;';
+        resetRow.setCssProps({ "display": "flex", "gap": "8px", "margin-top": "8px", "align-items": "center" });
         const resetBtn = resetRow.createEl('button', { text: '↩ 恢复默认提示词', cls: 'scholarium-btn' });
-        resetBtn.style.cssText = 'padding:4px 12px;font-size:0.82em;';
+        resetBtn.setCssProps({ "padding": "4px 12px", "font-size": "0.82em" });
         resetBtn.onclick = async () => {
             promptTextarea.value = DEFAULT_AI_SYSTEM_PROMPT;
             this.plugin.settings.aiSystemPrompt = DEFAULT_AI_SYSTEM_PROMPT;
@@ -607,10 +605,10 @@ export class ChemELNSettingTab extends PluginSettingTab {
         resetRow.createEl('span', {
             text: '提示：可以在这里调整输出语气、增加领域专业术语、或要求AI只输出特定格式。',
             cls: 'setting-item-description'
-        }).style.cssText = 'font-size:0.8em;margin:0;';
+        }).setCssProps({ "font-size": "0.8em", "margin": "0" });
 
         // ===== 文献订阅 (RSS) =====
-        containerEl.createEl('h3', { text: '📡 文献订阅（RSS）' });
+        new Setting(containerEl).setName('📡 文献订阅（RSS）').setHeading();
         containerEl.createEl('p', {
             text: '批量/单条导入订阅源（RSS/Atom 地址或期刊 ISSN），并配置文献 AI 总结的模型与提示词（独立于实验记录 AI）。导入后到「文献订阅」点「全部刷新」抓取。',
             cls: 'setting-item-description',
@@ -665,9 +663,9 @@ export class ChemELNSettingTab extends PluginSettingTab {
         const batchTa = batchWrap.createEl('textarea');
         batchTa.rows = 6;
         batchTa.placeholder = 'https://www.nature.com/nchem.rss\n0002-7863\n1433-7851';
-        batchTa.style.cssText = 'width:100%;font-size:0.85em;line-height:1.6;resize:vertical;padding:8px;border-radius:6px;border:1px solid var(--background-modifier-border);background:var(--background-primary);color:var(--text-normal);box-sizing:border-box;';
+        batchTa.setCssProps({ "width": "100%", "font-size": "0.85em", "line-height": "1.6", "resize": "vertical", "padding": "8px", "border-radius": "6px", "border": "1px solid var(--background-modifier-border)", "background": "var(--background-primary)", "color": "var(--text-normal)", "box-sizing": "border-box" });
         const batchBtn = batchWrap.createEl('button', { text: '批量导入', cls: 'scholarium-btn' });
-        batchBtn.style.cssText = 'margin-top:8px;padding:5px 14px;';
+        batchBtn.setCssProps({ "margin-top": "8px", "padding": "5px 14px" });
         batchBtn.onclick = async () => {
             const n = await addRssFeeds(batchTa.value.split('\n'));
             new Notice(n ? `已批量添加 ${n} 个订阅源，去「文献订阅」点全部刷新抓取。` : '没有新的订阅源被添加。');
@@ -706,14 +704,14 @@ export class ChemELNSettingTab extends PluginSettingTab {
         const rssPromptTa = containerEl.createEl('textarea');
         rssPromptTa.value = s.rssAiPrompt || DEFAULT_RSS_AI_PROMPT;
         rssPromptTa.rows = 10;
-        rssPromptTa.style.cssText = 'width:100%;font-size:0.82em;line-height:1.6;resize:vertical;padding:10px;border-radius:6px;border:1px solid var(--background-modifier-border);background:var(--background-primary);color:var(--text-normal);box-sizing:border-box;';
+        rssPromptTa.setCssProps({ "width": "100%", "font-size": "0.82em", "line-height": "1.6", "resize": "vertical", "padding": "10px", "border-radius": "6px", "border": "1px solid var(--background-modifier-border)", "background": "var(--background-primary)", "color": "var(--text-normal)", "box-sizing": "border-box" });
         rssPromptTa.addEventListener('input', async () => { s.rssAiPrompt = rssPromptTa.value; await this.plugin.saveSettings(); });
         const rssResetBtn = containerEl.createEl('button', { text: '↩ 恢复默认提示词', cls: 'scholarium-btn' });
-        rssResetBtn.style.cssText = 'margin-top:8px;padding:4px 12px;font-size:0.82em;';
+        rssResetBtn.setCssProps({ "margin-top": "8px", "padding": "4px 12px", "font-size": "0.82em" });
         rssResetBtn.onclick = async () => { rssPromptTa.value = DEFAULT_RSS_AI_PROMPT; s.rssAiPrompt = DEFAULT_RSS_AI_PROMPT; await this.plugin.saveSettings(); new Notice('✅ 已恢复默认提示词'); };
 
         // ===== 科研库 =====
-        containerEl.createEl('h3', { text: '🧰 科研库' });
+        new Setting(containerEl).setName('🧰 科研库').setHeading();
         containerEl.createEl('p', {
             text: '设置科研库左侧分类导航和分区卡片的颜色。颜色会以高透明度显示，避免干扰阅读。',
             cls: 'setting-item-description'
@@ -752,7 +750,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
                 }));
 
         // ===== 云盘同步 =====
-        containerEl.createEl('h3', { text: '☁️ 云盘同步' });
+        new Setting(containerEl).setName('☁️ 云盘同步').setHeading();
         containerEl.createEl('p', {
             text: '支持将素材库文件同步到 WebDAV（坚果云、Nextcloud、OneDrive）或 S3 兼容存储（阿里云 OSS、腾讯 COS 等）。',
             cls: 'setting-item-description'
@@ -776,7 +774,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
 
         // ===== WebDAV 设置 =====
         if (this.plugin.settings.cloudProvider === 'webdav') {
-            containerEl.createEl('h4', { text: 'WebDAV 配置' });
+            new Setting(containerEl).setName('WebDAV 配置').setHeading();
             containerEl.createEl('p', {
                 text: '坚果云用户：后台生成"应用密码"，URL 为 https://dav.jianguoyun.com/dav/你的文件夹名/',
                 cls: 'setting-item-description'
@@ -828,7 +826,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
 
         // ===== S3 设置 =====
         if (this.plugin.settings.cloudProvider === 's3') {
-            containerEl.createEl('h4', { text: 'S3 兼容存储配置' });
+            new Setting(containerEl).setName('S3 兼容存储配置').setHeading();
             containerEl.createEl('p', {
                 text: '支持阿里云 OSS、腾讯 COS、七牛云等 S3 兼容存储。',
                 cls: 'setting-item-description'
@@ -895,7 +893,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
 
         // ===== 通用设置 =====
         if (this.plugin.settings.cloudProvider !== 'none') {
-            containerEl.createEl('h4', { text: '同步设置' });
+            new Setting(containerEl).setName('同步设置').setHeading();
 
             new Setting(containerEl)
                 .setName('自动同步')
@@ -917,7 +915,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
         // ═══════════════════════════
         // 主题与强调色
         // ═══════════════════════════
-        containerEl.createEl('h3', { text: '主题与强调色' });
+        new Setting(containerEl).setName('主题与强调色').setHeading();
         containerEl.createEl('p', {
             text: 'Scholarium 会跟随 Obsidian 当前主题：Obsidian 为浅色时使用浅色，Obsidian 为深色时使用深色。',
             cls: 'setting-item-description',
