@@ -88,7 +88,7 @@ export function iconSvg(name: string, opts: IconOptions = {}): SVGSVGElement {
     svg.setAttribute('stroke-width', String(stroke));
     svg.setAttribute('stroke-linecap', 'round');
     svg.setAttribute('stroke-linejoin', 'round');
-    svg.setCssProps({ "flex-shrink": '0' });
+    svg.addClass('sch-static-style-11');
     const inner = SCHOLARIUM_ICONS[name];
     if (inner) {
         const parsed = new DOMParser().parseFromString(`<svg xmlns="${SVG_NS}">${inner}</svg>`, 'image/svg+xml');

@@ -334,7 +334,7 @@ export class MaterialLibrary {
         info.createEl('div', { text: item.name, cls: 'mat-card-name', attr: { title: item.name } });
         if (item.category) {
             const badge = info.createEl('span', { text: item.category, cls: 'mat-badge' });
-            badge.style.background = this.catColor(item.category);
+            badge.setCssStyles({ background: this.catColor(item.category) });
         }
     }
 
@@ -448,7 +448,11 @@ export class MaterialLibrary {
 
         const menu = document.body.createDiv({ cls: 'mat-ctx-menu' });
         const rect = el.getBoundingClientRect();
-        menu.style.cssText = `position:fixed;left:${rect.right + 4}px;top:${rect.top}px;`;
+        menu.setCssStyles({
+            position: 'fixed',
+            left: `${rect.right + 4}px`,
+            top: `${rect.top}px`,
+        });
 
         menu.createEl('div', { text: '✏️ 重命名', cls: 'mat-ctx-item' }).onclick = () => {
             menu.remove();
@@ -562,7 +566,7 @@ class MaterialAddModal extends Modal {
 
         // ── 新建分类输入框（独立 wrapper，默认隐藏）──
         const newCatWrap = contentEl.createDiv({ cls: 'mat-modal-newcat-wrap' });
-        newCatWrap.setCssProps({ "display": 'none' });
+        newCatWrap.addClass('sch-static-style-63');
         newCatWrap.createEl('label', { text: '新分类名称', cls: 'mat-modal-label' });
         const newCatInput = newCatWrap.createEl('input', {
             cls: 'mat-modal-input',
@@ -570,7 +574,7 @@ class MaterialAddModal extends Modal {
         });
 
         catSelect.addEventListener('change', () => {
-            newCatWrap.style.display = catSelect.value === '__new__' ? 'block' : 'none';
+            newCatWrap.setCssStyles({ display: catSelect.value === '__new__' ? 'block' : 'none' });
             if (catSelect.value === '__new__') newCatInput.focus();
         });
 

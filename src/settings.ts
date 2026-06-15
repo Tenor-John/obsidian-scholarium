@@ -303,17 +303,18 @@ export class ChemELNSettingTab extends PluginSettingTab {
         this.plugin.applyThemeAttributes(containerEl);
         const settingsHost = containerEl.closest('.vertical-tab-content-container') as HTMLElement | null;
         if (settingsHost) this.plugin.applyThemeAttributes(settingsHost);
-        new Setting(containerEl).setName('scholarium — 设置').setHeading();
+        new Setting(containerEl).setName('设置').setHeading();
 
         // ===== 插件个性化 =====
         new Setting(containerEl).setName('🎛️ 插件个性化').setHeading();
-        containerEl.createEl('p', {
+        const personalizationDescription = containerEl.createEl('p', {
             text: '将本插件定制为适合你专业与角色的工作台，也可以完全自定义标签名称。',
-            attr: { style: 'font-size:0.85em; color:var(--text-muted); margin-bottom:12px;' },
         });
+        personalizationDescription.addClass('sch-static-style-162');
 
         // ── 角色预设快速选择 ──
-        const rolePresetWrap = containerEl.createDiv({ attr: { style: 'display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;' } });
+        const rolePresetWrap = containerEl.createDiv();
+        rolePresetWrap.addClass('sch-static-style-163');
 
         const applyRole = async (role: WorkspaceRole) => {
             s.workspaceRole = role;
@@ -338,12 +339,17 @@ export class ChemELNSettingTab extends PluginSettingTab {
             const isActive = s.workspaceRole === role;
             const btn = rolePresetWrap.createEl('button', {
                 text: `${icon} ${desc}`,
-                attr: {
-                    style: `padding:6px 16px; border-radius:20px; font-size:0.85em; font-weight:600; cursor:pointer; transition:all 0.15s;
-                            border:2px solid var(--celn-accent);
-                            background:${isActive ? 'var(--celn-accent)' : 'transparent'};
-                            color:${isActive ? '#fff' : 'var(--text-normal)'};`
-                },
+            });
+            btn.setCssStyles({
+                padding: '6px 16px',
+                borderRadius: '20px',
+                fontSize: '0.85em',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                border: '2px solid var(--celn-accent)',
+                background: isActive ? 'var(--celn-accent)' : 'transparent',
+                color: isActive ? '#fff' : 'var(--text-normal)',
             });
             btn.addEventListener('click', () => void applyRole(role));
         }
@@ -389,15 +395,10 @@ export class ChemELNSettingTab extends PluginSettingTab {
                 }));
 
         // ── 当前预览 ──
-        const previewBox = containerEl.createDiv({
-            attr: {
-                style: `margin: 8px 0 20px; padding: 12px 16px; border-radius: 10px;
-                        background: rgba(var(--celn-accent-rgb), 0.08);
-                        border: 1px solid rgba(var(--celn-accent-rgb), 0.25);
-                        font-size: 0.85em; color: var(--text-muted); line-height: 1.8;`
-            }
-        });
-        previewBox.createEl('div', { text: `📌 当前配置预览` , attr: { style: 'font-weight:600; color:var(--text-normal); margin-bottom:4px;' } });
+        const previewBox = containerEl.createDiv();
+        previewBox.addClass('sch-static-style-164');
+        const previewTitle = previewBox.createEl('div', { text: `📌 当前配置预览` });
+        previewTitle.addClass('sch-static-style-165');
         previewBox.createEl('div', { text: '顶部名称：scholarium' });
         previewBox.createEl('div', { text: `笔记栏标签：${s.notebookLabel || '实验记录'}` });
         previewBox.createEl('div', { text: `工作台 Tab：${s.workspaceRole !== 'custom' ? WORKSPACE_ROLE_LABELS[s.workspaceRole] : (s.workspaceTabLabel || '工作台')}` });
@@ -584,7 +585,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
         const promptTextarea = promptWrap.createEl('textarea', { cls: 'scholarium-prompt-textarea' });
         promptTextarea.value = this.plugin.settings.aiSystemPrompt || DEFAULT_AI_SYSTEM_PROMPT;
         promptTextarea.rows = 18;
-        promptTextarea.setCssProps({ "width": "100%", "font-family": "var(--font-monospace)", "font-size": "0.82em", "line-height": "1.6", "resize": "vertical", "padding": "10px", "border-radius": "6px", "border": "1px solid var(--background-modifier-border)", "background": "var(--background-primary)", "color": "var(--text-normal)", "box-sizing": "border-box" });
+        promptTextarea.addClass('sch-static-style-166');
 
         promptTextarea.addEventListener('input', async () => {
             this.plugin.settings.aiSystemPrompt = promptTextarea.value;
@@ -593,9 +594,9 @@ export class ChemELNSettingTab extends PluginSettingTab {
 
         // 重置按钮
         const resetRow = promptWrap.createDiv();
-        resetRow.setCssProps({ "display": "flex", "gap": "8px", "margin-top": "8px", "align-items": "center" });
+        resetRow.addClass('sch-static-style-167');
         const resetBtn = resetRow.createEl('button', { text: '↩ 恢复默认提示词', cls: 'scholarium-btn' });
-        resetBtn.setCssProps({ "padding": "4px 12px", "font-size": "0.82em" });
+        resetBtn.addClass('sch-static-style-168');
         resetBtn.onclick = async () => {
             promptTextarea.value = DEFAULT_AI_SYSTEM_PROMPT;
             this.plugin.settings.aiSystemPrompt = DEFAULT_AI_SYSTEM_PROMPT;
@@ -605,7 +606,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
         resetRow.createEl('span', {
             text: '提示：可以在这里调整输出语气、增加领域专业术语、或要求AI只输出特定格式。',
             cls: 'setting-item-description'
-        }).setCssProps({ "font-size": "0.8em", "margin": "0" });
+        }).addClass('sch-static-style-169');
 
         // ===== 文献订阅 (RSS) =====
         new Setting(containerEl).setName('📡 文献订阅（RSS）').setHeading();
@@ -659,13 +660,14 @@ export class ChemELNSettingTab extends PluginSettingTab {
             }));
 
         const batchWrap = containerEl.createDiv();
-        batchWrap.createEl('div', { text: '批量导入订阅源（每行一个，地址或 ISSN）', attr: { style: 'margin:6px 0 4px;font-weight:600;font-size:0.9em;' } });
+        const batchLabel = batchWrap.createEl('div', { text: '批量导入订阅源（每行一个，地址或 ISSN）' });
+        batchLabel.addClass('sch-static-style-170');
         const batchTa = batchWrap.createEl('textarea');
         batchTa.rows = 6;
         batchTa.placeholder = 'https://www.nature.com/nchem.rss\n0002-7863\n1433-7851';
-        batchTa.setCssProps({ "width": "100%", "font-size": "0.85em", "line-height": "1.6", "resize": "vertical", "padding": "8px", "border-radius": "6px", "border": "1px solid var(--background-modifier-border)", "background": "var(--background-primary)", "color": "var(--text-normal)", "box-sizing": "border-box" });
+        batchTa.addClass('sch-static-style-171');
         const batchBtn = batchWrap.createEl('button', { text: '批量导入', cls: 'scholarium-btn' });
-        batchBtn.setCssProps({ "margin-top": "8px", "padding": "5px 14px" });
+        batchBtn.addClass('sch-static-style-172');
         batchBtn.onclick = async () => {
             const n = await addRssFeeds(batchTa.value.split('\n'));
             new Notice(n ? `已批量添加 ${n} 个订阅源，去「文献订阅」点全部刷新抓取。` : '没有新的订阅源被添加。');
@@ -700,14 +702,15 @@ export class ChemELNSettingTab extends PluginSettingTab {
                 .addText(t => t.setPlaceholder('https://example.com/v1/chat/completions').setValue(s.rssAiCustomEndpoint).onChange(async v => { s.rssAiCustomEndpoint = v; await this.plugin.saveSettings(); }));
         }
 
-        containerEl.createEl('div', { text: '文献 AI 总结提示词', attr: { style: 'margin:10px 0 4px;font-weight:600;font-size:0.9em;' } });
+        const rssPromptLabel = containerEl.createEl('div', { text: '文献 AI 总结提示词' });
+        rssPromptLabel.addClass('sch-static-style-173');
         const rssPromptTa = containerEl.createEl('textarea');
         rssPromptTa.value = s.rssAiPrompt || DEFAULT_RSS_AI_PROMPT;
         rssPromptTa.rows = 10;
-        rssPromptTa.setCssProps({ "width": "100%", "font-size": "0.82em", "line-height": "1.6", "resize": "vertical", "padding": "10px", "border-radius": "6px", "border": "1px solid var(--background-modifier-border)", "background": "var(--background-primary)", "color": "var(--text-normal)", "box-sizing": "border-box" });
+        rssPromptTa.addClass('sch-static-style-174');
         rssPromptTa.addEventListener('input', async () => { s.rssAiPrompt = rssPromptTa.value; await this.plugin.saveSettings(); });
         const rssResetBtn = containerEl.createEl('button', { text: '↩ 恢复默认提示词', cls: 'scholarium-btn' });
-        rssResetBtn.setCssProps({ "margin-top": "8px", "padding": "4px 12px", "font-size": "0.82em" });
+        rssResetBtn.addClass('sch-static-style-175');
         rssResetBtn.onclick = async () => { rssPromptTa.value = DEFAULT_RSS_AI_PROMPT; s.rssAiPrompt = DEFAULT_RSS_AI_PROMPT; await this.plugin.saveSettings(); new Notice('✅ 已恢复默认提示词'); };
 
         // ===== 科研库 =====

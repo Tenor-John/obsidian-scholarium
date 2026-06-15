@@ -101,7 +101,7 @@ function renderSmilesPreview(container: HTMLElement, smiles: string, isReaction:
                             svgEl.setAttribute('viewBox', `${x - pad} ${y - pad} ${w + pad * 2} ${h + pad * 2}`);
                         }
                     }
-                    svgEl.setCssProps({ "overflow": 'visible' });
+                    svgEl.addClass('sch-static-style-10');
                     svgEl.setAttribute('overflow', 'visible');
                 }, (err) => {
                     console.warn('[Scholarium] SmiDrawer failed, fallback to canvas:', err);
@@ -251,7 +251,7 @@ function prepareChemSvg(svg: SVGSVGElement): void {
     svg.removeAttribute('width');
     svg.removeAttribute('height');
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    svg.setCssProps({ "overflow": 'visible' });
+    svg.addClass('sch-static-style-10');
     svg.setAttribute('overflow', 'visible');
     padSvgViewBox(svg);
 }

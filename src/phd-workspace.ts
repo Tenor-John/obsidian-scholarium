@@ -344,18 +344,14 @@ export class PhDWorkspace {
         const nav = el.createDiv({ cls: 'ws2-nav sch-subnav' });
         for (const group of groups) {
             const groupEl = nav.createDiv();
-            groupEl.setCssProps({ "margin-bottom": '14px' });
+            groupEl.addClass('sch-static-style-64');
             const head = groupEl.createDiv({ text: t(group.key, lang) });
-            Object.assign(head.style, {
-                fontSize: '10.5px', fontWeight: '700', letterSpacing: '.12em',
-                textTransform: 'uppercase', color: 'var(--sch-mute)',
-                padding: '0 10px', marginBottom: '4px',
-            });
+            head.addClass('sch-static-style-65');
             for (const it of group.items) {
                 const label = it.labelKey ? t(it.labelKey, lang) : (it.label ? it.label[lang] : it.page);
                 const active = this.activePage === it.page;
                 const item = groupEl.createDiv();
-                Object.assign(item.style, {
+                item.setCssStyles({
                     display: 'flex', alignItems: 'center', gap: '9px',
                     padding: '7px 10px', borderRadius: '9px', cursor: 'pointer',
                     color: active ? 'var(--sch-accent-ink)' : 'var(--sch-ink2)',
@@ -364,13 +360,13 @@ export class PhDWorkspace {
                     transition: 'all .15s ease',
                 });
                 const ic = iconSvg(it.icon, { size: 16 });
-                ic.style.color = active ? 'var(--sch-accent-ink)' : 'var(--sch-mute)';
-                ic.setCssProps({ "flex-shrink": '0' });
+                ic.setCssStyles({ color: active ? 'var(--sch-accent-ink)' : 'var(--sch-mute)' });
+                ic.addClass('sch-static-style-11');
                 item.appendChild(ic);
                 item.appendChild(document.createTextNode(label));
                 if (!active) {
-                    item.addEventListener('mouseenter', () => { item.setCssProps({ "background": 'var(--sch-surface2)' }); });
-                    item.addEventListener('mouseleave', () => { item.setCssProps({ "background": 'transparent' }); });
+                    item.addEventListener('mouseenter', () => { item.addClass('sch-static-style-66'); });
+                    item.addEventListener('mouseleave', () => { item.addClass('sch-static-style-67'); });
                 }
                 item.onclick = () => { this.activePage = it.page; this.rerender(); };
             }
@@ -472,10 +468,7 @@ export class PhDWorkspace {
         const dnow = new Date();
 
         const root = el.createDiv();
-        Object.assign(root.style, {
-            display: 'flex', flexDirection: 'column', gap: 'calc(var(--sch-gap) * 1.4)',
-            padding: 'calc(var(--sch-pad) * 0.4)',
-        });
+        root.addClass('sch-static-style-68');
 
         // ── 统计 ──
         const focusMins = this.data.focus.sessions.filter(s => s.date === today()).reduce((s, r) => s + r.minutes, 0);
@@ -488,7 +481,7 @@ export class PhDWorkspace {
         // ── 头卡：日期 + 问候 + 概述 + 4 指标 ──
         const header = uiCard(root);
         const hRow = header.createDiv();
-        Object.assign(hRow.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px', flexWrap: 'wrap' });
+        hRow.addClass('sch-static-style-69');
         const hLeft = hRow.createDiv();
         const hr = dnow.getHours();
         const greetKey = hr < 11 ? 'greeting_morning' : hr < 14 ? 'greeting_noon' : hr < 18 ? 'greeting_afternoon' : hr < 22 ? 'greeting_evening' : 'greeting_night';
@@ -504,19 +497,19 @@ export class PhDWorkspace {
             ? `${dnow.getFullYear()} 年 ${dnow.getMonth() + 1} 月 ${dnow.getDate()} 日 · ${dayCh} · 第 ${isoWk(dnow)} 周`
             : `${dnow.toDateString()} · Week ${isoWk(dnow)}`;
         const eb = hLeft.createDiv({ text: dateLabel });
-        Object.assign(eb.style, { fontSize: '11.5px', color: 'var(--sch-mute)', fontWeight: '700', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: '6px' });
+        eb.addClass('sch-static-style-70');
         const userName = (this.plugin.settings.pluginDisplayName || '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
         const greet = hLeft.createDiv({ text: t(greetKey, lang) + (userName ? `，${userName}` : '') });
-        Object.assign(greet.style, { fontFamily: 'var(--sch-font-ui)', fontSize: 'var(--sch-h1)', fontWeight: '800', color: 'var(--sch-ink)', letterSpacing: '0', lineHeight: '1.1' });
+        greet.addClass('sch-static-style-71');
         const summary = hLeft.createDiv();
-        Object.assign(summary.style, { marginTop: '6px', fontSize: '13px', color: 'var(--sch-mute)', maxWidth: '580px', lineHeight: '1.55' });
+        summary.addClass('sch-static-style-72');
         const blocksToday = this.data.timeblocks.filter(b => b.date === today()).length;
         summary.setText(lang === 'zh'
             ? `今天 ${blocksToday} 个时间块、${activeTasksArr.length} 件待办，已专注 ${fh}h${fm}m。`
             : `${blocksToday} blocks, ${activeTasksArr.length} open tasks, ${fh}h${fm}m focused so far.`);
 
         const metrics = hRow.createDiv();
-        Object.assign(metrics.style, { display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '28px' });
+        metrics.addClass('sch-static-style-73');
         uiMetric(metrics, { label: t('metric_focus', lang), value: `${fh}h${fm}` });
         uiMetric(metrics, { label: t('metric_done', lang), value: String(doneToday), unit: `/${totalTasks}` });
         uiMetric(metrics, { label: t('metric_energy', lang), value: focusMins > 0 ? Math.min(99, 40 + Math.round(focusMins / 6)) : 50, unit: '%' });
@@ -524,24 +517,24 @@ export class PhDWorkspace {
 
         // ── 两栏：时间轴 | 右侧操作 ──
         const grid = root.createDiv();
-        Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 'calc(var(--sch-gap) * 1.4)', alignItems: 'start' });
+        grid.addClass('sch-static-style-74');
 
         // 时间轴卡
         const spineCard = uiCard(grid, { pad: false });
         const spineHead = spineCard.createDiv();
-        Object.assign(spineHead.style, { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', padding: 'var(--sch-pad)', borderBottom: '1px solid var(--sch-line-soft)' });
+        spineHead.addClass('sch-static-style-75');
         const { right: shRight } = sectionHeader(spineHead, { eyebrow: t('today_spine', lang), title: lang === 'zh' ? '从早到晚，一条主线串起' : 'One thread, dawn to dusk', level: 2 });
         // sectionHeader adds marginBottom; neutralize inside flex
-        (spineHead.firstElementChild as HTMLElement).setCssProps({ "margin-bottom": '0' });
+        (spineHead.firstElementChild as HTMLElement).addClass('sch-static-style-76');
         pill(shRight, lang === 'zh' ? `专注 ${fh}h ${fm}m` : `${fh}h ${fm}m focus`, 'accent');
         this.renderTimelineRangePicker(shRight, lang);
         const spineBody = spineCard.createDiv();
-        spineBody.setCssProps({ "padding": 'var(--sch-pad)' });
+        spineBody.addClass('sch-static-style-77');
         this.renderTimeSpine(spineBody, td, lang, this.timelineRange);
 
         // 右栏
         const rail = grid.createDiv();
-        Object.assign(rail.style, { display: 'flex', flexDirection: 'column', gap: 'var(--sch-gap)' });
+        rail.addClass('sch-static-style-78');
         this.renderCheckinCard(rail, td, lang);
         this.renderFocusTimerCard(rail, lang);
         this.renderAIScheduleCard(rail, lang);
@@ -563,7 +556,7 @@ export class PhDWorkspace {
 
     private renderTimelineRangePicker(host: HTMLElement, lang: 'zh' | 'en') {
         const wrap = host.createDiv();
-        Object.assign(wrap.style, { display: 'inline-flex', gap: '3px', padding: '3px', borderRadius: '999px', background: 'var(--sch-surface2)', border: '1px solid var(--sch-line-soft)', marginLeft: '6px' });
+        wrap.addClass('sch-static-style-79');
         const opts: Array<{ value: TimelineRange; zh: string; en: string }> = [
             { value: 'day', zh: '今日', en: 'Day' },
             { value: 'week', zh: '本周', en: 'Week' },
@@ -572,7 +565,7 @@ export class PhDWorkspace {
         for (const opt of opts) {
             const active = this.timelineRange === opt.value;
             const btn = wrap.createEl('button', { text: lang === 'zh' ? opt.zh : opt.en });
-            Object.assign(btn.style, {
+            btn.setCssStyles({
                 height: '24px',
                 padding: '0 9px',
                 border: '0',
@@ -632,22 +625,22 @@ export class PhDWorkspace {
         const hourCount = endHour - startHour + 1;
 
         const wrap = host.createDiv();
-        Object.assign(wrap.style, { display: 'grid', gridTemplateColumns: '60px 1fr', position: 'relative' });
+        wrap.addClass('sch-static-style-80');
 
         // 时刻轨
         const rail = wrap.createDiv();
         for (let h = startHour; h <= endHour; h++) {
             const row = rail.createDiv();
-            Object.assign(row.style, { height: ROW_H + 'px', position: 'relative', borderTop: h === startHour ? 'none' : '1px dashed var(--sch-line-soft)' });
+            row.setCssStyles({ height: ROW_H + 'px', position: 'relative', borderTop: h === startHour ? 'none' : '1px dashed var(--sch-line-soft)' });
             const label = row.createSpan({ text: String(h).padStart(2, '0') + ':00' });
-            Object.assign(label.style, { position: 'absolute', top: '-7px', fontSize: '10.5px', fontFamily: 'var(--sch-font-mono)', color: 'var(--sch-mute)', fontWeight: '600', letterSpacing: '.04em', background: 'var(--sch-surface)', padding: '0 4px' });
+            label.addClass('sch-static-style-81');
         }
 
         // 事件列
         const col = wrap.createDiv();
-        Object.assign(col.style, { position: 'relative' });
+        col.addClass('sch-static-style-82');
         const spineLine = col.createDiv();
-        Object.assign(spineLine.style, { position: 'absolute', left: '16px', top: '0', bottom: '0', width: '2px', background: 'var(--sch-line-soft)', borderRadius: '2px' });
+        spineLine.addClass('sch-static-style-83');
 
         const kindText = (k: Ev['kind']): string => {
             const m: Record<Ev['kind'], [string, string]> = { task: ['任务', 'TASK'], focus: ['专注', 'FOCUS'], meeting: ['会议', 'MEETING'], meal: ['用餐', 'MEAL'], checkin: ['考勤', 'CHECK-IN'] };
@@ -701,7 +694,7 @@ export class PhDWorkspace {
             const widthCss = p.cols > 1 ? `calc(${colW} - ${GAP}px)` : colW;
 
             const block = col.createDiv();
-            Object.assign(block.style, {
+            block.setCssStyles({
                 position: 'absolute', top: top + 'px', height: height + 'px',
                 left: leftCss, width: widthCss,
                 borderRadius: '10px',
@@ -714,31 +707,31 @@ export class PhDWorkspace {
             });
             block.setAttribute('title', `${ev.start}${ev.end ? '–' + ev.end : ''} · ${kindText(ev.kind)}\n${ev.title}`);
             const kh = block.createDiv();
-            Object.assign(kh.style, { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', fontFamily: 'var(--sch-font-mono)', fontWeight: '700', color, letterSpacing: '.04em', flexShrink: '0' });
-            const dot = kh.createSpan(); Object.assign(dot.style, { width: '6px', height: '6px', borderRadius: '50%', background: color, flexShrink: '0' });
+            kh.setCssStyles({ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', fontFamily: 'var(--sch-font-mono)', fontWeight: '700', color, letterSpacing: '.04em', flexShrink: '0' });
+            const dot = kh.createSpan(); dot.setCssStyles({ width: '6px', height: '6px', borderRadius: '50%', background: color, flexShrink: '0' });
             kh.appendChild(document.createTextNode(`${ev.start}${ev.end ? '–' + ev.end : ''} · ${kindText(ev.kind)}`));
             // 标题：在块高度内自动换行显示，不再固定单行省略
             const ttl = block.createDiv({ text: ev.title });
-            Object.assign(ttl.style, { fontSize: '12.5px', fontWeight: '500', color: 'var(--sch-ink)', lineHeight: '1.3', whiteSpace: 'normal', wordBreak: 'break-word', overflow: 'hidden', flex: '1 1 auto', minHeight: '0' });
+            ttl.addClass('sch-static-style-84');
             if (ev.tbId) block.addEventListener('click', () => this.openTimeBlockEditor(ev.tbId!));
         }
 
         if (events.length === 0) {
             const empty = col.createDiv({ text: t('no_events', lang) });
-            Object.assign(empty.style, { position: 'absolute', left: '38px', top: '8px', color: 'var(--sch-mute)', fontSize: '13px' });
+            empty.addClass('sch-static-style-85');
         }
 
         // NOW 指示线（每分钟更新）
         const nowLine = col.createDiv();
-        Object.assign(nowLine.style, { position: 'absolute', left: '0', right: '0', height: '2px', background: 'var(--sch-accent)', boxShadow: '0 0 0 4px var(--sch-accent-soft)', borderRadius: '2px', zIndex: '5' });
+        nowLine.addClass('sch-static-style-86');
         const nowPill = nowLine.createSpan();
-        Object.assign(nowPill.style, { position: 'absolute', left: '8px', top: '-10px', fontSize: '10px', fontWeight: '700', color: 'var(--sch-accent-ink)', background: 'var(--sch-surface)', padding: '1px 6px', borderRadius: '999px', border: '1px solid var(--sch-accent-soft)', fontFamily: 'var(--sch-font-mono)' });
+        nowPill.addClass('sch-static-style-87');
         const updateNow = () => {
             const n = new Date();
             const frac = (n.getHours() - startHour) + n.getMinutes() / 60;
-            if (frac < 0 || frac > hourCount) { nowLine.setCssProps({ "display": 'none' }); return; }
-            nowLine.setCssProps({ "display": 'block' });
-            nowLine.style.top = (frac * ROW_H - 1) + 'px';
+            if (frac < 0 || frac > hourCount) { nowLine.addClass('sch-static-style-63'); return; }
+            nowLine.addClass('sch-static-style-88');
+            nowLine.setCssStyles({ top: (frac * ROW_H - 1) + 'px' });
             nowPill.setText(`${t('now', lang)} ${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`);
         };
         updateNow();
@@ -746,7 +739,7 @@ export class PhDWorkspace {
 
         // 撑高
         const spacer = col.createDiv();
-        spacer.style.height = (hourCount * ROW_H) + 'px';
+        spacer.setCssStyles({ height: (hourCount * ROW_H) + 'px' });
     }
 
     // 点击时间块事件 → 编辑（重设计：已添加的任务可修改）
@@ -771,30 +764,30 @@ export class PhDWorkspace {
         }
         const dates = this.getTimelineDates(range);
         const wrap = host.createDiv();
-        Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', gap: '10px' });
+        wrap.addClass('sch-static-style-89');
         for (const date of dates) {
             const blocks = this.data.timeblocks.filter(b => b.date === date).sort((a, b) => a.startTime.localeCompare(b.startTime));
             const sessions = this.data.focus.sessions.filter(s => s.date === date).sort((a, b) => a.start.localeCompare(b.start));
             const day = wrap.createDiv();
-            Object.assign(day.style, { border: '1px solid var(--sch-line-soft)', borderRadius: '12px', padding: '10px 12px', background: 'var(--sch-surface)' });
+            day.addClass('sch-static-style-90');
             const head = day.createDiv();
-            Object.assign(head.style, { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' });
+            head.addClass('sch-static-style-91');
             const title = head.createDiv({ text: this.formatTimelineDate(date, lang) });
-            Object.assign(title.style, { fontWeight: '700', color: 'var(--sch-ink)' });
+            title.addClass('sch-static-style-92');
             pill(head, String(blocks.length + sessions.length), blocks.length + sessions.length ? 'accent' : 'mute');
             if (!blocks.length && !sessions.length) {
                 const empty = day.createDiv({ text: lang === 'zh' ? '暂无安排' : 'No schedule' });
-                Object.assign(empty.style, { color: 'var(--sch-mute)', fontSize: '12.5px' });
+                empty.addClass('sch-static-style-93');
                 continue;
             }
             const list = day.createDiv();
-            Object.assign(list.style, { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' });
+            list.addClass('sch-static-style-94');
             for (const b of blocks) this.renderTimelineMiniItem(list, `${b.startTime}-${b.endTime}`, b.title, b.category || 'task', b.note);
             for (const s of sessions) this.renderTimelineMiniItem(list, `${s.start}-${s.end}`, s.title, lang === 'zh' ? '专注' : 'Focus', `${s.minutes}m`);
         }
         if (!wrap.childElementCount) {
             const empty = wrap.createDiv({ text: lang === 'zh' ? '这个范围还没有日程安排' : 'No schedule in this range' });
-            Object.assign(empty.style, { color: 'var(--sch-mute)', fontSize: '13px', padding: '12px' });
+            empty.addClass('sch-static-style-95');
         }
     }
 
@@ -805,37 +798,37 @@ export class PhDWorkspace {
         const endHour = 22;
         const hours = endHour - startHour + 1;
         const wrap = host.createDiv();
-        Object.assign(wrap.style, { border: '1px solid var(--sch-line-soft)', borderRadius: '14px', overflow: 'hidden', background: 'var(--sch-surface)', minWidth: '0' });
+        wrap.addClass('sch-static-style-96');
 
         const head = wrap.createDiv();
-        Object.assign(head.style, { display: 'grid', gridTemplateColumns: '54px repeat(7, minmax(0, 1fr))', borderBottom: '1px solid var(--sch-line-soft)', minHeight: '58px' });
+        head.addClass('sch-static-style-97');
         const tz = head.createDiv({ text: 'GMT+8' });
-        Object.assign(tz.style, { padding: '14px 10px', color: 'var(--sch-mute)', fontSize: '11px', fontWeight: '700' });
+        tz.addClass('sch-static-style-98');
         for (const date of dates) {
             const d = new Date(date + 'T00:00:00');
             const cell = head.createDiv();
-            Object.assign(cell.style, { padding: '10px 4px', textAlign: 'center', borderLeft: '1px solid var(--sch-line-soft)', minWidth: '0' });
+            cell.addClass('sch-static-style-99');
             const week = cell.createDiv({ text: this.weekdayLabel(d, lang) });
-            Object.assign(week.style, { fontSize: '12px', color: date === today() ? 'var(--sch-accent-ink)' : 'var(--sch-mute)', fontWeight: '700' });
+            week.setCssStyles({ fontSize: '12px', color: date === today() ? 'var(--sch-accent-ink)' : 'var(--sch-mute)', fontWeight: '700' });
             const num = cell.createDiv({ text: String(d.getDate()) });
-            Object.assign(num.style, { fontSize: '20px', color: date === today() ? 'var(--sch-accent-ink)' : 'var(--sch-ink2)', fontWeight: '700', lineHeight: '1.1' });
+            num.setCssStyles({ fontSize: '20px', color: date === today() ? 'var(--sch-accent-ink)' : 'var(--sch-ink2)', fontWeight: '700', lineHeight: '1.1' });
         }
 
         const grid = wrap.createDiv();
-        Object.assign(grid.style, { display: 'grid', gridTemplateColumns: '54px repeat(7, minmax(0, 1fr))', position: 'relative' });
+        grid.addClass('sch-static-style-100');
         const rail = grid.createDiv();
         for (let h = startHour; h <= endHour; h++) {
             const r = rail.createDiv();
-            Object.assign(r.style, { height: ROW_H + 'px', borderTop: '1px solid var(--sch-line-soft)', position: 'relative' });
+            r.setCssStyles({ height: ROW_H + 'px', borderTop: '1px solid var(--sch-line-soft)', position: 'relative' });
             const label = r.createSpan({ text: String(h).padStart(2, '0') + ':00' });
-            Object.assign(label.style, { position: 'absolute', top: '-8px', left: '8px', fontSize: '11px', color: 'var(--sch-mute)', fontFamily: 'var(--sch-font-mono)' });
+            label.addClass('sch-static-style-101');
         }
         for (const date of dates) {
             const col = grid.createDiv();
-            Object.assign(col.style, { position: 'relative', borderLeft: '1px solid var(--sch-line-soft)' });
+            col.addClass('sch-static-style-102');
             for (let h = startHour; h <= endHour; h++) {
                 const row = col.createDiv();
-                Object.assign(row.style, { height: ROW_H + 'px', borderTop: '1px solid var(--sch-line-soft)' });
+                row.setCssStyles({ height: ROW_H + 'px', borderTop: '1px solid var(--sch-line-soft)' });
             }
             this.renderCalendarDayEvents(col, date, startHour, ROW_H);
         }
@@ -851,21 +844,21 @@ export class PhDWorkspace {
         const start = new Date(first);
         start.setDate(first.getDate() - mondayOffset);
         const wrap = host.createDiv();
-        Object.assign(wrap.style, { border: '1px solid var(--sch-line-soft)', borderRadius: '14px', overflow: 'hidden', background: 'var(--sch-surface)' });
+        wrap.addClass('sch-static-style-103');
         const weekHead = wrap.createDiv();
-        Object.assign(weekHead.style, { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--sch-line-soft)' });
+        weekHead.addClass('sch-static-style-104');
         for (let i = 0; i < 7; i++) {
             const h = weekHead.createDiv({ text: this.weekdayLabel(new Date(2026, 0, 5 + i), lang) });
-            Object.assign(h.style, { padding: '10px', color: 'var(--sch-ink2)', fontWeight: '700', textAlign: 'center' });
+            h.addClass('sch-static-style-105');
         }
         const grid = wrap.createDiv();
-        Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' });
+        grid.addClass('sch-static-style-106');
         for (let i = 0; i < 42; i++) {
             const d = new Date(start);
             d.setDate(start.getDate() + i);
             const date = d.toISOString().split('T')[0]!;
             const cell = grid.createDiv();
-            Object.assign(cell.style, {
+            cell.setCssStyles({
                 minHeight: '112px',
                 padding: '8px',
                 borderLeft: i % 7 === 0 ? '0' : '1px solid var(--sch-line-soft)',
@@ -873,7 +866,7 @@ export class PhDWorkspace {
                 background: d.getMonth() === month ? 'var(--sch-surface)' : 'var(--sch-surface2)',
             });
             const dayNum = cell.createDiv({ text: d.getDate() === 1 ? `${d.getMonth() + 1}月${d.getDate()}日` : String(d.getDate()) });
-            Object.assign(dayNum.style, {
+            dayNum.setCssStyles({
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -886,7 +879,7 @@ export class PhDWorkspace {
                 fontWeight: '700',
             });
             const items = cell.createDiv();
-            Object.assign(items.style, { display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' });
+            items.addClass('sch-static-style-107');
             const blocks = this.data.timeblocks.filter(b => b.date === date).sort((a, b) => a.startTime.localeCompare(b.startTime));
             const sessions = this.data.focus.sessions.filter(s => s.date === date).sort((a, b) => a.start.localeCompare(b.start));
             for (const b of blocks.slice(0, 3)) this.renderMonthEvent(items, b.title);
@@ -894,7 +887,7 @@ export class PhDWorkspace {
             const more = blocks.length + sessions.length - items.childElementCount;
             if (more > 0) {
                 const m = items.createDiv({ text: `+ ${more}` });
-                Object.assign(m.style, { color: 'var(--sch-mute)', fontSize: '11px', fontWeight: '700' });
+                m.addClass('sch-static-style-108');
             }
         }
     }
@@ -912,7 +905,7 @@ export class PhDWorkspace {
             const top = ((sh - startHour) + sm / 60) * rowH;
             const height = Math.max(((eh - sh) + (em - sm) / 60) * rowH, 26);
             const item = col.createDiv({ text: ev.title });
-            Object.assign(item.style, {
+            item.setCssStyles({
                 position: 'absolute',
                 left: '6px',
                 right: '6px',
@@ -936,17 +929,17 @@ export class PhDWorkspace {
 
     private renderCalendarNowLine(grid: HTMLElement, startHour: number, rowH: number, hours: number, dayIndex: number) {
         const line = grid.createDiv();
-        Object.assign(line.style, { position: 'absolute', left: '54px', right: '0', height: '2px', background: 'var(--sch-accent)', zIndex: '5' });
+        line.addClass('sch-static-style-109');
         const dot = line.createSpan();
-        Object.assign(dot.style, { position: 'absolute', left: `calc(${dayIndex * 100 / 7}% - 5px)`, top: '-4px', width: '10px', height: '10px', borderRadius: '50%', background: 'var(--sch-accent)' });
+        dot.setCssStyles({ position: 'absolute', left: `calc(${dayIndex * 100 / 7}% - 5px)`, top: '-4px', width: '10px', height: '10px', borderRadius: '50%', background: 'var(--sch-accent)' });
         const label = line.createSpan();
-        Object.assign(label.style, { position: 'absolute', left: '-58px', top: '-9px', color: 'var(--sch-accent)', fontSize: '11px', fontFamily: 'var(--sch-font-mono)', fontWeight: '700' });
+        label.addClass('sch-static-style-110');
         const update = () => {
             const n = new Date();
             const frac = (n.getHours() - startHour) + n.getMinutes() / 60;
-            if (frac < 0 || frac > hours) { line.setCssProps({ "display": 'none' }); return; }
-            line.setCssProps({ "display": 'block' });
-            line.style.top = (frac * rowH) + 'px';
+            if (frac < 0 || frac > hours) { line.addClass('sch-static-style-63'); return; }
+            line.addClass('sch-static-style-88');
+            line.setCssStyles({ top: (frac * rowH) + 'px' });
             label.setText(`${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`);
         };
         update();
@@ -955,18 +948,7 @@ export class PhDWorkspace {
 
     private renderMonthEvent(host: HTMLElement, title: string) {
         const item = host.createDiv({ text: title });
-        Object.assign(item.style, {
-            padding: '3px 6px',
-            borderRadius: '5px',
-            borderLeft: '3px solid var(--sch-accent)',
-            background: 'var(--sch-accent-soft)',
-            color: 'var(--sch-accent-ink)',
-            fontSize: '11.5px',
-            fontWeight: '650',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-        });
+        item.addClass('sch-static-style-111');
     }
 
     private weekdayLabel(d: Date, lang: 'zh' | 'en'): string {
@@ -977,13 +959,13 @@ export class PhDWorkspace {
 
     private renderTimelineMiniItem(host: HTMLElement, time: string, title: string, category: string, note?: string) {
         const item = host.createDiv();
-        Object.assign(item.style, { padding: '8px 10px', borderRadius: '10px', background: 'var(--sch-surface2)', border: '1px solid var(--sch-line-soft)' });
+        item.addClass('sch-static-style-112');
         const top = item.createDiv({ text: time });
-        Object.assign(top.style, { fontFamily: 'var(--sch-font-mono)', fontSize: '11px', color: 'var(--sch-accent-ink)', fontWeight: '700' });
+        top.addClass('sch-static-style-113');
         const ttl = item.createDiv({ text: title });
-        Object.assign(ttl.style, { marginTop: '3px', fontSize: '13px', color: 'var(--sch-ink)', fontWeight: '650' });
+        ttl.addClass('sch-static-style-114');
         const meta = item.createDiv({ text: note ? `${category} · ${note}` : category });
-        Object.assign(meta.style, { marginTop: '3px', fontSize: '11.5px', color: 'var(--sch-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+        meta.addClass('sch-static-style-115');
     }
 
     private getTimelineDates(range: TimelineRange): string[] {
@@ -1021,7 +1003,7 @@ export class PhDWorkspace {
         pill(right, working ? t('state_working', lang) : t('state_resting', lang), working ? 'moss' : 'mute');
 
         const btnRow = c.createDiv();
-        Object.assign(btnRow.style, { display: 'flex', gap: '6px', marginTop: '6px' });
+        btnRow.addClass('sch-static-style-46');
         const inBtn = uiButton(btnRow, { text: t('checkin_in', lang), iconName: 'play', variant: working ? 'soft' : 'primary', style: { flex: '1' } });
         const outBtn = uiButton(btnRow, { text: t('checkin_out', lang), iconName: 'stop', variant: working ? 'primary' : 'soft', style: { flex: '1' } });
         inBtn.addEventListener('click', async () => {
@@ -1043,21 +1025,21 @@ export class PhDWorkspace {
         const totalMin = (['morning', 'afternoon', 'evening'] as const).reduce((sum, pk) => sum + td[pk].reduce((s, r) => s + diffMin(r.start, r.end), 0), 0)
             + (td.activePeriod ? diffMin(td.activePeriod.since, nowHHMM()) : 0);
         const row1 = inset.createDiv();
-        Object.assign(row1.style, { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
+        row1.addClass('sch-static-style-116');
         const lbl = row1.createSpan({ text: lang === 'zh' ? '今日在岗' : "Today's work" });
-        Object.assign(lbl.style, { fontSize: '11.5px', color: 'var(--sch-mute)', fontWeight: '600' });
+        lbl.addClass('sch-static-style-117');
         const valEl = row1.createSpan({ text: `${Math.floor(totalMin / 60)}h ${totalMin % 60}m` });
-        Object.assign(valEl.style, { fontFamily: 'var(--sch-font-mono)', fontSize: '13px', color: 'var(--sch-ink)', fontWeight: '600' });
+        valEl.addClass('sch-static-style-118');
         const tokens = inset.createDiv();
-        Object.assign(tokens.style, { display: 'flex', gap: '4px', flexWrap: 'wrap' });
+        tokens.addClass('sch-static-style-119');
         const segs: string[] = [];
         (['morning', 'afternoon', 'evening'] as const).forEach(pk => td[pk].forEach(r => { segs.push(`${r.start}→`); segs.push(r.end); }));
         if (td.activePeriod) { segs.push(`${td.activePeriod.since}→`); segs.push('···'); }
         for (const tk of segs.slice(0, 8)) {
             const s = tokens.createSpan({ text: tk });
-            Object.assign(s.style, { fontFamily: 'var(--sch-font-mono)', fontSize: '10.5px', color: 'var(--sch-ink2)', background: 'var(--sch-surface)', border: '1px solid var(--sch-line-soft)', padding: '2px 6px', borderRadius: '4px' });
+            s.addClass('sch-static-style-120');
         }
-        if (segs.length === 0) tokens.createSpan({ text: lang === 'zh' ? '尚未打卡' : 'No check-ins yet' }).setCssProps({ "color": 'var(--sch-mute)' });
+        if (segs.length === 0) tokens.createSpan({ text: lang === 'zh' ? '尚未打卡' : 'No check-ins yet' }).addClass('sch-static-style-121');
     }
 
     private renderFocusTimerCard(host: HTMLElement, lang: 'zh' | 'en') {
@@ -1067,7 +1049,7 @@ export class PhDWorkspace {
         pill(right, active ? (lang === 'zh' ? '进行中' : 'Running') : (lang === 'zh' ? '空闲' : 'Idle'), active ? 'accent' : 'mute');
 
         const disp = c.createDiv();
-        Object.assign(disp.style, { textAlign: 'center', padding: '14px 0', fontFamily: 'var(--sch-font-mono)', fontSize: '38px', fontWeight: '500', color: active ? 'var(--sch-accent-ink)' : 'var(--sch-ink)', letterSpacing: '0' });
+        disp.setCssStyles({ textAlign: 'center', padding: '14px 0', fontFamily: 'var(--sch-font-mono)', fontSize: '38px', fontWeight: '500', color: active ? 'var(--sch-accent-ink)' : 'var(--sch-ink)', letterSpacing: '0' });
         this.focusDisplayEl = disp;
         this.updateTimerDisplay();
         if (active) this.focusTimer = this.plugin.registerInterval(window.setInterval(() => this.updateTimerDisplay(), 1000));
@@ -1076,7 +1058,7 @@ export class PhDWorkspace {
         if (active) titleInput.value = active.title;
 
         const btnRow = c.createDiv();
-        Object.assign(btnRow.style, { display: 'flex', gap: '6px', marginTop: '8px' });
+        btnRow.addClass('sch-static-style-122');
         if (!active) {
             const startBtn = uiButton(btnRow, { text: t('start', lang), iconName: 'play', variant: 'primary', style: { flex: '1' } });
             startBtn.addEventListener('click', async () => {
@@ -1100,26 +1082,14 @@ export class PhDWorkspace {
         const c = uiCard(host);
         sectionHeader(c, { eyebrow: lang === 'zh' ? 'AI 日程助手' : 'AI planner', title: lang === 'zh' ? '规划今日任务' : 'Plan schedule', level: 3 });
         const ta = c.createEl('textarea');
-        Object.assign(ta.style, {
-            width: '100%',
-            minHeight: '86px',
-            padding: '10px',
-            borderRadius: '10px',
-            border: '1px solid var(--sch-line)',
-            background: 'var(--sch-surface)',
-            color: 'var(--sch-ink)',
-            fontFamily: 'inherit',
-            fontSize: '12.5px',
-            lineHeight: '1.55',
-            resize: 'vertical',
-        });
+        ta.addClass('sch-static-style-123');
         ta.placeholder = lang === 'zh'
             ? '例如：9:00-10:30 看文献，10:45-12:00 写实验方案，下午做 HPLC 数据。'
             : 'Example: 9:00-10:30 read papers, 10:45-12:00 draft protocol.';
         const hint = c.createDiv({ text: lang === 'zh' ? '会写入时间块，并显示在中间时间轴。写“覆盖今日”会替换今天已有日程。' : 'Saved as time blocks and shown in the center timeline. Include "replace today" to overwrite today.' });
-        Object.assign(hint.style, { marginTop: '6px', fontSize: '11.5px', color: 'var(--sch-mute)', lineHeight: '1.45' });
+        hint.addClass('sch-static-style-124');
         const btnRow = c.createDiv();
-        Object.assign(btnRow.style, { display: 'flex', gap: '6px', marginTop: '10px' });
+        btnRow.addClass('sch-static-style-125');
         const planBtn = uiButton(btnRow, { text: lang === 'zh' ? 'AI 规划并加入' : 'Plan and add', iconName: 'sparkle', variant: 'primary', style: { flex: '1' } });
         const clearBtn = uiButton(btnRow, { text: lang === 'zh' ? '清空今日' : 'Clear today', variant: 'soft' });
         planBtn.addEventListener('click', async () => {
@@ -1272,27 +1242,23 @@ ${existing}`;
             { kind: 'experiment', zh: '实验', en: 'Experiment', tone: 'var(--sch-moss-bg)' },
         ];
         const chooser = c.createDiv();
-        Object.assign(chooser.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' });
+        chooser.addClass('sch-static-style-126');
         const typeButtons = new Map<CaptureKind, HTMLButtonElement>();
         const refreshTypeButtons = () => {
             for (const type of types) {
                 const btn = typeButtons.get(type.kind);
                 if (!btn) continue;
                 const selected = type.kind === selectedKind;
-                btn.style.background = selected ? type.tone : 'transparent';
-                btn.style.borderColor = selected ? 'var(--sch-accent)' : 'var(--sch-line)';
-                btn.style.color = selected ? 'var(--sch-ink)' : 'var(--sch-mute)';
+                btn.setCssStyles({ background: selected ? type.tone : 'transparent' });
+                btn.setCssStyles({ borderColor: selected ? 'var(--sch-accent)' : 'var(--sch-line)' });
+                btn.setCssStyles({ color: selected ? 'var(--sch-ink)' : 'var(--sch-mute)' });
                 btn.setAttribute('aria-pressed', String(selected));
             }
         };
         for (const type of types) {
             const label = lang === 'zh' ? type.zh : type.en;
             const btn = chooser.createEl('button', { text: label, attr: { type: 'button', 'aria-label': label } });
-            Object.assign(btn.style, {
-                minHeight: '30px', padding: '0 11px', borderRadius: '999px',
-                border: '1px solid var(--sch-line)', fontSize: '12px', fontWeight: '600',
-                cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s ease',
-            });
+            btn.addClass('sch-static-style-127');
             typeButtons.set(type.kind, btn);
             btn.addEventListener('click', () => {
                 selectedKind = type.kind;
@@ -1316,7 +1282,7 @@ ${existing}`;
             this.rerender();
         });
         const hint = c.createDiv({ text: lang === 'zh' ? '保存在工作台数据中；任务会同步加入今日任务。' : 'Saved in workspace data; tasks also appear in today tasks.' });
-        Object.assign(hint.style, { marginTop: '8px', color: 'var(--sch-mute)', fontSize: '11.5px', lineHeight: '1.45' });
+        hint.addClass('sch-static-style-128');
     }
 
     private renderIdeaCalendarCard(host: HTMLElement, lang: 'zh' | 'en') {
@@ -1328,7 +1294,7 @@ ${existing}`;
         pill(right, String(ideas.length), 'sun');
         if (!ideas.length) {
             const empty = c.createDiv({ text: lang === 'zh' ? '选择“想法”并保存后，会在这里按日期归档。' : 'Ideas saved in quick capture appear here by date.' });
-            Object.assign(empty.style, { color: 'var(--sch-mute)', fontSize: '12px', lineHeight: '1.55' });
+            empty.addClass('sch-static-style-129');
             return;
         }
         const grouped = new Map<string, QuickCapture[]>();
@@ -1338,25 +1304,25 @@ ${existing}`;
             grouped.set(idea.date, day);
         }
         const calendar = c.createDiv();
-        Object.assign(calendar.style, { display: 'flex', flexDirection: 'column', gap: '10px' });
+        calendar.addClass('sch-static-style-89');
         for (const [date, entries] of Array.from(grouped.entries()).slice(0, 7)) {
             const day = calendar.createDiv();
-            Object.assign(day.style, { display: 'grid', gridTemplateColumns: '48px minmax(0, 1fr)', gap: '10px', paddingTop: '10px', borderTop: '1px solid var(--sch-line-soft)' });
+            day.addClass('sch-static-style-130');
             const d = new Date(date + 'T00:00:00');
             const stamp = day.createDiv();
             const dateNum = stamp.createDiv({ text: String(d.getDate()).padStart(2, '0') });
-            Object.assign(dateNum.style, { fontFamily: 'var(--sch-font-mono)', fontSize: '20px', fontWeight: '700', color: 'var(--sch-ink)', lineHeight: '1.05' });
+            dateNum.addClass('sch-static-style-131');
             const month = stamp.createDiv({ text: lang === 'zh' ? `${d.getMonth() + 1} 月` : d.toLocaleDateString('en', { month: 'short' }) });
-            Object.assign(month.style, { color: 'var(--sch-mute)', fontSize: '11px', marginTop: '2px' });
+            month.addClass('sch-static-style-132');
             const notes = day.createDiv();
-            Object.assign(notes.style, { display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '0' });
+            notes.addClass('sch-static-style-133');
             for (const entry of entries) {
                 const item = notes.createDiv();
-                Object.assign(item.style, { background: 'var(--sch-sun-bg)', borderRadius: '8px', padding: '7px 8px', minWidth: '0' });
+                item.addClass('sch-static-style-134');
                 const content = item.createDiv({ text: entry.content });
-                Object.assign(content.style, { color: 'var(--sch-ink)', fontSize: '12.5px', lineHeight: '1.45', whiteSpace: 'normal', overflowWrap: 'anywhere' });
+                content.addClass('sch-static-style-135');
                 const time = item.createDiv({ text: entry.time });
-                Object.assign(time.style, { color: 'var(--sch-mute)', fontFamily: 'var(--sch-font-mono)', fontSize: '10.5px', marginTop: '3px' });
+                time.addClass('sch-static-style-136');
             }
         }
     }
@@ -1366,25 +1332,25 @@ ${existing}`;
         const { right } = sectionHeader(c, { eyebrow: t('todays_tasks', lang), title: lang === 'zh' ? '锁定的任务' : 'Locked in', level: 3 });
         pill(right, String(activeTasks.length), 'accent');
         const list = c.createDiv();
-        Object.assign(list.style, { display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' });
+        list.addClass('sch-static-style-137');
         if (activeTasks.length === 0) {
             const e = list.createDiv({ text: lang === 'zh' ? '今天还没有锁定任务' : 'No tasks locked in' });
-            Object.assign(e.style, { fontSize: '12.5px', color: 'var(--sch-mute)', padding: '8px 0' });
+            e.addClass('sch-static-style-138');
             return;
         }
         for (const task of activeTasks.slice(0, 6)) {
             const item = list.createDiv();
-            Object.assign(item.style, { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 4px', borderTop: '1px solid var(--sch-line-soft)' });
+            item.addClass('sch-static-style-139');
             const cb = item.createDiv();
-            Object.assign(cb.style, { width: '15px', height: '15px', borderRadius: '4px', border: '1.5px solid var(--sch-mute-soft)', flexShrink: '0', cursor: 'pointer', transition: 'all .15s ease' });
+            cb.addClass('sch-static-style-140');
             cb.addEventListener('click', async () => {
                 task.status = 'done'; task.completedAt = today();
                 await this.save(); this.rerender();
             });
             const ttl = item.createDiv({ text: task.title });
-            Object.assign(ttl.style, { flex: '1', minWidth: '0', fontSize: '12.5px', color: 'var(--sch-ink)', fontWeight: '500', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+            ttl.addClass('sch-static-style-141');
             const d = item.createSpan({ text: task.createdAt });
-            Object.assign(d.style, { fontSize: '10.5px', color: 'var(--sch-mute)', fontFamily: 'var(--sch-font-mono)', flexShrink: '0' });
+            d.addClass('sch-static-style-142');
         }
     }
 
@@ -1491,8 +1457,8 @@ ${existing}`;
                     const value = totals.get(cat.key) || 0;
                     if (value <= 0) continue;
                     const seg = bar.createDiv({ cls: 'ws2-stack-seg' });
-                    seg.style.width = `${Math.max(4, value / dayTotal * 100)}%`;
-                    seg.style.background = cat.color;
+                    seg.setCssStyles({ width: `${Math.max(4, value / dayTotal * 100)}%` });
+                    seg.setCssStyles({ background: cat.color });
                     seg.title = `${cat.key}: ${value} min`;
                 }
             } else {
@@ -1505,7 +1471,7 @@ ${existing}`;
         for (const cat of categories) {
             const item = legend.createDiv({ cls: 'ws2-stack-legend-item' });
             const dot = item.createSpan({ cls: 'ws2-stack-legend-dot' });
-            dot.style.background = cat.color;
+            dot.setCssStyles({ background: cat.color });
             item.createSpan({ text: cat.key, cls: 'ws2-stack-legend-label' });
         }
     }
@@ -1588,7 +1554,7 @@ ${existing}`;
             head.createSpan({ text: `${p.toFixed(1)}%`, cls: 'xl-wk-prog-pct' });
             const bar = item.createDiv({ cls: 'xl-wk-prog-bar' });
             const fill = bar.createDiv({ cls: 'xl-wk-prog-fill' });
-            fill.style.width = `${p.toFixed(1)}%`;
+            fill.setCssStyles({ width: `${p.toFixed(1)}%` });
         }
 
         // 底部导航：上周 / 本周 / 下周（仅展示，无路由）
@@ -1634,7 +1600,8 @@ ${existing}`;
             const isActive = td.activePeriod?.period === p.key;
             const totalMin = segs.reduce((s, r) => s + diffMin(r.start, r.end), 0);
 
-            const card = periodsRow.createDiv({ cls: 'ws2-period-card', attr: { style: `--accent: ${p.accentColor}` } });
+            const card = periodsRow.createDiv({ cls: 'ws2-period-card' });
+            card.setCssProps({ '--accent': p.accentColor });
             card.createEl('div', { text: p.label, cls: 'ws2-period-title' });
             card.createEl('div', { text: p.time, cls: 'ws2-period-time' });
 
@@ -1761,7 +1728,7 @@ ${existing}`;
 
     private renderTimeblockAIHelper(host: HTMLElement) {
         const card = host.createDiv({ cls: 'ws2-card' });
-        Object.assign(card.style, { display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px' });
+        card.addClass('sch-static-style-143');
         card.createEl('h3', { text: 'AI 日程助手', cls: 'ws2-card-title' });
         const prompt = card.createEl('textarea', {
             cls: 'ws2-input',
@@ -1771,11 +1738,11 @@ ${existing}`;
             }
         }) as HTMLTextAreaElement;
         const actions = card.createDiv();
-        Object.assign(actions.style, { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' });
+        actions.addClass('sch-static-style-144');
         const addBtn = actions.createEl('button', { text: '生成并加入日程', cls: 'ws2-btn' });
         const replaceBtn = actions.createEl('button', { text: '覆盖今日', cls: 'ws2-btn ws2-btn-outline' });
         const tip = card.createDiv({ text: 'AI 会生成时间块建议；没有 API key 时，也会识别明确的“几点到几点做什么”。' });
-        Object.assign(tip.style, { color: 'var(--sch-mute)', fontSize: '12px', lineHeight: '1.5' });
+        tip.addClass('sch-static-style-145');
 
         const run = async (replace: boolean) => {
             const text = prompt.value.trim();
@@ -1809,11 +1776,11 @@ ${existing}`;
     // ════════════════════════════════
     private renderTimeblock(el: HTMLElement) {
         const wrap = el.createDiv({ cls: 'ws2-timeblock-container' });
-        Object.assign(wrap.style, { display: 'grid', gridTemplateColumns: 'minmax(420px, 1fr) minmax(320px, 420px)', gap: '24px', alignItems: 'start' });
+        wrap.addClass('sch-static-style-146');
 
         const left = wrap.createDiv({ cls: 'ws2-timeblock-left' });
         const form = left.createDiv({ cls: 'ws2-card' });
-        Object.assign(form.style, { display: 'flex', flexDirection: 'column', gap: '12px' });
+        form.addClass('sch-static-style-147');
         form.createEl('h3', { text: '添加时间块', cls: 'ws2-card-title' });
 
         const date = form.createEl('input', { cls: 'ws2-input', attr: { type: 'date' } }) as HTMLInputElement;
@@ -1850,29 +1817,29 @@ ${existing}`;
         this.renderTimeblockAIHelper(left);
 
         const right = wrap.createDiv({ cls: 'ws2-timeblock-right' });
-        Object.assign(right.style, { minWidth: '0' });
+        right.addClass('sch-static-style-148');
         const todayBlocks = this.data.timeblocks.filter(b => b.date === today());
         const scheduleCard = right.createDiv({ cls: 'ws2-card' });
-        Object.assign(scheduleCard.style, { overflow: 'hidden' });
+        scheduleCard.addClass('sch-static-style-149');
         scheduleCard.createEl('h4', { text: '当日日程', cls: 'ws2-card-title' });
 
         if (todayBlocks.length === 0) {
             scheduleCard.createEl('div', { text: '无日程', cls: 'ws2-empty-hint' });
         } else {
             const list = scheduleCard.createDiv({ cls: 'ws2-timeblock-list' });
-            Object.assign(list.style, { display: 'flex', flexDirection: 'column', gap: '10px' });
+            list.addClass('sch-static-style-89');
             for (const block of todayBlocks.sort((a, b) => a.startTime.localeCompare(b.startTime))) {
                 const item = list.createDiv({ cls: 'ws2-timeblock-item' });
-                Object.assign(item.style, { display: 'grid', gridTemplateColumns: '92px minmax(0, 1fr) auto 30px', gap: '10px', alignItems: 'start', padding: '12px 10px', borderRadius: '10px', overflow: 'hidden' });
+                item.addClass('sch-static-style-150');
                 const timeEl = item.createEl('div', { text: `${block.startTime}-${block.endTime}`, cls: 'ws2-timeblock-time' });
-                Object.assign(timeEl.style, { whiteSpace: 'nowrap' });
+                timeEl.addClass('sch-static-style-151');
                 const titleEl = item.createEl('div', { text: block.title, cls: 'ws2-timeblock-title' });
-                Object.assign(titleEl.style, { minWidth: '0', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', lineHeight: '1.45' });
+                titleEl.addClass('sch-static-style-152');
                 const catEl = item.createEl('div', { text: block.category, cls: 'ws2-timeblock-category' });
-                Object.assign(catEl.style, { whiteSpace: 'nowrap', maxWidth: '96px', overflow: 'hidden', textOverflow: 'ellipsis' });
+                catEl.addClass('sch-static-style-153');
                 if (block.note) {
                     const noteEl = item.createEl('div', { text: block.note, cls: 'ws2-timeblock-note' });
-                    Object.assign(noteEl.style, { gridColumn: '2 / -2', minWidth: '0', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', lineHeight: '1.45' });
+                    noteEl.addClass('sch-static-style-154');
                 }
                 const del = item.createEl('button', { text: '×', cls: 'ws2-del-btn' });
                 del.onclick = async () => {
@@ -2647,7 +2614,7 @@ ${existing}`;
         svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
         svg.setAttribute('width', '100%');
         svg.setAttribute('height', String(H));
-        svg.setCssProps({ "max-width": '100%' });
+        svg.addClass('sch-static-style-155');
 
         if (data.length === 0) {
             const t = document.createElementNS(svgNS, 'text');
@@ -2728,10 +2695,11 @@ class TimeBlockEditModal extends Modal {
         c.createEl('h3', { text: zh ? '编辑时间块' : 'Edit time block' });
 
         const mk = (label: string, value: string, type = 'text'): HTMLInputElement => {
-            const w = c.createDiv(); w.setCssProps({ "margin-bottom": '10px' });
-            w.createEl('div', { text: label, attr: { style: 'font-size:12px;color:var(--text-muted);margin-bottom:4px;' } });
+            const w = c.createDiv(); w.addClass('sch-static-style-34');
+            const fieldLabel = w.createEl('div', { text: label });
+            fieldLabel.addClass('sch-static-style-156');
             const inp = w.createEl('input', { cls: 'ws2-input', attr: { type } }) as HTMLInputElement;
-            inp.value = value; inp.setCssProps({ "width": '100%' });
+            inp.value = value; inp.addClass('sch-static-style-157');
             return inp;
         };
         const titleIn = mk(zh ? '标题' : 'Title', this.block.title);
@@ -2739,18 +2707,19 @@ class TimeBlockEditModal extends Modal {
         const endIn = mk(zh ? '结束' : 'End', this.block.endTime, 'time');
         const catIn = mk(zh ? '分类' : 'Category', this.block.category);
 
-        const noteW = c.createDiv(); noteW.setCssProps({ "margin-bottom": '10px' });
-        noteW.createEl('div', { text: zh ? '备注' : 'Note', attr: { style: 'font-size:12px;color:var(--text-muted);margin-bottom:4px;' } });
+        const noteW = c.createDiv(); noteW.addClass('sch-static-style-34');
+        const noteLabel = noteW.createEl('div', { text: zh ? '备注' : 'Note' });
+        noteLabel.addClass('sch-static-style-156');
         const noteIn = noteW.createEl('textarea', { cls: 'ws2-input' }) as HTMLTextAreaElement;
-        noteIn.value = this.block.note || ''; noteIn.setCssProps({ "width": '100%' }); noteIn.rows = 3;
+        noteIn.value = this.block.note || ''; noteIn.addClass('sch-static-style-157'); noteIn.rows = 3;
 
         const btns = c.createDiv();
-        Object.assign(btns.style, { display: 'flex', gap: '8px', justifyContent: 'space-between', marginTop: '12px' });
+        btns.addClass('sch-static-style-158');
         const del = btns.createEl('button', { text: zh ? '删除' : 'Delete' });
-        del.setCssProps({ "color": 'var(--text-error)' });
+        del.addClass('sch-static-style-159');
         del.onclick = async () => { await this.onDeleteCb(); this.close(); };
         const right = btns.createDiv();
-        Object.assign(right.style, { display: 'flex', gap: '8px' });
+        right.addClass('sch-static-style-160');
         right.createEl('button', { text: zh ? '取消' : 'Cancel' }).onclick = () => this.close();
         const save = right.createEl('button', { text: zh ? '保存' : 'Save', cls: 'mod-cta' });
         save.onclick = async () => {

@@ -29,6 +29,9 @@ export default tseslint.config(
 		"eslint.config.js",
 		"version-bump.mjs",
 		"versions.json",
+		"manifest.json",
+		"package.json",
+		"package-lock.json",
 		"main.js",
 	]),
 );

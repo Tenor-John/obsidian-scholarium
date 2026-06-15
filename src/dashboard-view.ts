@@ -179,7 +179,7 @@ export class DashboardView extends ItemView {
             // ── Notebook 模式条（实验 ⇄ 想法，重设计 M5）──
             const lang = this.plugin.settings.language;
             const modeBar = container.createDiv({ cls: 'sch-notebook-modebar' });
-            Object.assign(modeBar.style, { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' });
+            modeBar.addClass('sch-static-style-1');
             main.before(modeBar);
             segmented(
                 modeBar,
@@ -205,8 +205,8 @@ export class DashboardView extends ItemView {
             // ── 左栏 ──
             const leftPanel = main.createDiv({ cls: 'scholarium-panel left-panel' });
             const sidebarWidth = Math.min(440, Math.max(280, this.plugin.settings.notebookSidebarWidth || 300));
-            leftPanel.style.width = `${sidebarWidth}px`;
-            leftPanel.style.minWidth = `${sidebarWidth}px`;
+            leftPanel.setCssStyles({ width: `${sidebarWidth}px` });
+            leftPanel.setCssStyles({ minWidth: `${sidebarWidth}px` });
             leftPanel.createEl('h3', { text: `📋 ${nbLabel}`, cls: 'panel-title' });
 
             // 搜索框
@@ -284,8 +284,8 @@ export class DashboardView extends ItemView {
 
             const move = (moveEvent: PointerEvent) => {
                 const width = Math.min(440, Math.max(280, startWidth + moveEvent.clientX - startX));
-                panel.style.width = `${width}px`;
-                panel.style.minWidth = `${width}px`;
+                panel.setCssStyles({ width: `${width}px` });
+                panel.setCssStyles({ minWidth: `${width}px` });
             };
             const finish = () => {
                 document.removeEventListener('pointermove', move);
@@ -304,12 +304,7 @@ export class DashboardView extends ItemView {
 
     private brandIconButton(parent: HTMLElement, icon: string, title: string): HTMLButtonElement {
         const btn = parent.createEl('button', { attr: { title } });
-        Object.assign(btn.style, {
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: '34px', height: '34px', border: '1px solid var(--sch-line)',
-            borderRadius: '10px', background: 'transparent', color: 'var(--sch-ink2)',
-            cursor: 'pointer', flexShrink: '0', transition: 'all .15s ease',
-        });
+        btn.addClass('sch-static-style-2');
         btn.appendChild(iconSvg(icon, { size: 16 }));
         return btn;
     }
@@ -319,29 +314,20 @@ export class DashboardView extends ItemView {
         const lang = s.language;
 
         const bar = container.createDiv({ cls: 'sch-brandbar' });
-        Object.assign(bar.style, {
-            display: 'flex', alignItems: 'center', gap: '10px 14px', flexWrap: 'wrap', minWidth: '0',
-            padding: '10px 16px', marginBottom: '14px',
-            background: 'var(--sch-surface)', border: '1px solid var(--sch-line)',
-            borderRadius: 'var(--sch-radius)',
-            boxShadow: '0 1px 2px rgba(0,0,0,.02), 0 1px 0 rgba(255,255,255,.5) inset',
-        });
+        bar.addClass('sch-static-style-3');
 
         // logo
         const logo = bar.createDiv({ cls: 'sch-brandbar-logo' });
-        Object.assign(logo.style, { display: 'flex', alignItems: 'center', gap: '8px', flex: '0 1 auto', minWidth: '0' });
+        logo.addClass('sch-static-style-4');
         const logoIcon = iconSvg('flask', { size: 20 });
-        logoIcon.setCssProps({ "color": 'var(--sch-accent)' });
+        logoIcon.addClass('sch-static-style-5');
         logo.appendChild(logoIcon);
         const logoText = logo.createSpan({ text: 'scholarium' });
-        Object.assign(logoText.style, {
-            fontFamily: 'var(--sch-font-serif)', fontWeight: '600', fontSize: '16px',
-            color: 'var(--sch-ink)', whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: '1.35',
-        });
+        logoText.addClass('sch-static-style-6');
 
         // 4 tabs
         const tabsWrap = bar.createDiv({ cls: 'sch-brandbar-tabs' });
-        Object.assign(tabsWrap.style, { display: 'flex', alignItems: 'center', gap: '4px', flex: '1 1 360px', minWidth: '0', flexWrap: 'wrap' });
+        tabsWrap.addClass('sch-static-style-7');
         const roleLabel = s.workspaceRole !== 'custom'
             ? (WORKSPACE_ROLE_LABELS[s.workspaceRole] ?? t('workspace', lang))
             : (s.workspaceTabLabel || t('workspace', lang));
@@ -355,7 +341,7 @@ export class DashboardView extends ItemView {
         for (const tab of tabs) {
             const active = this.activePanel === tab.key;
             const btn = tabsWrap.createEl('button');
-            Object.assign(btn.style, {
+            btn.setCssStyles({
                 display: 'flex', alignItems: 'center', gap: '7px',
                 height: '34px', padding: '0 14px', border: '0', borderRadius: '10px',
                 background: active ? 'var(--sch-accent-soft)' : 'transparent',
@@ -369,18 +355,12 @@ export class DashboardView extends ItemView {
         }
 
         const actions = bar.createDiv({ cls: 'sch-brandbar-actions' });
-        Object.assign(actions.style, {
-            display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-            gap: '8px', marginLeft: 'auto', flex: '0 1 auto', minWidth: '0', flexWrap: 'wrap',
-        });
+        actions.addClass('sch-static-style-8');
 
         // clock chip (keep id so updateClock() keeps working)
         const clock = actions.createSpan({ cls: 'scholarium-clock' });
         clock.id = 'scholarium-clock';
-        Object.assign(clock.style, {
-            fontFamily: 'var(--sch-font-mono)', fontSize: '12.5px',
-            color: 'var(--sch-mute)', whiteSpace: 'nowrap',
-        });
+        clock.addClass('sch-static-style-9');
         this.updateClock();
 
         // search → Obsidian command palette
@@ -1137,8 +1117,8 @@ export class DashboardView extends ItemView {
             imgEl.alt = alt;
             caption.textContent = alt || '';
             counter.textContent = images.length > 1 ? `${currentIdx + 1} / ${images.length}` : '';
-            prevBtn.style.display = images.length > 1 ? '' : 'none';
-            nextBtn.style.display = images.length > 1 ? '' : 'none';
+            prevBtn.setCssStyles({ display: images.length > 1 ? '' : 'none' });
+            nextBtn.setCssStyles({ display: images.length > 1 ? '' : 'none' });
         };
 
         // 键盘事件
@@ -1223,7 +1203,7 @@ export class DashboardView extends ItemView {
                         svgEl.removeAttribute('height');
                         svgEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
                         padSvgViewBox(svgEl);
-                        svgEl.setCssProps({ "overflow": 'visible' });
+                        svgEl.addClass('sch-static-style-10');
                         svgEl.setAttribute('overflow', 'visible');
                     }, (err) => {
                         console.warn('[Scholarium] SmiDrawer failed, fallback to canvas:', err);

@@ -292,32 +292,27 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         // columns each scroll independently (overflow-y auto + min-height 0) so the
         // list and the detail never affect each other's scroll position.
         const root = container.createDiv();
-        Object.assign(root.style, {
-            display: 'flex',
-            flexDirection: 'column',
-            height: 'min(100%, calc(100vh - 20px))',
-            minHeight: '440px',
-        });
+        root.addClass('sch-static-style-12');
 
         const tb = root.createDiv();
-        tb.setCssProps({ "flex-shrink": '0' });
+        tb.addClass('sch-static-style-11');
         this.renderToolbar(tb);
 
         const body = root.createDiv();
-        Object.assign(body.style, {
+        body.setCssStyles({
             flex: '1', minHeight: '0', marginTop: '14px', display: 'grid',
             gridTemplateColumns: this.selected ? 'minmax(0, 1fr) minmax(340px, clamp(360px, 30vw, 460px))' : '1fr',
             gap: '14px', overflow: 'hidden',
         });
 
         const cardsCol = body.createDiv();
-        Object.assign(cardsCol.style, { overflowY: 'auto', overflowX: 'hidden', minHeight: '0', paddingRight: '4px' });
+        cardsCol.addClass('sch-static-style-13');
         this.cardsHost = cardsCol;
         this.renderCardsInto(cardsCol);
 
         if (this.selected) {
             const detailCol = body.createDiv();
-            Object.assign(detailCol.style, { overflowY: 'auto', overflowX: 'hidden', minHeight: '0' });
+            detailCol.addClass('sch-static-style-14');
             this.renderDetailInto(detailCol);
         }
     }
@@ -328,10 +323,10 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         const zh = this.lang === 'zh';
         const c = uiCard(root, { cls: 'idea-toolbar' });
         const row = c.createDiv();
-        Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' });
+        row.addClass('sch-static-style-15');
 
         const searchWrap = row.createDiv();
-        searchWrap.setCssProps({ "flex": '1 1 200px' });
+        searchWrap.addClass('sch-static-style-16');
         const { input: si } = uiInput(searchWrap, { value: this.filterText, placeholder: zh ? '搜索想法、标签…' : 'Search ideas, tags…', iconName: 'search' });
         si.addEventListener('input', () => { this.filterText = si.value; this.refreshCardsOnly(); });
 
@@ -344,7 +339,7 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
             this.filterSource, (v) => { this.filterSource = v as 'all' | IdeaSource; this.rerender(); });
 
         const actions = row.createDiv();
-        Object.assign(actions.style, { display: 'flex', gap: '6px', marginLeft: 'auto' });
+        actions.addClass('sch-static-style-17');
         uiButton(actions, { text: zh ? '从对话捕获' : 'From chat', iconName: 'sparkle', variant: 'soft', onClick: () => this.openCapture() });
         uiButton(actions, { text: zh ? '新建想法' : 'New idea', iconName: 'plus', variant: 'primary', onClick: () => this.openCapture('', 'manual') });
     }
@@ -370,9 +365,9 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         const section = (title: string, items: Idea[]) => {
             if (items.length === 0) return;
             const head = host.createDiv({ text: title });
-            Object.assign(head.style, { fontSize: '10.5px', fontWeight: '700', letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--sch-mute)', margin: '6px 2px 8px' });
+            head.addClass('sch-static-style-18');
             const grid = host.createDiv();
-            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px', marginBottom: '14px' });
+            grid.addClass('sch-static-style-19');
             for (const idea of items) this.renderCard(grid, idea);
         };
         section(zh ? '置顶' : 'Pinned', pinned);
@@ -383,33 +378,33 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         const active = this.selected?.id === idea.id;
         const sourceAccent = SOURCE_ACCENT[idea.source];
         const c = uiCard(grid, { cls: `idea-card idea-source-${idea.source}${active ? ' is-selected' : ''}`, onClick: () => { if (this.selected?.id === idea.id) { this.selected = null; } else { this.selected = idea; this.editing = false; } this.rerender(); }, style: { borderLeft: `3px solid ${sourceAccent}`, position: 'relative' } });
-        if (active) c.style.boxShadow = `0 0 0 1px ${sourceAccent}`;
+        if (active) c.setCssStyles({ boxShadow: `0 0 0 1px ${sourceAccent}` });
         const titleRow = c.createDiv();
-        Object.assign(titleRow.style, { display: 'flex', alignItems: 'flex-start', gap: '6px', justifyContent: 'space-between' });
+        titleRow.addClass('sch-static-style-20');
         const ttl = titleRow.createDiv({ text: idea.title });
-        Object.assign(ttl.style, { fontFamily: 'var(--sch-font-serif)', fontSize: '15px', fontWeight: '500', color: 'var(--sch-ink)', lineHeight: '1.3' });
-        if (idea.pinned) { const p = iconSvg('pin', { size: 13 }); p.setCssProps({ "color": 'var(--sch-iris)' }); p.setCssProps({ "flex-shrink": '0' }); titleRow.appendChild(p); }
+        ttl.addClass('sch-static-style-21');
+        if (idea.pinned) { const p = iconSvg('pin', { size: 13 }); p.addClass('sch-static-style-22'); p.addClass('sch-static-style-11'); titleRow.appendChild(p); }
         const ex = c.createDiv({ text: idea.excerpt });
-        Object.assign(ex.style, { marginTop: '6px', fontSize: '12.5px', color: 'var(--sch-ink2)', lineHeight: '1.5', overflow: 'hidden' });
-        ex.setCssProps({ "display": '-webkit-box' });
-        ex.setCssProps({ "-webkit-line-clamp": '3' });
-        ex.setCssProps({ "-webkit-box-orient": 'vertical' });
+        ex.addClass('sch-static-style-23');
+        ex.addClass('sch-static-style-24');
+        ex.addClass('sch-static-style-25');
+        ex.addClass('sch-static-style-26');
         if (idea.tags.length) {
             const tagRow = c.createDiv();
-            Object.assign(tagRow.style, { display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '8px' });
+            tagRow.addClass('sch-static-style-27');
             idea.tags.slice(0, 4).forEach((tg, index) => pill(tagRow, tg, this.tagTone(tg, index)));
         }
         // source ribbon at bottom
         const foot = c.createDiv();
-        Object.assign(foot.style, { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--sch-line-soft)' });
+        foot.addClass('sch-static-style-28');
         const sm = SOURCE_META[idea.source];
         const meta = foot.createDiv();
-        Object.assign(meta.style, { display: 'flex', gap: '5px', flexWrap: 'wrap' });
+        meta.addClass('sch-static-style-29');
         pill(meta, sm[this.lang], sm.tone);
         const status = STATUS_META[idea.status];
         pill(meta, status[this.lang], status.tone);
         const dt = foot.createSpan({ text: idea.date });
-        Object.assign(dt.style, { fontFamily: 'var(--sch-font-mono)', fontSize: '10.5px', color: 'var(--sch-mute)' });
+        dt.addClass('sch-static-style-30');
     }
 
     private tagTone(tag: string, offset = 0): PillTone {
@@ -441,35 +436,35 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
 
         // refined insight — rendered markdown preview, iris-bordered
         const quote = c.createDiv();
-        Object.assign(quote.style, { borderLeft: '3px solid var(--sch-iris)', background: 'var(--sch-iris-bg)', padding: '10px 14px', borderRadius: '8px', margin: '10px 0' });
+        quote.addClass('sch-static-style-31');
         const quoteBody = quote.createDiv({ cls: 'markdown-rendered' });
-        Object.assign(quoteBody.style, { fontSize: '14px', lineHeight: '1.6' });
+        quoteBody.addClass('sch-static-style-32');
         this.renderMd(quoteBody, idea.excerpt);
 
         if (idea.tags.length) {
             const tagRow = c.createDiv();
-            Object.assign(tagRow.style, { display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '10px' });
+            tagRow.addClass('sch-static-style-33');
             idea.tags.forEach((tg, index) => pill(tagRow, tg, this.tagTone(tg, index)));
         }
 
         // connections
         if (idea.relatedExp.length || idea.relatedNotes.length || idea.relatedChapter) {
             const conn = c.createDiv();
-            conn.setCssProps({ "margin-bottom": '10px' });
+            conn.addClass('sch-static-style-34');
             const lbl = conn.createDiv({ text: zh ? '关联' : 'Connections' });
-            Object.assign(lbl.style, { fontSize: '10.5px', fontWeight: '700', letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--sch-mute)', marginBottom: '6px' });
+            lbl.addClass('sch-static-style-35');
             for (const ex of idea.relatedExp) {
                 const link = conn.createDiv();
-                Object.assign(link.style, { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: 'var(--sch-accent-ink)', padding: '3px 0' });
-                const ic = iconSvg('link', { size: 13 }); ic.setCssProps({ "color": 'var(--sch-accent-ink)' });
+                link.addClass('sch-static-style-36');
+                const ic = iconSvg('link', { size: 13 }); ic.addClass('sch-static-style-37');
                 link.appendChild(ic);
                 const ref = this.experimentIndex.find(e => e.id === ex);
                 link.appendChild(document.createTextNode(ref ? `${ex} · ${ref.title}` : ex));
             }
             for (const note of idea.relatedNotes) {
                 const link = conn.createDiv();
-                Object.assign(link.style, { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: 'var(--sch-accent-ink)', padding: '3px 0', cursor: 'pointer' });
-                const ic = iconSvg('notebook', { size: 13 }); ic.setCssProps({ "color": 'var(--sch-accent-ink)' });
+                link.addClass('sch-static-style-38');
+                const ic = iconSvg('notebook', { size: 13 }); ic.addClass('sch-static-style-37');
                 link.appendChild(ic);
                 link.appendChild(document.createTextNode(note));
                 link.addEventListener('click', async () => {
@@ -479,24 +474,24 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
             }
             if (idea.relatedChapter) {
                 const ch = conn.createDiv({ text: `📖 ${idea.relatedChapter}` });
-                Object.assign(ch.style, { fontSize: '12.5px', color: 'var(--sch-ink2)', padding: '3px 0' });
+                ch.addClass('sch-static-style-39');
             }
         }
 
         // raw source — rendered preview, collapsible
         if (idea.raw) {
             const det = c.createEl('details');
-            det.setCssProps({ "margin": '4px 0 12px' });
+            det.addClass('sch-static-style-40');
             const sum = det.createEl('summary', { text: zh ? '原始来源' : 'Raw source' });
-            Object.assign(sum.style, { fontSize: '12px', color: 'var(--sch-mute)', cursor: 'pointer', fontWeight: '600' });
+            sum.addClass('sch-static-style-41');
             const rawBody = det.createDiv({ cls: 'markdown-rendered' });
-            Object.assign(rawBody.style, { marginTop: '8px', fontSize: '12.5px', lineHeight: '1.55', background: 'var(--sch-surface2)', padding: '10px 12px', borderRadius: '8px' });
+            rawBody.addClass('sch-static-style-42');
             this.renderMd(rawBody, idea.raw);
         }
 
         // actions
         const acts = c.createDiv();
-        Object.assign(acts.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' });
+        acts.addClass('sch-static-style-43');
         uiButton(acts, { text: zh ? '编辑' : 'Edit', iconName: 'bolt', variant: 'soft', onClick: () => {
             this.editDraft = { title: idea.title, excerpt: idea.excerpt, tags: idea.tags.join(', '), status: idea.status, relatedChapter: idea.relatedChapter || '' };
             this.editing = true; this.rerender();
@@ -512,9 +507,9 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         uiButton(hr, { iconName: 'close', variant: 'ghost', size: 'sm', title: zh ? '取消' : 'Cancel', onClick: () => { this.editing = false; this.rerender(); } });
 
         const field = (label: string): HTMLElement => {
-            const w = c.createDiv(); w.setCssProps({ "margin-bottom": '10px' });
+            const w = c.createDiv(); w.addClass('sch-static-style-34');
             const l = w.createDiv({ text: label });
-            Object.assign(l.style, { fontSize: '11.5px', fontWeight: '600', color: 'var(--sch-mute)', marginBottom: '4px' });
+            l.addClass('sch-static-style-44');
             return w;
         };
 
@@ -523,7 +518,7 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
 
         const ew = field(zh ? '精炼洞见（支持 Markdown）' : 'Insight (Markdown)');
         const exTa = ew.createEl('textarea');
-        Object.assign(exTa.style, { width: '100%', minHeight: '120px', padding: '10px', borderRadius: '10px', border: '1px solid var(--sch-line)', background: 'var(--sch-surface)', color: 'var(--sch-ink)', fontSize: '13px', fontFamily: 'inherit', lineHeight: '1.55', resize: 'vertical' });
+        exTa.addClass('sch-static-style-45');
         exTa.value = this.editDraft.excerpt;
         exTa.addEventListener('input', () => { this.editDraft.excerpt = exTa.value; });
 
@@ -537,7 +532,7 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         chIn.addEventListener('input', () => { this.editDraft.relatedChapter = chIn.value; });
 
         const acts = c.createDiv();
-        Object.assign(acts.style, { display: 'flex', gap: '6px', marginTop: '6px' });
+        acts.addClass('sch-static-style-46');
         uiButton(acts, { text: zh ? '保存' : 'Save', iconName: 'check', variant: 'primary', onClick: async () => {
             idea.title = this.editDraft.title.trim() || idea.title;
             idea.excerpt = this.editDraft.excerpt.trim();
@@ -583,16 +578,8 @@ class ChatCaptureDialog extends Modal {
 
     onOpen(): void {
         this.modalEl.addClass('scholarium-dashboard'); // bring --sch-* vars into modal scope
-        Object.assign(this.modalEl.style, {
-            width: 'min(720px, calc(100vw - 56px))',
-            maxWidth: 'calc(100vw - 56px)',
-        });
-        Object.assign(this.contentEl.style, {
-            width: '100%',
-            maxHeight: 'min(78vh, 780px)',
-            overflowY: 'auto',
-            paddingRight: 'clamp(12px, 2vw, 22px)',
-        });
+        this.modalEl.addClass('sch-static-style-47');
+        this.contentEl.addClass('sch-static-style-48');
         this.renderStep();
     }
     onClose(): void { this.contentEl.empty(); }
@@ -605,29 +592,29 @@ class ChatCaptureDialog extends Modal {
             sectionHeader(c, { eyebrow: zh ? '捕获' : 'Capture', title: zh ? '粘贴对话或文献片段' : 'Paste a chat or paper snippet', level: 2 });
             this.renderSourcePicker(c);
             const ta = c.createEl('textarea');
-            Object.assign(ta.style, { width: '100%', minHeight: '180px', marginTop: '10px', padding: '10px', borderRadius: '10px', border: '1px solid var(--sch-line)', background: 'var(--sch-surface)', color: 'var(--sch-ink)', fontSize: '13px', fontFamily: 'inherit', lineHeight: '1.55', resize: 'vertical' });
+            ta.addClass('sch-static-style-49');
             ta.value = this.rawText;
             ta.placeholder = zh ? '把你和 AI 的对话、或论文里打动你的段落粘到这里…' : 'Paste the chat or the paragraph that struck you…';
             ta.addEventListener('input', () => { this.rawText = ta.value; });
             ta.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void this.runExtract(); } });
 
             const sampleRow = c.createDiv();
-            Object.assign(sampleRow.style, { marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' });
+            sampleRow.addClass('sch-static-style-50');
             const sample = sampleRow.createEl('a', { text: zh ? '试试示例' : 'Try a sample' });
-            Object.assign(sample.style, { fontSize: '12px', color: 'var(--sch-accent-ink)', cursor: 'pointer' });
+            sample.addClass('sch-static-style-51');
             sample.addEventListener('click', () => { ta.value = this.sampleText(); this.rawText = ta.value; });
 
             const btnRow = c.createDiv();
-            Object.assign(btnRow.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '14px' });
+            btnRow.addClass('sch-static-style-52');
             uiButton(btnRow, { text: zh ? '取消' : 'Cancel', variant: 'ghost', onClick: () => this.close() });
             uiButton(btnRow, { text: zh ? '整理文本  ⌘↵' : 'Clean up text  ⌘↵', iconName: 'sparkle', variant: 'primary', onClick: () => void this.runExtract() });
         } else if (this.step === 'extracting') {
             const wrap = c.createDiv();
-            Object.assign(wrap.style, { padding: '48px 0', textAlign: 'center' });
+            wrap.addClass('sch-static-style-53');
             const sp = wrap.createDiv();
-            Object.assign(sp.style, { width: '34px', height: '34px', margin: '0 auto 16px', border: '3px solid var(--sch-line)', borderTopColor: 'var(--sch-accent)', borderRadius: '50%', animation: 'sch-spin 1s linear infinite' });
-            wrap.createDiv({ text: zh ? '正在整理成自然的研究笔记…' : 'Cleaning this into a natural research note…' }).setCssProps({ "color": 'var(--sch-ink2)' });
-            wrap.createDiv({ text: zh ? '原文会按 Markdown 原样保存，不会被改写' : 'The original markdown will be saved verbatim' }).setCssProps({ "color": "var(--sch-mute)", "font-size": "12px", "margin-top": "6px" });
+            sp.addClass('sch-static-style-54');
+            wrap.createDiv({ text: zh ? '正在整理成自然的研究笔记…' : 'Cleaning this into a natural research note…' }).addClass('sch-static-style-55');
+            wrap.createDiv({ text: zh ? '原文会按 Markdown 原样保存，不会被改写' : 'The original markdown will be saved verbatim' }).addClass('sch-static-style-56');
         } else {
             this.renderReview();
         }
@@ -639,9 +626,9 @@ class ChatCaptureDialog extends Modal {
         sectionHeader(c, { eyebrow: zh ? '复核' : 'Review', title: zh ? '确认这条想法' : 'Confirm this idea', level: 2 });
 
         const field = (label: string) => {
-            const w = c.createDiv(); w.setCssProps({ "margin-bottom": '10px' });
+            const w = c.createDiv(); w.addClass('sch-static-style-34');
             const l = w.createDiv({ text: label });
-            Object.assign(l.style, { fontSize: '11.5px', fontWeight: '600', color: 'var(--sch-mute)', marginBottom: '4px' });
+            l.addClass('sch-static-style-44');
             return w;
         };
         const tw = field(zh ? '标题' : 'Title');
@@ -650,7 +637,7 @@ class ChatCaptureDialog extends Modal {
 
         const ew = field(zh ? '整理文稿' : 'Cleaned note');
         const exTa = ew.createEl('textarea');
-        Object.assign(exTa.style, { width: '100%', minHeight: '120px', padding: '10px', borderRadius: '10px', border: '1px solid var(--sch-line)', background: 'var(--sch-surface)', color: 'var(--sch-ink)', fontSize: '13px', fontFamily: 'inherit', lineHeight: '1.6', resize: 'vertical' });
+        exTa.addClass('sch-static-style-57');
         exTa.value = this.draft.excerpt;
         exTa.addEventListener('input', () => { this.draft.excerpt = exTa.value; });
 
@@ -665,14 +652,14 @@ class ChatCaptureDialog extends Modal {
         if (this.lib.experimentIndex.length) {
             const cw = field(zh ? '关联实验（AI 建议已勾选）' : 'Linked experiments (AI-suggested checked)');
             const box = cw.createDiv();
-            Object.assign(box.style, { maxHeight: '120px', overflow: 'auto', border: '1px solid var(--sch-line-soft)', borderRadius: '8px', padding: '6px' });
+            box.addClass('sch-static-style-58');
             if (!this.draft.relatedExp.length) {
                 const noSuggestion = box.createDiv({ text: zh ? 'AI 无建议，可手动勾选。' : 'AI has no suggestion. Select manually if needed.' });
-                Object.assign(noSuggestion.style, { padding: '4px 4px 7px', fontSize: '12px', color: 'var(--sch-mute)' });
+                noSuggestion.addClass('sch-static-style-59');
             }
             for (const ex of this.lib.experimentIndex.slice(0, 30)) {
                 const row = box.createDiv();
-                Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '8px', padding: '3px 4px', fontSize: '12.5px', color: 'var(--sch-ink2)' });
+                row.addClass('sch-static-style-60');
                 const cb = row.createEl('input', { type: 'checkbox' }) as HTMLInputElement;
                 cb.checked = this.draft.relatedExp.includes(ex.id);
                 cb.addEventListener('change', () => {
@@ -692,10 +679,10 @@ class ChatCaptureDialog extends Modal {
             this.draft.relatedNotes = this.parseCsv(noteIn.value);
         });
         const noteHint = nw.createDiv({ text: zh ? 'AI 会优先从最近的 Markdown 笔记中选择；你也可以自己补充。' : 'AI suggests from recent markdown notes; you can add more.' });
-        Object.assign(noteHint.style, { marginTop: '4px', fontSize: '11.5px', color: 'var(--sch-mute)' });
+        noteHint.addClass('sch-static-style-61');
 
         const btnRow = c.createDiv();
-        Object.assign(btnRow.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '14px' });
+        btnRow.addClass('sch-static-style-52');
         uiButton(btnRow, { text: zh ? '返回' : 'Back', variant: 'ghost', onClick: () => { this.step = 'paste'; this.renderStep(); } });
         uiButton(btnRow, { text: zh ? '保存 · 建立想法  ⌘↵' : 'Save · create idea  ⌘↵', iconName: 'check', variant: 'primary', onClick: () => void this.save() });
 
@@ -705,7 +692,7 @@ class ChatCaptureDialog extends Modal {
     private renderSourcePicker(parent: HTMLElement): void {
         const zh = this.lang === 'zh';
         const wrap = parent.createDiv();
-        Object.assign(wrap.style, { display: 'inline-flex', gap: '3px', padding: '4px', borderRadius: '999px', background: 'var(--sch-surface2)', border: '1px solid var(--sch-line-soft)' });
+        wrap.addClass('sch-static-style-62');
         const options: Array<{ value: IdeaSource; label: string }> = [
             { value: 'claude', label: 'Claude' },
             { value: 'gpt', label: 'GPT' },
@@ -715,7 +702,7 @@ class ChatCaptureDialog extends Modal {
         for (const opt of options) {
             const active = this.source === opt.value;
             const btn = wrap.createEl('button', { text: opt.label });
-            Object.assign(btn.style, {
+            btn.setCssStyles({
                 height: '28px',
                 padding: '0 14px',
                 border: '0',
@@ -736,12 +723,12 @@ class ChatCaptureDialog extends Modal {
     private renderStatusPicker(parent: HTMLElement): void {
         const options: IdeaStatus[] = ['draft', 'refined', 'integrated'];
         const wrap = parent.createDiv();
-        Object.assign(wrap.style, { display: 'inline-flex', gap: '3px', padding: '4px', borderRadius: '999px', background: 'var(--sch-surface2)', border: '1px solid var(--sch-line-soft)' });
+        wrap.addClass('sch-static-style-62');
         for (const value of options) {
             const meta = STATUS_META[value];
             const active = this.draft.status === value;
             const btn = wrap.createEl('button', { text: meta[this.lang] });
-            Object.assign(btn.style, {
+            btn.setCssStyles({
                 height: '28px',
                 padding: '0 14px',
                 border: '0',

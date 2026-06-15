@@ -142,7 +142,7 @@ export class RssFeedBoard {
         if (selected) {
             const resizer = body.createDiv({ cls: 'rss-reader-resizer', attr: { title: '拖动调整宽度' } });
             const reader = body.createDiv({ cls: 'rss-reader-pane' });
-            reader.style.width = (this.data.readerWidth || 460) + 'px';
+            reader.setCssStyles({ width: (this.data.readerWidth || 460) + 'px' });
             this.attachReaderResizer(body, resizer, reader);
             this.renderReaderPane(reader, selected);
         }
@@ -242,7 +242,7 @@ export class RssFeedBoard {
             b.onclick = () => { this.filter = key; this.rerender(); };
         }
         const spacer = bar.createDiv({ cls: 'rss-filter-spacer' });
-        spacer.setCssProps({ "flex": '1' });
+        spacer.addClass('sch-static-style-161');
         const visible = this.getVisibleArticles();
         if (visible.some(a => !a.read)) {
             const mark = bar.createEl('button', { cls: 'rss-filter', text: '全部标为已读' });
@@ -323,7 +323,7 @@ export class RssFeedBoard {
             body.addClass('is-resizing');
             const onMove = (ev: MouseEvent) => {
                 const next = Math.min(Math.max(startW + (startX - ev.clientX), 320), 980);
-                pane.style.width = next + 'px';
+                pane.setCssStyles({ width: next + 'px' });
             };
             const onUp = () => {
                 document.removeEventListener('mousemove', onMove);
