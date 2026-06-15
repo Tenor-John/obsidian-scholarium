@@ -54,20 +54,9 @@ const mainContext = await esbuild.context({
 	outfile: "main.js",
 });
 
-const ketcherContext = await esbuild.context({
-	...common,
-	entryPoints: ["src/chem/ketcher-runtime.ts"],
-	external: [],
-	format: "iife",
-	globalName: "ScholariumKetcherRuntime",
-	outfile: "ketcher-runtime.js",
-});
-
 if (prod) {
 	await mainContext.rebuild();
-	await ketcherContext.rebuild();
 	process.exit(0);
 } else {
 	await mainContext.watch();
-	await ketcherContext.watch();
 }

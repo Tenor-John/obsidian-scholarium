@@ -1,3 +1,4 @@
+/* eslint-disable obsidianmd/no-static-styles-assignment -- Canvas dimensions and user-selected colors are calculated at runtime. */
 import { ItemView, WorkspaceLeaf, TFile, Notice, MarkdownRenderer, getFrontMatterInfo, parseYaml } from 'obsidian';
 import ChemELNPlugin from './main';
 import { WORKSPACE_ROLE_LABELS, WORKSPACE_ROLE_ICONS } from './settings';
@@ -14,6 +15,7 @@ import { IdeaLibrary } from './idea-library';
 import { RssFeedBoard } from './rss-feed-board';
 import { openInsertChemModalForFile } from './chem/chem-markdown';
 import { parseChemBlock, CHEM_CODE_BLOCK } from './chem/chem-block';
+import { namespaceSvgIds } from './chem/svg-ids';
 
 // 本地打包 smiles-drawer（兼容 esbuild 的 ESM→CJS 转换）
 // sync-touch: chem block dashboard preview
@@ -32,6 +34,24 @@ export function padSvgViewBox(svg: SVGSVGElement, ratio = 0.06, min = 1.5): void
     const pad = Math.max(Math.max(w, h) * ratio, min);
     svg.setAttribute('viewBox', `${x - pad} ${y - pad} ${w + pad * 2} ${h + pad * 2}`);
 }
+
+function normalizeReactionPreviewSmiles(smiles: string, isReaction: boolean): string {
+    if (!isReaction || !smiles.includes('>>')) return smiles;
+    return smiles
+        .split('>>')
+        .map((side) => side
+            .split('.')
+            .map((fragment) => HYDROGEN_HALIDE_PREVIEW[fragment.trim()] ?? fragment)
+            .join('.'))
+        .join('>>');
+}
+
+const HYDROGEN_HALIDE_PREVIEW: Record<string, string> = {
+    F: '[H]F',
+    Cl: '[H]Cl',
+    Br: '[H]Br',
+    I: '[H]I',
+};
 
 export const DASHBOARD_VIEW_TYPE = 'scholarium-dashboard';
 
@@ -565,8 +585,7 @@ export class DashboardView extends ItemView {
             if (content.length < 2) continue;
             const sec = body.createDiv({ cls: 'exp-note-card-section' });
             sec.createEl('h4', { text: heading });
-            const div = sec.createDiv({ cls: 'exp-note-card-text' });
-            div.innerHTML = this.formatPlainMarkdown(content);
+            sec.createDiv({ cls: 'exp-note-card-text', text: content });
         }
 
         const footer = card.createDiv({ cls: 'exp-note-card-footer' });
@@ -678,16 +697,13 @@ export class DashboardView extends ItemView {
     confirmDeleteExperiment(exp: ExperimentNote) {
         const modal = document.createElement('div');
         modal.className = 'exp-del-modal-overlay';
-        modal.innerHTML = `
-            <div class="exp-del-modal">
-                <div class="exp-del-modal-icon">🗑️</div>
-                <div class="exp-del-modal-title">确认删除</div>
-                <div class="exp-del-modal-body">将把 <strong>${exp.title}</strong> 移入系统回收站，此操作可通过回收站恢复。</div>
-                <div class="exp-del-modal-btns">
-                    <button class="exp-del-cancel">取消</button>
-                    <button class="exp-del-confirm">删除</button>
-                </div>
-            </div>`;
+        const dialog = modal.createDiv({ cls: 'exp-del-modal' });
+        dialog.createDiv({ cls: 'exp-del-modal-icon', text: 'Delete' });
+        dialog.createDiv({ cls: 'exp-del-modal-title', text: 'Confirm deletion' });
+        dialog.createDiv({ cls: 'exp-del-modal-body', text: `Move ${exp.title} to the system trash? You can restore it from the trash.` });
+        const buttons = dialog.createDiv({ cls: 'exp-del-modal-btns' });
+        buttons.createEl('button', { cls: 'exp-del-cancel', text: 'Cancel' });
+        buttons.createEl('button', { cls: 'exp-del-confirm', text: 'Delete' });
         document.body.appendChild(modal);
 
         const close = () => document.body.removeChild(modal);
@@ -1072,7 +1088,7 @@ export class DashboardView extends ItemView {
         // 关闭按钮
         const closeBtn = document.createElement('button');
         closeBtn.className = 'img-lightbox-close';
-        closeBtn.innerHTML = '✕';
+        closeBtn.setText('Close');
         closeBtn.onclick = close;
         inner.appendChild(closeBtn);
 
@@ -1095,12 +1111,12 @@ export class DashboardView extends ItemView {
         // 左/右箭头（多图时显示）
         const prevBtn = document.createElement('button');
         prevBtn.className = 'img-lightbox-nav img-lightbox-prev';
-        prevBtn.innerHTML = '‹';
+        prevBtn.setText('Previous');
         prevBtn.onclick = (e) => { e.stopPropagation(); navigate(-1); };
 
         const nextBtn = document.createElement('button');
         nextBtn.className = 'img-lightbox-nav img-lightbox-next';
-        nextBtn.innerHTML = '›';
+        nextBtn.setText('Next');
         nextBtn.onclick = (e) => { e.stopPropagation(); navigate(1); };
 
         if (images.length > 1) {
@@ -1191,6 +1207,7 @@ export class DashboardView extends ItemView {
         const SmiDrawer = lib.SmiDrawer as (new (mol: object, rxn: object) => {
             draw(s: string, t: SVGElement | string, theme: string, ok: ((x: unknown) => void) | null, err: ((e: unknown) => void) | null, w?: unknown): void;
         }) | undefined;
+        const drawableSmiles = normalizeReactionPreviewSmiles(smiles, isReaction);
         if (typeof SmiDrawer === 'function') {
             const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg') as SVGSVGElement;
             svgEl.addClass('smiles-svg');
@@ -1198,7 +1215,8 @@ export class DashboardView extends ItemView {
             setTimeout(() => {
                 try {
                     const sd = new SmiDrawer({}, {});
-                    sd.draw(smiles, svgEl, 'light', () => {
+                    sd.draw(drawableSmiles, svgEl, 'light', () => {
+                        namespaceSvgIds(svgEl);
                         // 让 viewBox 驱动缩放：移除内联固定宽高，避免结构被裁切
                         svgEl.style.removeProperty('width');
                         svgEl.style.removeProperty('height');
@@ -1206,20 +1224,22 @@ export class DashboardView extends ItemView {
                         svgEl.removeAttribute('height');
                         svgEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
                         padSvgViewBox(svgEl);
+                        svgEl.style.overflow = 'visible';
+                        svgEl.setAttribute('overflow', 'visible');
                     }, (err) => {
                         console.warn('[Scholarium] SmiDrawer failed, fallback to canvas:', err);
                         svgEl.remove();
-                        this.drawSmilesCanvasFallback(container, smiles, isReaction);
+                        this.drawSmilesCanvasFallback(container, drawableSmiles, isReaction);
                     });
                 } catch (e) {
                     console.warn('[Scholarium] SmiDrawer threw, fallback to canvas:', e);
                     svgEl.remove();
-                    this.drawSmilesCanvasFallback(container, smiles, isReaction);
+                    this.drawSmilesCanvasFallback(container, drawableSmiles, isReaction);
                 }
             }, 60);
             return;
         }
-        this.drawSmilesCanvasFallback(container, smiles, isReaction);
+        this.drawSmilesCanvasFallback(container, drawableSmiles, isReaction);
     }
 
     private drawSmilesCanvasFallback(container: HTMLElement, smiles: string, isReaction: boolean) {
@@ -1367,11 +1387,7 @@ export class DashboardView extends ItemView {
         if (steps && !steps.match(/^1\.\s*步骤/) && steps.length > 4) {
             const sec = panel.createDiv({ cls: 'detail-section' });
             sec.createEl('h4', { text: '📝 实验步骤', cls: 'section-title' });
-            const div = sec.createDiv({ cls: 'steps-content' });
-            div.innerHTML = steps
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                .replace(/^(\d+\.\s+)/gm, '<span class="step-num">$1</span>')
-                .replace(/\n/g, '<br>');
+            sec.createDiv({ cls: 'steps-content', text: steps });
         }
         if (notes && notes !== '（暂无）' && notes.length > 2) {
             const sec = panel.createDiv({ cls: 'detail-section' });

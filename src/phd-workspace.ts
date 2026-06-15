@@ -1,3 +1,4 @@
+/* eslint-disable obsidianmd/no-static-styles-assignment -- Charts and progress indicators use values calculated from workspace data. */
 import { App, Notice, Modal } from 'obsidian';
 import ChemELNPlugin from './main';
 import { t } from './i18n';

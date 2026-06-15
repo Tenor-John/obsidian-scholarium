@@ -107,6 +107,7 @@ The production build writes `main.js` to the plugin root.
 - Material library files are stored in your vault.
 - AI API keys and sync credentials are stored in the plugin data file inside your vault.
 - AI requests are sent directly from your device to the provider you configure.
+- Optional network features connect directly to the services you enable, including AI providers, MinerU, WebDAV or S3-compatible storage, Crossref, Open-Meteo, ipapi, and user-configured RSS feeds and websites.
 - Scholarium does not include hidden telemetry.
 
 ## Requirements

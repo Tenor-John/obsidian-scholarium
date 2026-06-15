@@ -3,6 +3,7 @@
 // file under <experimentsFolder>/_ideas/IDEA-<n>.md (front-matter + a cleaned
 // note + the original markdown source preserved verbatim).
 
+/* eslint-disable obsidianmd/no-static-styles-assignment -- Idea cards use runtime-computed colors and dimensions from user data. */
 import { App, Modal, Notice, TFile, TFolder, normalizePath, Component, MarkdownRenderer } from 'obsidian';
 import ChemELNPlugin from './main';
 import { PROVIDER_CONFIG } from './settings';
@@ -58,12 +59,8 @@ const REFINED_END = '<!-- scholarium:refined:end -->';
 const RAW_START = '<!-- scholarium:raw:start -->';
 const RAW_END = '<!-- scholarium:raw:end -->';
 
-function ensureSpinKeyframes(): void {
-    if (document.getElementById('sch-spin-kf')) return;
-    const st = document.createElement('style');
-    st.id = 'sch-spin-kf';
-    st.textContent = '@keyframes sch-spin { to { transform: rotate(360deg); } }';
-    document.head.appendChild(st);
+function splitSentences(text: string): string[] {
+    return text.match(/[^。.!?！？]+[。.!?！？]?/g)?.map((sentence) => sentence.trim()).filter(Boolean) ?? [];
 }
 
 export class IdeaLibrary {
@@ -626,7 +623,6 @@ class ChatCaptureDialog extends Modal {
             uiButton(btnRow, { text: zh ? '取消' : 'Cancel', variant: 'ghost', onClick: () => this.close() });
             uiButton(btnRow, { text: zh ? '整理文本  ⌘↵' : 'Clean up text  ⌘↵', iconName: 'sparkle', variant: 'primary', onClick: () => void this.runExtract() });
         } else if (this.step === 'extracting') {
-            ensureSpinKeyframes();
             const wrap = c.createDiv();
             Object.assign(wrap.style, { padding: '48px 0', textAlign: 'center' });
             const sp = wrap.createDiv();
@@ -789,7 +785,7 @@ class ChatCaptureDialog extends Modal {
     private fallbackExtract(): void {
         const text = this.rawText.trim();
         this.draft.title = (text.split('\n').find(l => l.trim())?.slice(0, 40)) || (this.lang === 'zh' ? '新想法' : 'New idea');
-        const sentences = text.split(/(?<=[。.!?！？])\s*/).filter(Boolean).slice(0, 2).join(' ');
+        const sentences = splitSentences(text).slice(0, 2).join(' ');
         this.draft.excerpt = this.deAiText(sentences || text.slice(0, 280));
         this.draft.excerpt = this.buildCleanNote('', text);
         this.draft.title = this.titleFromContent(text, this.draft.excerpt, '');
@@ -840,7 +836,7 @@ class ChatCaptureDialog extends Modal {
     private removeAssistantPreamble(text: string): string {
         let value = text.trim();
         value = value.replace(/^\s*(可以|好的|当然|没问题|行|好)[，,。.!！\s]*/i, '');
-        const sentences = value.split(/(?<=[。.!！？?])\s*/);
+        const sentences = splitSentences(value);
         if (sentences.length > 1 && this.isMetaReply(sentences[0] || '')) {
             value = sentences.slice(1).join(' ').trim();
         }
@@ -856,7 +852,7 @@ class ChatCaptureDialog extends Modal {
         const lines = this.extractSubstantiveLines(this.removeAssistantPreamble(sourceText));
         if (lines.length) return lines.join('\n');
         const cleaned = this.removeAssistantPreamble(sourceText);
-        return cleaned.split(/(?<=[。.!！？?])\s*/).filter(s => s.trim() && !this.isMetaReply(s)).slice(0, 6).join(' ').trim();
+        return splitSentences(cleaned).filter(s => !this.isMetaReply(s)).slice(0, 6).join(' ').trim();
     }
 
     private extractSubstantiveLines(text: string): string[] {

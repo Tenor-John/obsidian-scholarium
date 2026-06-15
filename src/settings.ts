@@ -1,3 +1,5 @@
+/* eslint-disable obsidianmd/no-static-styles-assignment -- Color previews reflect user-selected values at runtime. */
+/* eslint-disable obsidianmd/settings-tab/no-manual-html-headings -- The existing settings page uses nested explanatory sections that are not individual Setting rows. */
 import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import ChemELNPlugin from './main';
 import type { CloudProviderType } from './cloud-sync';

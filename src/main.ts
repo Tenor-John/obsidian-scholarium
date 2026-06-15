@@ -5,9 +5,10 @@ import type { ChemELNSettings } from './settings';
 import type { ExperimentContext } from './ai-assistant-modal';
 import { CloudSyncManager, buildSyncConfig } from './cloud-sync';
 import { AIChatModal } from './ai-chat-modal';
-import { SCHOLARIUM_ACCENTS, accentVarsFromHex, scholariumThemeCss } from './theme/tokens';
+import { SCHOLARIUM_ACCENTS, SCHOLARIUM_DENSITY, SCHOLARIUM_SEMANTIC, SCHOLARIUM_THEMES, accentVarsFromHex } from './theme/tokens';
 import type { AccentKey, ThemeKey } from './theme/tokens';
-import { openInsertChemModal, registerChemMarkdown } from './chem/chem-markdown';
+import { registerChemMarkdown } from './chem/chem-markdown';
+import { registerChemInsertionControls } from './chem/chem-controls';
 
 export default class ChemELNPlugin extends Plugin {
     settings: ChemELNSettings;
@@ -28,60 +29,6 @@ export default class ChemELNPlugin extends Plugin {
     }
 
     injectThemeVars(): void {
-        const existing = document.getElementById('scholarium-theme-vars');
-        if (existing) existing.remove();
-
-        const { themeAccent, themeGradient, themeAlpha } = this.settings;
-        const fontScaleMap: Record<string, number> = {
-            small: 0.92,
-            medium: 1,
-            large: 1.12,
-            xlarge: 1.24,
-        };
-        const fontScale = fontScaleMap[this.settings.fontSize] ?? 1;
-
-        const hexRgb = (hex: string): string => {
-            const c = hex.replace('#', '');
-            const r = parseInt(c.slice(0, 2), 16);
-            const g = parseInt(c.slice(2, 4), 16);
-            const b = parseInt(c.slice(4, 6), 16);
-            return `${r}, ${g}, ${b}`;
-        };
-
-        const hexComp = (hex: string) => ({
-            r: parseInt(hex.slice(1, 3), 16),
-            g: parseInt(hex.slice(3, 5), 16),
-            b: parseInt(hex.slice(5, 7), 16),
-        });
-        const toHex = (r: number, g: number, b: number): string =>
-            `#${[r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')}`;
-
-        const ac = hexComp(themeAccent);
-        const light = toHex(ac.r + (255 - ac.r) * 0.22, ac.g + (255 - ac.g) * 0.22, ac.b + (255 - ac.b) * 0.22);
-        const medium = toHex(ac.r * 0.90, ac.g * 0.90, ac.b * 0.90);
-        const deeper = toHex(ac.r * 0.70, ac.g * 0.70, ac.b * 0.70);
-
-        const resolvedTheme = this.resolveTheme();
-        const style = document.createElement('style');
-        style.id = 'scholarium-theme-vars';
-        style.textContent = `
-:root {
-    --celn-accent:            ${themeAccent};
-    --celn-accent-rgb:        ${hexRgb(themeAccent)};
-    --celn-accent-light:      ${light};
-    --celn-accent-light-rgb:  ${hexRgb(light)};
-    --celn-accent-medium:     ${medium};
-    --celn-accent-medium-rgb: ${hexRgb(medium)};
-    --celn-accent-dark:       ${themeGradient};
-    --celn-accent-dark-rgb:   ${hexRgb(themeGradient)};
-    --celn-accent-deeper:     ${deeper};
-    --celn-alpha:             ${themeAlpha};
-    --scholarium-font-scale:  ${fontScale};
-    --scholarium-font-size:   ${14 * fontScale}px;
-    --scholarium-space-scale: ${Math.max(1, fontScale)};
-}
-${scholariumThemeCss(resolvedTheme, this.settings.accent, this.settings.density, this.settings.themeAccent)}`;
-        document.head.appendChild(style);
         document.querySelectorAll<HTMLElement>('.scholarium-root').forEach((root) => this.applyThemeAttributes(root));
     }
 
@@ -91,6 +38,9 @@ ${scholariumThemeCss(resolvedTheme, this.settings.accent, this.settings.density,
         root.dataset.theme = resolvedTheme;
         root.dataset.themeMode = this.settings.theme;
         root.dataset.accent = this.settings.accent;
+        const theme = SCHOLARIUM_THEMES[resolvedTheme];
+        const density = SCHOLARIUM_DENSITY[this.settings.density] ?? SCHOLARIUM_DENSITY.regular;
+        const fontScale = { small: 0.92, medium: 1, large: 1.12, xlarge: 1.24 }[this.settings.fontSize] ?? 1;
         const customAccent = accentVarsFromHex(this.settings.themeAccent, resolvedTheme);
         const accent = this.settings.accent === 'custom'
             ? {
@@ -99,11 +49,38 @@ ${scholariumThemeCss(resolvedTheme, this.settings.accent, this.settings.density,
                 deep: this.settings.themeGradient,
             }
             : SCHOLARIUM_ACCENTS[this.settings.accent];
+        const vars: Record<string, string> = {
+            '--bg-base': theme.bg,
+            '--bg-panel': theme.bgDeep,
+            '--bg-surface': theme.surface,
+            '--bg-elevated': theme.surface2,
+            '--text-primary': theme.ink,
+            '--text-secondary': theme.ink2,
+            '--text-muted': theme.mute,
+            '--text-placeholder': theme.muteSoft,
+            '--border': theme.line,
+            '--border-soft': theme.lineSoft,
+            '--sch-pad': `${density.pad}px`,
+            '--sch-gap': `${density.gap}px`,
+            '--sch-radius': `${density.radius}px`,
+            '--sch-radius-inset': `${Math.max(4, density.radius - 4)}px`,
+            '--sch-body': `${density.body}px`,
+            '--sch-h1': `${density.h1}px`,
+            '--scholarium-font-scale': String(fontScale),
+            '--scholarium-font-size': `${14 * fontScale}px`,
+            '--scholarium-space-scale': String(Math.max(1, fontScale)),
+        };
+        for (const [key, value] of Object.entries(vars)) root.style.setProperty(key, value);
         root.style.setProperty('--accent', accent.base);
         root.style.setProperty('--accent-rgb', accent.rgb);
         root.style.setProperty('--accent-dim', accent.soft);
         root.style.setProperty('--accent-deep', accent.deep);
         root.style.setProperty('--accent-text', accent.text);
+        for (const [key, value] of Object.entries(SCHOLARIUM_SEMANTIC)) {
+            root.style.setProperty(`--sch-${key}`, value.base);
+            root.style.setProperty(`--sch-${key}-fg`, value.fg);
+            root.style.setProperty(`--sch-${key}-bg`, value.bg);
+        }
     }
 
     resolveTheme(): ThemeKey {
@@ -135,6 +112,7 @@ ${scholariumThemeCss(resolvedTheme, this.settings.accent, this.settings.density,
             (leaf) => new DashboardView(leaf, this)
         );
         registerChemMarkdown(this);
+        registerChemInsertionControls(this);
 
         this.addRibbonIcon('flask-conical', '打开 Scholarium', () => {
             void this.activateDashboard();
@@ -166,12 +144,6 @@ ${scholariumThemeCss(resolvedTheme, this.settings.accent, this.settings.density,
             callback: () => this.openImageLab(),
         });
 
-        this.addCommand({
-            id: 'insert-chem-structure',
-            name: '插入化学结构',
-            callback: () => openInsertChemModal(this, 'reaction'),
-        });
-
         this.addSettingTab(new ChemELNSettingTab(this.app, this));
         this.initCloudSync();
 
@@ -182,7 +154,6 @@ ${scholariumThemeCss(resolvedTheme, this.settings.accent, this.settings.density,
 
     onunload() {
         this.syncManager?.destroy();
-        document.getElementById('scholarium-theme-vars')?.remove();
     }
 
     private initCloudSync(): void {

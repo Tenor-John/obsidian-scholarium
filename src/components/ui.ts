@@ -3,6 +3,7 @@
 // styled with the --sch-* CSS variables emitted by main.injectThemeVars(),
 // so every component restyles automatically when theme/accent/density change.
 
+/* eslint-disable obsidianmd/no-static-styles-assignment -- Shared primitives accept runtime-computed design tokens that fixed CSS classes cannot represent. */
 import { iconSvg } from '../icons';
 import type { IconOptions } from '../icons';
 

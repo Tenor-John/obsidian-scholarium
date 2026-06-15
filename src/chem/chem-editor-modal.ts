@@ -1,7 +1,7 @@
-/* eslint-disable obsidianmd/ui/sentence-case */
 import { App, Modal, Notice } from 'obsidian';
 import type ChemELNPlugin from '../main';
 import { createEmptyChemBlock, type ChemBlock, type ChemBlockType } from './chem-block';
+import { getChemStructureSource } from './chem-source';
 import { mountKetcher, type KetcherHost } from './ketcher-host';
 
 interface ChemEditorModalOptions {
@@ -82,7 +82,7 @@ export class ChemEditorModal extends Modal {
                 cls: 'sch-chem-fallback-textarea',
                 attr: { placeholder: 'KET / RXN / Molfile / SMILES' },
             });
-            textarea.value = this.block.ket || this.block.rxn || this.block.molfile || this.block.smiles;
+            textarea.value = getChemStructureSource(this.block);
             textarea.addEventListener('input', () => {
                 this.block.ket = textarea.value;
             });

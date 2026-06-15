@@ -1,5 +1,6 @@
 // rss-feed-board.ts — 文献订阅工作台（RSS / Atom / Crossref）
 import { App, Notice, Modal, TFile, requestUrl } from 'obsidian';
+/* eslint-disable obsidianmd/no-static-styles-assignment -- Feed cards use runtime-computed image and layout values. */
 import type ChemELNPlugin from './main';
 import { iconSvg } from './icons';
 import { htmlToMarkdownArticle } from './web-clip';

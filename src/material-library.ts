@@ -1,3 +1,4 @@
+/* eslint-disable obsidianmd/no-static-styles-assignment -- Material previews require runtime-computed dimensions and colors. */
 import { App, Modal, Notice, TFile, TFolder } from 'obsidian';
 import ChemELNPlugin from './main';
 import type { CloudSyncManager } from './cloud-sync';

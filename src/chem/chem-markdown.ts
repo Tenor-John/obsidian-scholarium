@@ -1,4 +1,4 @@
-/* eslint-disable obsidianmd/ui/sentence-case */
+/* eslint-disable obsidianmd/no-static-styles-assignment -- Runtime sizing reflects the rendered chemical structure and cannot be represented by fixed CSS classes. */
 import { MarkdownView, Notice, TFile } from 'obsidian';
 import type { MarkdownPostProcessorContext } from 'obsidian';
 import type ChemELNPlugin from '../main';
@@ -11,6 +11,8 @@ import {
     type ChemBlock,
     type ChemBlockType,
 } from './chem-block';
+import { getChemPreviewSmiles } from './chem-source';
+import { namespaceSvgIds } from './svg-ids';
 // 本地打包 smiles-drawer（兼容 esbuild 的 ESM→CJS 转换）
 // @ts-ignore
 import _SD from 'smiles-drawer';
@@ -51,9 +53,10 @@ function drawWithCanvas(container: HTMLElement, smiles: string, isReaction: bool
     canvas.width = 420;
     canvas.height = 220;
     canvas.id = 'sch-chem-canvas-' + Date.now() + '-' + Math.floor(Math.random() * 100000);
+    const drawableSmiles = normalizeReactionPreviewSmiles(smiles, isReaction);
     const target = isReaction
-        ? ((smiles.split('>>').pop() ?? smiles).split('.')[0] || smiles)
-        : smiles;
+        ? ((drawableSmiles.split('>>').pop() ?? drawableSmiles).split('.')[0] || drawableSmiles)
+        : drawableSmiles;
     try {
         const drawer = new DrawerClass({ width: canvas.width, height: canvas.height, bondThickness: 1.4 });
         parseFn(target,
@@ -74,6 +77,7 @@ function renderSmilesPreview(container: HTMLElement, smiles: string, isReaction:
     if (!smiles) return false;
     const lib = SD as Record<string, unknown>;
     const SmiDrawer = lib.SmiDrawer as SmiDrawerCtor | undefined;
+    const drawableSmiles = normalizeReactionPreviewSmiles(smiles, isReaction);
 
     // 优先：SmiDrawer + SVG —— 能正确绘制整条反应式（含 + 号与箭头）
     if (typeof SmiDrawer === 'function') {
@@ -82,7 +86,8 @@ function renderSmilesPreview(container: HTMLElement, smiles: string, isReaction:
         setTimeout(() => {
             try {
                 const sd = new SmiDrawer({}, {});
-                sd.draw(smiles, svgEl, 'light', () => {
+                sd.draw(drawableSmiles, svgEl, 'light', () => {
+                    namespaceSvgIds(svgEl);
                     svgEl.style.removeProperty('width');
                     svgEl.style.removeProperty('height');
                     svgEl.removeAttribute('width');
@@ -93,21 +98,23 @@ function renderSmilesPreview(container: HTMLElement, smiles: string, isReaction:
                         const p = vb.split(/[\s,]+/).map(Number);
                         if (p.length === 4 && !p.some(isNaN)) {
                             const [x = 0, y = 0, w = 0, h = 0] = p;
-                            const pad = Math.max(Math.max(w, h) * 0.06, 1.5);
+                            const pad = Math.max(Math.max(w, h) * 0.12, 8);
                             svgEl.setAttribute('viewBox', `${x - pad} ${y - pad} ${w + pad * 2} ${h + pad * 2}`);
                         }
                     }
+                    svgEl.style.overflow = 'visible';
+                    svgEl.setAttribute('overflow', 'visible');
                 }, (err) => {
                     console.warn('[Scholarium] SmiDrawer failed, fallback to canvas:', err);
                     svgEl.remove();
-                    if (!drawWithCanvas(container, smiles, isReaction)) {
+                    if (!drawWithCanvas(container, drawableSmiles, isReaction)) {
                         container.setText(smiles);
                     }
                 });
             } catch (e) {
                 console.warn('[Scholarium] SmiDrawer threw, fallback to canvas:', e);
                 svgEl.remove();
-                if (!drawWithCanvas(container, smiles, isReaction)) {
+                if (!drawWithCanvas(container, drawableSmiles, isReaction)) {
                     container.setText(smiles);
                 }
             }
@@ -116,8 +123,26 @@ function renderSmilesPreview(container: HTMLElement, smiles: string, isReaction:
     }
 
     // 没有 SmiDrawer 时退回 canvas
-    return drawWithCanvas(container, smiles, isReaction);
+    return drawWithCanvas(container, drawableSmiles, isReaction);
 }
+
+function normalizeReactionPreviewSmiles(smiles: string, isReaction: boolean): string {
+    if (!isReaction || !smiles.includes('>>')) return smiles;
+    return smiles
+        .split('>>')
+        .map((side) => side
+            .split('.')
+            .map((fragment) => HYDROGEN_HALIDE_PREVIEW[fragment.trim()] ?? fragment)
+            .join('.'))
+        .join('>>');
+}
+
+const HYDROGEN_HALIDE_PREVIEW: Record<string, string> = {
+    F: '[H]F',
+    Cl: '[H]Cl',
+    Br: '[H]Br',
+    I: '[H]I',
+};
 
 export function registerChemMarkdown(plugin: ChemELNPlugin): void {
     plugin.registerMarkdownCodeBlockProcessor(CHEM_CODE_BLOCK, (source, el, ctx) => {
@@ -175,13 +200,13 @@ function renderChemBlock(plugin: ChemELNPlugin, source: string, el: HTMLElement,
 
     const body = el.createDiv({ cls: 'sch-chem-preview' });
     const isReaction = !!block.reactionSmiles || block.type === 'reaction';
-    const smilesForPreview = block.reactionSmiles || block.smiles;
+    const smilesForPreview = getChemPreviewSmiles(block);
     let rendered = false;
-    if (block.previewSvg) {
+    if (smilesForPreview) {
+        rendered = renderSmilesPreview(body.createDiv({ cls: 'sch-chem-svg' }), smilesForPreview, isReaction);
+    } else if (block.previewSvg) {
         setSanitizedSvg(body.createDiv({ cls: 'sch-chem-svg' }), block.previewSvg);
         rendered = true;
-    } else if (smilesForPreview) {
-        rendered = renderSmilesPreview(body.createDiv({ cls: 'sch-chem-svg' }), smilesForPreview, isReaction);
     }
     if (!rendered) {
         body.empty();
@@ -216,7 +241,30 @@ function setSanitizedSvg(container: HTMLElement, svgText: string): void {
             }
         }
     });
+    namespaceSvgIds(svg);
+    prepareChemSvg(svg);
     container.appendChild(document.importNode(svg, true));
+}
+
+function prepareChemSvg(svg: SVGSVGElement): void {
+    svg.style.removeProperty('width');
+    svg.style.removeProperty('height');
+    svg.removeAttribute('width');
+    svg.removeAttribute('height');
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.style.overflow = 'visible';
+    svg.setAttribute('overflow', 'visible');
+    padSvgViewBox(svg);
+}
+
+function padSvgViewBox(svg: SVGSVGElement, ratio = 0.12, min = 8): void {
+    const vb = svg.getAttribute('viewBox');
+    if (!vb) return;
+    const p = vb.split(/[\s,]+/).map(Number);
+    if (p.length !== 4 || p.some(isNaN)) return;
+    const [x = 0, y = 0, w = 0, h = 0] = p;
+    const pad = Math.max(Math.max(w, h) * ratio, min);
+    svg.setAttribute('viewBox', `${x - pad} ${y - pad} ${w + pad * 2} ${h + pad * 2}`);
 }
 
 async function replaceRenderedChemBlock(plugin: ChemELNPlugin, ctx: MarkdownPostProcessorContext, el: HTMLElement, block: ChemBlock): Promise<void> {

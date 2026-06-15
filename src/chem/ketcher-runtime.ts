@@ -4,6 +4,7 @@ import { Editor } from 'ketcher-react';
 import * as KetcherStandalone from 'ketcher-standalone';
 import type { Ketcher } from 'ketcher-core';
 import type { ChemBlock } from './chem-block';
+import { getChemStructureSource } from './chem-source';
 
 ensureKetcherGlobals();
 
@@ -24,7 +25,7 @@ export function mountKetcherRuntime(container: HTMLElement, initial: ChemBlock):
         disableMacromoleculesEditor: true,
         onInit: async (instance: Ketcher) => {
             ketcher = instance;
-            const source = initial.ket || initial.rxn || initial.molfile || initial.smiles || initial.reactionSmiles;
+            const source = getChemStructureSource(initial);
             if (!source) return;
             try {
                 await instance.setMolecule(source);
@@ -49,10 +50,10 @@ export function mountKetcherRuntime(container: HTMLElement, initial: ChemBlock):
             next.smiles = await safeExport(() => ketcher!.getSmiles(), initial.smiles);
             next.reactionSmiles = await safeExport(() => ketcher!.getSmiles(true), initial.reactionSmiles);
             next.previewSvg = await safeExport(
-                async () => blobToText(await ketcher!.generateImage(next.ket || next.rxn || next.molfile || next.smiles, {
+                async () => padPreviewSvg(await blobToText(await ketcher!.generateImage(next.ket || next.rxn || next.molfile || next.smiles, {
                     outputFormat: 'svg',
-                    backgroundColor: 'transparent',
-                } as never)),
+                    backgroundColor: '#ffffff',
+                } as never))),
                 initial.previewSvg,
             );
             return next;
@@ -81,6 +82,39 @@ async function safeExport(exporter: () => Promise<string>, fallback: string): Pr
 
 async function blobToText(blob: Blob): Promise<string> {
     return await blob.text();
+}
+
+function padPreviewSvg(svgText: string): string {
+    try {
+        const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+        const svg = doc.querySelector('svg');
+        if (!svg) return svgText;
+        svg.removeAttribute('width');
+        svg.removeAttribute('height');
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        svg.setAttribute('overflow', 'visible');
+        svg.setAttribute('style', mergeSvgStyle(svg.getAttribute('style')));
+        padSvgViewBox(svg);
+        return new XMLSerializer().serializeToString(svg);
+    } catch {
+        return svgText;
+    }
+}
+
+function mergeSvgStyle(style: string | null): string {
+    const trimmed = style?.trim();
+    const suffix = 'background:#ffffff;overflow:visible;';
+    return trimmed ? `${trimmed.replace(/;?$/, ';')}${suffix}` : suffix;
+}
+
+function padSvgViewBox(svg: Element, ratio = 0.12, min = 8): void {
+    const vb = svg.getAttribute('viewBox');
+    if (!vb) return;
+    const p = vb.split(/[\s,]+/).map(Number);
+    if (p.length !== 4 || p.some(isNaN)) return;
+    const [x = 0, y = 0, w = 0, h = 0] = p;
+    const pad = Math.max(Math.max(w, h) * ratio, min);
+    svg.setAttribute('viewBox', `${x - pad} ${y - pad} ${w + pad * 2} ${h + pad * 2}`);
 }
 
 function ensureKetcherGlobals(): void {

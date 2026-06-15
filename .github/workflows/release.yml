@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   build:
@@ -27,8 +29,12 @@ jobs:
       - name: Build plugin
         run: npm run build
 
-      - name: Package plugin
-        run: zip -j "scholarium-${GITHUB_REF_NAME}.zip" main.js manifest.json styles.css
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            main.js
+            styles.css
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -37,4 +43,3 @@ jobs:
             main.js
             manifest.json
             styles.css
-            scholarium-${{ github.ref_name }}.zip

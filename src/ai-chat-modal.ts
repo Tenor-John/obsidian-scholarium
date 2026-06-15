@@ -515,7 +515,7 @@ export class AIChatModal extends Modal {
         const bubble = msgEl.createDiv({ cls: 'chat-bubble' });
 
         if (role === 'assistant') {
-            bubble.innerHTML = this.renderBasicMarkdown(content || '已处理。');
+            bubble.setText(content || 'Processed.');
             if (data && this.hasExperimentData(data)) this.renderLegacyActions(msgEl, data);
         } else {
             bubble.setText(content);
