@@ -15,6 +15,8 @@ export default class ChemELNPlugin extends Plugin {
     syncManager: CloudSyncManager | null = null;
     private saveQueue: Promise<void> = Promise.resolve();
     private themeObserver: MutationObserver | null = null;
+    private tabTitleObserver: MutationObserver | null = null;
+    private tabTitleFrame: number | null = null;
 
     updateData(mutator: (data: Record<string, unknown>) => void): Promise<void> {
         const run = this.saveQueue.then(async () => {
@@ -94,6 +96,24 @@ export default class ChemELNPlugin extends Plugin {
         await this.loadSettings();
         this.injectThemeVars();
         this.registerEvent(this.app.workspace.on('css-change', () => this.injectThemeVars()));
+        this.registerEvent(this.app.workspace.on('layout-change', () => this.scheduleScholariumTabTitleRestore()));
+        this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.scheduleScholariumTabTitleRestore()));
+        this.app.workspace.onLayoutReady(() => this.scheduleScholariumTabTitleRestore());
+        this.tabTitleObserver = new MutationObserver(() => this.scheduleScholariumTabTitleRestore());
+        this.tabTitleObserver.observe(this.app.workspace.containerEl, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            attributeFilter: ['class', 'aria-label', 'title'],
+        });
+        this.register(() => {
+            this.tabTitleObserver?.disconnect();
+            this.tabTitleObserver = null;
+            if (this.tabTitleFrame !== null) {
+                window.cancelAnimationFrame(this.tabTitleFrame);
+                this.tabTitleFrame = null;
+            }
+        });
         this.themeObserver = new MutationObserver(() => this.injectThemeVars());
         this.themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
         this.register(() => {
@@ -182,12 +202,96 @@ export default class ChemELNPlugin extends Plugin {
         if (existing.length > 0) {
             const leaf = existing[0];
             if (leaf) workspace.revealLeaf(leaf);
+            this.scheduleScholariumTabTitleRestore();
             return;
         }
 
         const leaf: WorkspaceLeaf = workspace.getLeaf(false);
         await leaf.setViewState({ type: DASHBOARD_VIEW_TYPE, active: true });
         workspace.revealLeaf(leaf);
+        this.scheduleScholariumTabTitleRestore();
+    }
+
+    private scheduleScholariumTabTitleRestore(): void {
+        if (this.tabTitleFrame !== null) window.cancelAnimationFrame(this.tabTitleFrame);
+        this.tabTitleFrame = window.requestAnimationFrame(() => {
+            this.tabTitleFrame = null;
+            this.restoreScholariumTabTitle();
+        });
+    }
+
+    private restoreScholariumTabTitle(): void {
+        const label = this.settings?.pluginDisplayName?.trim() || 'scholarium';
+        const headers = this.app.workspace.containerEl.querySelectorAll<HTMLElement>('.workspace-tab-header');
+
+        for (const header of Array.from(headers)) {
+            let title = header.querySelector<HTMLElement>('.workspace-tab-header-inner-title');
+            const inner = header.querySelector<HTMLElement>('.workspace-tab-header-inner');
+            const rawLabel = [
+                header.getAttribute('aria-label'),
+                header.getAttribute('title'),
+                title?.textContent,
+            ].filter(Boolean).join(' ').toLowerCase();
+            const isScholariumHeader = rawLabel.includes('scholarium');
+
+            if (!isScholariumHeader) {
+                if (header.hasClass('scholarium-native-tab-title')) {
+                    this.clearScholariumTabTitleStyles(header, inner, title);
+                }
+                continue;
+            }
+            if (!title && inner) {
+                title = inner.createSpan({ cls: 'workspace-tab-header-inner-title' });
+                title.dataset.scholariumInjectedTitle = 'true';
+            }
+            if (!title) continue;
+
+            header.addClass('scholarium-native-tab-title');
+            header.style.setProperty('min-width', '150px', 'important');
+            header.style.setProperty('max-width', '260px', 'important');
+            header.style.setProperty('width', 'auto', 'important');
+            header.style.setProperty('flex', '0 1 auto', 'important');
+            inner?.style.setProperty('display', 'flex', 'important');
+            inner?.style.setProperty('align-items', 'center', 'important');
+            inner?.style.setProperty('gap', '6px', 'important');
+            title.style.setProperty('display', 'inline-block', 'important');
+            title.style.setProperty('visibility', 'visible', 'important');
+            title.style.setProperty('opacity', '1', 'important');
+            title.style.setProperty('width', 'auto', 'important');
+            title.style.setProperty('min-width', '68px', 'important');
+            title.style.setProperty('max-width', '160px', 'important');
+            title.style.setProperty('overflow', 'hidden', 'important');
+            title.style.setProperty('text-overflow', 'ellipsis', 'important');
+            title.style.setProperty('white-space', 'nowrap', 'important');
+            title.style.setProperty('color', 'var(--tab-text-color, var(--text-normal))', 'important');
+            if (!title.textContent?.trim()) {
+                title.dataset.scholariumInjectedTitle = 'true';
+                title.setText(label);
+            }
+        }
+    }
+
+    private clearScholariumTabTitleStyles(header: HTMLElement, inner: HTMLElement | null, title: HTMLElement | null): void {
+        header.removeClass('scholarium-native-tab-title');
+        for (const prop of ['min-width', 'max-width', 'width', 'flex']) header.style.removeProperty(prop);
+        for (const prop of ['display', 'align-items', 'gap']) inner?.style.removeProperty(prop);
+        if (!title) return;
+        for (const prop of [
+            'display',
+            'visibility',
+            'opacity',
+            'width',
+            'min-width',
+            'max-width',
+            'overflow',
+            'text-overflow',
+            'white-space',
+            'color',
+        ]) title.style.removeProperty(prop);
+        if (title.dataset.scholariumInjectedTitle === 'true') {
+            title.textContent = '';
+            delete title.dataset.scholariumInjectedTitle;
+        }
     }
 
     async loadSettings() {
