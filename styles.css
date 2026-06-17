@@ -4634,9 +4634,19 @@
     white-space: nowrap;
 }
 
+.exp-note-card-head {
+    padding: 13px 14px 8px;
+    border-bottom: 1px solid var(--nb-line-soft);
+    background: #fff;
+    flex: 0 0 auto;
+    position: relative;
+    z-index: 2;
+}
+
 .exp-note-card-scroll {
+    flex: 1 1 auto;
     min-height: 0;
-    padding: 13px 14px 10px;
+    padding: 10px 14px;
     overflow-y: auto;
     overscroll-behavior: contain;
 }
@@ -4737,7 +4747,10 @@
     padding: 10px 12px;
     border-top: 1px solid var(--nb-line-soft);
     background: #fbfbfa;
-    flex-shrink: 0;
+    flex: 0 0 auto;
+    margin-top: auto;
+    position: relative;
+    z-index: 2;
 }
 
 .exp-board-empty {

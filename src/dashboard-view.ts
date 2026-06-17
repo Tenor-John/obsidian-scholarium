@@ -495,13 +495,15 @@ export class DashboardView extends ItemView {
         });
         top.createEl('span', { text: exp.date, cls: 'exp-note-card-date' });
 
-        const body = card.createDiv({ cls: 'exp-note-card-scroll' });
-        body.createEl('h3', { text: exp.title, cls: 'exp-note-card-title' });
+        const head = card.createDiv({ cls: 'exp-note-card-head' });
+        head.createEl('h3', { text: exp.title, cls: 'exp-note-card-title' });
 
-        const meta = body.createDiv({ cls: 'exp-note-card-meta' });
+        const meta = head.createDiv({ cls: 'exp-note-card-meta' });
         const mt = new Date(exp.file.stat.mtime);
         meta.createEl('span', { text: `修改 ${mt.getHours().toString().padStart(2, '0')}:${mt.getMinutes().toString().padStart(2, '0')}` });
         if (exp.bookmarked) meta.createEl('span', { text: '收藏' });
+
+        const body = card.createDiv({ cls: 'exp-note-card-scroll' });
 
         let noteBody = '';
         try { noteBody = await this.app.vault.read(exp.file); } catch (error) { console.warn('[Scholarium] Unable to read experiment preview:', exp.file.path, error); }
