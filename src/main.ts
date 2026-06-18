@@ -134,13 +134,13 @@ export default class ChemELNPlugin extends Plugin {
         registerChemMarkdown(this);
         registerChemInsertionControls(this);
 
-        this.addRibbonIcon('flask-conical', '打开 Scholarium', () => {
+        this.addRibbonIcon('flask-conical', '打开工作台', () => {
             void this.activateDashboard();
         });
 
         this.addCommand({
             id: 'open-chem-dashboard',
-            name: '打开 Scholarium',
+            name: '打开工作台',
             callback: () => void this.activateDashboard(),
         });
 
@@ -201,14 +201,14 @@ export default class ChemELNPlugin extends Plugin {
         const existing = workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE);
         if (existing.length > 0) {
             const leaf = existing[0];
-            if (leaf) workspace.revealLeaf(leaf);
+            if (leaf) void workspace.revealLeaf(leaf);
             this.scheduleScholariumTabTitleRestore();
             return;
         }
 
         const leaf: WorkspaceLeaf = workspace.getLeaf(false);
         await leaf.setViewState({ type: DASHBOARD_VIEW_TYPE, active: true });
-        workspace.revealLeaf(leaf);
+        void workspace.revealLeaf(leaf);
         this.scheduleScholariumTabTitleRestore();
     }
 
@@ -221,11 +221,20 @@ export default class ChemELNPlugin extends Plugin {
     }
 
     private restoreScholariumTabTitle(): void {
-        const label = this.settings?.pluginDisplayName?.trim() || 'scholarium';
+        const label = this.settings?.pluginDisplayName?.trim() || 'Scholarium';
+        const repairedHeaders = new Set<HTMLElement>();
+        for (const leaf of this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE)) {
+            const header = (leaf as WorkspaceLeaf & { tabHeaderEl?: HTMLElement }).tabHeaderEl;
+            if (!header) continue;
+            this.applyScholariumTabTitle(header, label);
+            repairedHeaders.add(header);
+        }
+
         const headers = this.app.workspace.containerEl.querySelectorAll<HTMLElement>('.workspace-tab-header');
 
         for (const header of Array.from(headers)) {
-            let title = header.querySelector<HTMLElement>('.workspace-tab-header-inner-title');
+            if (repairedHeaders.has(header)) continue;
+            const title = header.querySelector<HTMLElement>('.workspace-tab-header-inner-title');
             const inner = header.querySelector<HTMLElement>('.workspace-tab-header-inner');
             const rawLabel = [
                 header.getAttribute('aria-label'),
@@ -240,54 +249,35 @@ export default class ChemELNPlugin extends Plugin {
                 }
                 continue;
             }
-            if (!title && inner) {
-                title = inner.createSpan({ cls: 'workspace-tab-header-inner-title' });
-                title.dataset.scholariumInjectedTitle = 'true';
-            }
-            if (!title) continue;
-
-            header.addClass('scholarium-native-tab-title');
-            header.style.setProperty('min-width', '150px', 'important');
-            header.style.setProperty('max-width', '260px', 'important');
-            header.style.setProperty('width', 'auto', 'important');
-            header.style.setProperty('flex', '0 1 auto', 'important');
-            inner?.style.setProperty('display', 'flex', 'important');
-            inner?.style.setProperty('align-items', 'center', 'important');
-            inner?.style.setProperty('gap', '6px', 'important');
-            title.style.setProperty('display', 'inline-block', 'important');
-            title.style.setProperty('visibility', 'visible', 'important');
-            title.style.setProperty('opacity', '1', 'important');
-            title.style.setProperty('width', 'auto', 'important');
-            title.style.setProperty('min-width', '68px', 'important');
-            title.style.setProperty('max-width', '160px', 'important');
-            title.style.setProperty('overflow', 'hidden', 'important');
-            title.style.setProperty('text-overflow', 'ellipsis', 'important');
-            title.style.setProperty('white-space', 'nowrap', 'important');
-            title.style.setProperty('color', 'var(--tab-text-color, var(--text-normal))', 'important');
-            if (!title.textContent?.trim()) {
-                title.dataset.scholariumInjectedTitle = 'true';
-                title.setText(label);
-            }
+            this.applyScholariumTabTitle(header, label);
         }
+    }
+
+    private applyScholariumTabTitle(header: HTMLElement, label: string): void {
+        let title = header.querySelector<HTMLElement>('.workspace-tab-header-inner-title');
+        const inner = header.querySelector<HTMLElement>('.workspace-tab-header-inner');
+        if (!title && inner) {
+            title = inner.createSpan({ cls: 'workspace-tab-header-inner-title' });
+            title.dataset.scholariumInjectedTitle = 'true';
+        }
+        if (!title) return;
+
+        header.addClass('scholarium-native-tab-title');
+        header.setAttribute('aria-label', label);
+        header.setAttribute('title', label);
+        inner?.addClass('scholarium-native-tab-title-inner');
+        title.removeClass('is-hidden');
+        title.addClass('scholarium-native-tab-title-text');
+        title.dataset.scholariumInjectedTitle = 'true';
+        title.setText(label);
     }
 
     private clearScholariumTabTitleStyles(header: HTMLElement, inner: HTMLElement | null, title: HTMLElement | null): void {
         header.removeClass('scholarium-native-tab-title');
-        for (const prop of ['min-width', 'max-width', 'width', 'flex']) header.style.removeProperty(prop);
-        for (const prop of ['display', 'align-items', 'gap']) inner?.style.removeProperty(prop);
+        header.removeAttribute('title');
+        inner?.removeClass('scholarium-native-tab-title-inner');
         if (!title) return;
-        for (const prop of [
-            'display',
-            'visibility',
-            'opacity',
-            'width',
-            'min-width',
-            'max-width',
-            'overflow',
-            'text-overflow',
-            'white-space',
-            'color',
-        ]) title.style.removeProperty(prop);
+        title.removeClass('scholarium-native-tab-title-text');
         if (title.dataset.scholariumInjectedTitle === 'true') {
             title.textContent = '';
             delete title.dataset.scholariumInjectedTitle;
@@ -296,7 +286,7 @@ export default class ChemELNPlugin extends Plugin {
 
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<ChemELNSettings>);
-        this.settings.pluginDisplayName = 'scholarium';
+        this.settings.pluginDisplayName = 'Scholarium';
         this.settings.notebookSidebarWidth = Math.min(440, Math.max(280, Number(this.settings.notebookSidebarWidth) || 300));
         this.settings.theme = 'system';
         const legacyAccents: Record<string, AccentKey> = {
@@ -313,7 +303,7 @@ export default class ChemELNPlugin extends Plugin {
         } else if (/^#[0-9a-f]{6}$/i.test(this.settings.themeAccent)) {
             this.settings.accent = 'custom';
         } else if (Object.prototype.hasOwnProperty.call(SCHOLARIUM_ACCENTS, selectedAccent)) {
-            this.settings.accent = selectedAccent as AccentKey;
+            this.settings.accent = selectedAccent;
             this.settings.themeAccent = SCHOLARIUM_ACCENTS[selectedAccent as keyof typeof SCHOLARIUM_ACCENTS].base;
             this.settings.themeGradient = SCHOLARIUM_ACCENTS[selectedAccent as keyof typeof SCHOLARIUM_ACCENTS].deep;
         } else {

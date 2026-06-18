@@ -4578,7 +4578,8 @@
     inset: 0 auto 0 0;
     width: 3px;
     background: var(--exp-status-border);
-    z-index: 1;
+    z-index: 4;
+    pointer-events: none;
 }
 
 .exp-note-card.status-planned {
@@ -4637,7 +4638,7 @@
 .exp-note-card-head {
     padding: 13px 14px 8px;
     border-bottom: 1px solid var(--nb-line-soft);
-    background: #fff;
+    background: var(--exp-status-soft);
     flex: 0 0 auto;
     position: relative;
     z-index: 2;
@@ -8447,6 +8448,11 @@
     border-color: var(--border-soft);
 }
 
+.scholarium-root .exp-note-card-head {
+    background: var(--exp-status-soft) !important;
+    border-color: var(--border-soft);
+}
+
 .scholarium-root .exp-note-card-footer,
 .scholarium-root .exp-board-empty,
 .scholarium-root .canvas-wrap,
@@ -8634,9 +8640,184 @@
 .scholarium-root .idea-card {
     --idea-color: var(--accent);
     --idea-tint: var(--accent-dim);
+    height: 420px;
+    min-height: 420px;
+    max-height: 420px;
     background: linear-gradient(135deg, var(--idea-tint), var(--bg-surface) 42%) !important;
     border-left: 3px solid var(--idea-color) !important;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.scholarium-root .idea-card-head {
+    flex: 0 0 auto;
+    padding: 13px 14px 10px;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+    position: relative;
+    z-index: 2;
+}
+
+.scholarium-root .idea-card-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px;
+    overflow: hidden;
+}
+
+.scholarium-root .idea-card-pane {
+    min-height: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: rgba(var(--sch-accent-rgb), 0.025);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.scholarium-root .idea-card-note-pane {
+    flex: 1 1 0;
+}
+
+.scholarium-root .idea-card-related-pane {
+    flex: 0 0 112px;
+}
+
+.scholarium-root .idea-card-pane-title {
+    flex: 0 0 auto;
+    padding: 7px 10px 5px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.scholarium-root .idea-card-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 9px 10px;
+    scrollbar-width: thin;
+}
+
+.scholarium-root .idea-card-scroll::-webkit-scrollbar {
+    width: 8px;
+}
+
+.scholarium-root .idea-card-scroll::-webkit-scrollbar-thumb {
+    background: rgba(var(--sch-accent-rgb), 0.22);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+}
+
+.scholarium-root .idea-card-markdown {
+    color: var(--text-normal);
+    font-size: 12.5px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+.scholarium-root .idea-card-markdown :is(h1, h2, h3, h4, h5, h6) {
+    margin: 0 0 7px;
+    color: var(--text-normal);
+    font-size: 1em;
+    line-height: 1.35;
+}
+
+.scholarium-root .idea-card-markdown :is(p, ul, ol, blockquote) {
+    margin-top: 0;
+    margin-bottom: 8px;
+}
+
+.scholarium-root .idea-card-markdown ul,
+.scholarium-root .idea-card-markdown ol {
+    padding-left: 18px;
+}
+
+.scholarium-root .idea-card-markdown code {
+    white-space: break-spaces;
+}
+
+.scholarium-root .idea-card-related-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.scholarium-root .idea-related-chip {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-elevated);
+    color: var(--text-normal);
+    font-size: 11.5px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.scholarium-root .idea-related-note {
+    cursor: pointer;
+}
+
+.scholarium-root .idea-related-note:hover {
+    border-color: var(--idea-color);
+    color: var(--idea-color);
+}
+
+.scholarium-root .idea-card-empty {
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.scholarium-root .idea-card > .sch-static-style-28 {
+    flex: 0 0 auto;
+    margin-top: 0;
+    padding: 9px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-surface);
+    position: relative;
+    z-index: 2;
+}
+
+.scholarium-root .sch-static-style-31,
+.scholarium-root .sch-static-style-32,
+.scholarium-root .sch-static-style-42 {
+    color: var(--text-primary);
+}
+
+.scholarium-root[data-theme="dark"] .sch-static-style-31 {
+    background: rgba(var(--sch-accent-rgb), 0.12);
+}
+
+.scholarium-root .sch-static-style-31 .markdown-rendered,
+.scholarium-root .sch-static-style-31 .markdown-rendered :is(p, li, blockquote, span),
+.scholarium-root .sch-static-style-32 :is(p, li, blockquote, span),
+.scholarium-root .sch-static-style-42 :is(p, li, blockquote, span) {
+    color: var(--text-primary) !important;
+}
+
+.scholarium-root .sch-static-style-31 .markdown-rendered :is(h1, h2, h3, h4, h5, h6),
+.scholarium-root .sch-static-style-32 :is(h1, h2, h3, h4, h5, h6),
+.scholarium-root .sch-static-style-42 :is(h1, h2, h3, h4, h5, h6) {
+    color: var(--text-primary) !important;
+}
+
+.scholarium-root .sch-static-style-31 .markdown-rendered :is(strong, b),
+.scholarium-root .sch-static-style-32 :is(strong, b),
+.scholarium-root .sch-static-style-42 :is(strong, b) {
+    color: var(--text-primary) !important;
 }
 
 .scholarium-root .idea-source-claude {
@@ -8796,6 +8977,34 @@
 body.scholarium-resizing-sidebar {
     cursor: col-resize !important;
     user-select: none;
+}
+
+.scholarium-native-tab-title {
+    min-width: 166px !important;
+    max-width: 280px !important;
+    width: auto !important;
+    flex: 0 1 auto !important;
+}
+
+.scholarium-native-tab-title .scholarium-native-tab-title-inner {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+
+.scholarium-native-tab-title .scholarium-native-tab-title-text {
+    display: inline-block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    width: auto !important;
+    min-width: 82px !important;
+    max-width: 170px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-weight: 600 !important;
+    line-height: normal !important;
+    color: var(--tab-text-color-focused, var(--tab-text-color, var(--text-normal))) !important;
 }
 
 /* The workbench role mark is a clean emoji, not a framed badge. */
@@ -9163,7 +9372,6 @@ body.scholarium-resizing-sidebar {
     background: color-mix(in srgb, currentColor 18%, var(--bg-surface)) !important;
 }
 
-.scholarium-root .ws2-logo-circle,
 .scholarium-root .ws2-range-btn.active,
 .scholarium-root .ws2-calendar-day.today,
 .scholarium-root .ws2-hm-cell.ws2-hm-done {
@@ -9638,6 +9846,7 @@ body.scholarium-resizing-sidebar {
 .sch-static-style-31 {
     border-left:3px solid var(--sch-iris);
     background:var(--sch-iris-bg);
+    color:var(--text-primary);
     padding:10px 14px;
     border-radius:8px;
     margin:10px 0;
@@ -9646,6 +9855,7 @@ body.scholarium-resizing-sidebar {
 .sch-static-style-32 {
     font-size:14px;
     line-height:1.6;
+    color:var(--text-primary);
 }
 
 .sch-static-style-33 {
@@ -9675,6 +9885,7 @@ body.scholarium-resizing-sidebar {
     font-size:12.5px;
     color:var(--sch-accent-ink);
     padding:3px 0;
+    cursor:pointer;
 }
 
 .sch-static-style-37 {

@@ -97,7 +97,7 @@ export class DashboardView extends ItemView {
     }
 
     getViewType() { return DASHBOARD_VIEW_TYPE; }
-    getDisplayText() { return 'scholarium'; }
+    getDisplayText() { return 'Scholarium'; }
     getIcon() { return 'flask-conical'; }
 
     setSyncManager(manager: CloudSyncManager): void {
@@ -322,7 +322,7 @@ export class DashboardView extends ItemView {
         const logoIcon = iconSvg('flask', { size: 20 });
         logoIcon.addClass('sch-static-style-5');
         logo.appendChild(logoIcon);
-        const logoText = logo.createSpan({ text: 'scholarium' });
+        const logoText = logo.createSpan({ text: 'Scholarium' });
         logoText.addClass('sch-static-style-6');
 
         // 4 tabs
