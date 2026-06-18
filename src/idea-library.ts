@@ -272,6 +272,90 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
         }
     }
 
+    private normalizeRelatedNoteRef(note: string): string {
+        let ref = note.trim();
+        const wiki = ref.match(/^\[\[([^|\]]+)(?:\|[^\]]+)?\]\]$/);
+        if (wiki) ref = wiki[1] ?? ref;
+        const md = ref.match(/^\[[^\]]+\]\(([^)]+)\)$/);
+        if (md) ref = md[1] ?? ref;
+        return ref.replace(/^["']|["']$/g, '').trim();
+    }
+
+    private resolveRelatedNote(note: string): TFile | null {
+        const ref = this.normalizeRelatedNoteRef(note);
+        const candidates = new Set<string>();
+        for (const value of [ref, decodeURIComponent(ref)]) {
+            const clean = value.trim();
+            if (!clean) continue;
+            candidates.add(clean);
+            candidates.add(normalizePath(clean));
+            if (!clean.endsWith('.md')) candidates.add(`${clean}.md`);
+        }
+
+        for (const candidate of candidates) {
+            const exact = this.app.vault.getAbstractFileByPath(normalizePath(candidate));
+            if (exact instanceof TFile) return exact;
+            const linked = this.app.metadataCache.getFirstLinkpathDest(candidate.replace(/\.md$/i, ''), '');
+            if (linked instanceof TFile) return linked;
+        }
+
+        const needle = ref.replace(/\.md$/i, '').toLowerCase();
+        if (!needle) return null;
+        return this.app.vault.getMarkdownFiles().find(file => {
+            const title = String(this.app.metadataCache.getFileCache(file)?.frontmatter?.title ?? '').toLowerCase();
+            const basename = file.basename.toLowerCase();
+            const path = file.path.replace(/\.md$/i, '').toLowerCase();
+            return basename === needle
+                || path === needle
+                || title === needle
+                || needle.includes(basename)
+                || basename.includes(needle)
+                || (!!title && (needle.includes(title) || title.includes(needle)));
+        }) ?? null;
+    }
+
+    private async openRelatedNote(note: string): Promise<void> {
+        const file = this.resolveRelatedNote(note);
+        if (file) {
+            await this.app.workspace.getLeaf('tab').openFile(file);
+        } else {
+            new Notice(this.lang === 'zh' ? `未找到关联笔记：${note}` : `Related note not found: ${note}`);
+        }
+    }
+
+    private resolveRelatedExperiment(expId: string): TFile | null {
+        const ref = this.experimentIndex.find(exp => exp.id === expId || exp.title === expId);
+        const candidates = [expId, ref?.id, ref?.title].filter((value): value is string => !!value?.trim());
+        const normalized = new Set<string>();
+        for (const candidate of candidates) {
+            const clean = candidate.trim();
+            normalized.add(clean.toLowerCase());
+            normalized.add(clean.replace(/\.md$/i, '').toLowerCase());
+        }
+        return this.app.vault.getMarkdownFiles().find(file => {
+            const cache = this.app.metadataCache.getFileCache(file);
+            const title = String(cache?.frontmatter?.title ?? '').toLowerCase();
+            const basename = file.basename.toLowerCase();
+            const path = file.path.replace(/\.md$/i, '').toLowerCase();
+            for (const needle of normalized) {
+                if (!needle) continue;
+                if (basename === needle || path === needle || title === needle) return true;
+                if (basename.includes(needle) || needle.includes(basename)) return true;
+                if (title && (title.includes(needle) || needle.includes(title))) return true;
+            }
+            return false;
+        }) ?? null;
+    }
+
+    private async openRelatedExperiment(expId: string): Promise<void> {
+        const file = this.resolveRelatedExperiment(expId);
+        if (file) {
+            await this.app.workspace.getLeaf('tab').openFile(file);
+        } else {
+            new Notice(this.lang === 'zh' ? `未找到关联实验：${expId}` : `Related experiment not found: ${expId}`);
+        }
+    }
+
     private filtered(): Idea[] {
         const q = this.filterText.trim().toLowerCase();
         return this.ideas.filter(i => {
@@ -377,23 +461,62 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
     private renderCard(grid: HTMLElement, idea: Idea): void {
         const active = this.selected?.id === idea.id;
         const sourceAccent = SOURCE_ACCENT[idea.source];
-        const c = uiCard(grid, { cls: `idea-card idea-source-${idea.source}${active ? ' is-selected' : ''}`, onClick: () => { if (this.selected?.id === idea.id) { this.selected = null; } else { this.selected = idea; this.editing = false; } this.rerender(); }, style: { borderLeft: `3px solid ${sourceAccent}`, position: 'relative' } });
+        const c = uiCard(grid, { cls: `idea-card idea-source-${idea.source}${active ? ' is-selected' : ''}`, onClick: () => { if (this.selected?.id === idea.id) { this.selected = null; } else { this.selected = idea; this.editing = false; } this.rerender(); }, style: { borderLeft: `3px solid ${sourceAccent}`, position: 'relative', padding: '0' } });
         if (active) c.setCssStyles({ boxShadow: `0 0 0 1px ${sourceAccent}` });
-        const titleRow = c.createDiv();
+        const zh = this.lang === 'zh';
+        const head = c.createDiv({ cls: 'idea-card-head' });
+        const titleRow = head.createDiv();
         titleRow.addClass('sch-static-style-20');
         const ttl = titleRow.createDiv({ text: idea.title });
         ttl.addClass('sch-static-style-21');
         if (idea.pinned) { const p = iconSvg('pin', { size: 13 }); p.addClass('sch-static-style-22'); p.addClass('sch-static-style-11'); titleRow.appendChild(p); }
-        const ex = c.createDiv({ text: idea.excerpt });
-        ex.addClass('sch-static-style-23');
-        ex.addClass('sch-static-style-24');
-        ex.addClass('sch-static-style-25');
-        ex.addClass('sch-static-style-26');
         if (idea.tags.length) {
-            const tagRow = c.createDiv();
+            const tagRow = head.createDiv();
             tagRow.addClass('sch-static-style-27');
             idea.tags.slice(0, 4).forEach((tg, index) => pill(tagRow, tg, this.tagTone(tg, index)));
         }
+        const body = c.createDiv({ cls: 'idea-card-body' });
+        const notePane = body.createDiv({ cls: 'idea-card-pane idea-card-note-pane' });
+        notePane.createDiv({ cls: 'idea-card-pane-title', text: zh ? '笔记内容' : 'Note content' });
+        const noteScroll = notePane.createDiv({ cls: 'idea-card-scroll idea-card-markdown markdown-rendered' });
+        this.renderMd(noteScroll, idea.excerpt || (zh ? '暂无笔记内容。' : 'No note content yet.'));
+
+        const relatedPane = body.createDiv({ cls: 'idea-card-pane idea-card-related-pane' });
+        relatedPane.createDiv({ cls: 'idea-card-pane-title', text: zh ? '关联笔记' : 'Related notes' });
+        const relatedScroll = relatedPane.createDiv({ cls: 'idea-card-scroll idea-card-related-list' });
+        let hasRelated = false;
+        for (const ex of idea.relatedExp) {
+            hasRelated = true;
+            const link = relatedScroll.createDiv({ cls: 'idea-related-chip idea-related-note' });
+            const ic = iconSvg('link', { size: 13 }); ic.addClass('sch-static-style-37');
+            link.appendChild(ic);
+            const ref = this.experimentIndex.find(e => e.id === ex);
+            link.appendChild(document.createTextNode(ref ? `${ex} - ${ref.title}` : ex));
+            link.addEventListener('click', async (evt) => {
+                evt.stopPropagation();
+                await this.openRelatedExperiment(ex);
+            });
+        }
+        for (const note of idea.relatedNotes) {
+            hasRelated = true;
+            const link = relatedScroll.createDiv({ cls: 'idea-related-chip idea-related-note' });
+            const ic = iconSvg('notebook', { size: 13 }); ic.addClass('sch-static-style-37');
+            link.appendChild(ic);
+            link.appendChild(document.createTextNode(note));
+            link.addEventListener('click', async (evt) => {
+                evt.stopPropagation();
+                await this.openRelatedNote(note);
+            });
+        }
+        if (idea.relatedChapter) {
+            hasRelated = true;
+            const ch = relatedScroll.createDiv({ cls: 'idea-related-chip' });
+            ch.appendChild(document.createTextNode(`Chapter: ${idea.relatedChapter}`));
+        }
+        if (!hasRelated) {
+            relatedScroll.createDiv({ cls: 'idea-card-empty', text: zh ? '暂无关联笔记。' : 'No related notes yet.' });
+        }
+
         // source ribbon at bottom
         const foot = c.createDiv();
         foot.addClass('sch-static-style-28');
@@ -459,6 +582,10 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
                 const ic = iconSvg('link', { size: 13 }); ic.addClass('sch-static-style-37');
                 link.appendChild(ic);
                 const ref = this.experimentIndex.find(e => e.id === ex);
+                link.addEventListener('click', async (evt) => {
+                    evt.stopPropagation();
+                    await this.openRelatedExperiment(ex);
+                });
                 link.appendChild(document.createTextNode(ref ? `${ex} · ${ref.title}` : ex));
             }
             for (const note of idea.relatedNotes) {
@@ -467,9 +594,9 @@ ${idea.tags.length ? '\n标签：' + idea.tags.join('、') + '\n' : ''}`;
                 const ic = iconSvg('notebook', { size: 13 }); ic.addClass('sch-static-style-37');
                 link.appendChild(ic);
                 link.appendChild(document.createTextNode(note));
-                link.addEventListener('click', async () => {
-                    const f = this.app.vault.getAbstractFileByPath(note);
-                    if (f instanceof TFile) await this.app.workspace.getLeaf(false).openFile(f);
+                link.addEventListener('click', async (evt) => {
+                    evt.stopPropagation();
+                    await this.openRelatedNote(note);
                 });
             }
             if (idea.relatedChapter) {

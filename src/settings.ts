@@ -186,7 +186,7 @@ export const DEFAULT_SETTINGS: ChemELNSettings = {
     themeGradient: '#0F6E56',
     themeAlpha:    0.06,
     workspaceRole:      'phd',
-    pluginDisplayName:  'scholarium',
+    pluginDisplayName:  'Scholarium',
     notebookLabel:      '实验记录',
     workspaceTabLabel:  '工作台',
     fontSize:           'medium',
@@ -399,7 +399,7 @@ export class ChemELNSettingTab extends PluginSettingTab {
         previewBox.addClass('sch-static-style-164');
         const previewTitle = previewBox.createEl('div', { text: `📌 当前配置预览` });
         previewTitle.addClass('sch-static-style-165');
-        previewBox.createEl('div', { text: '顶部名称：scholarium' });
+        previewBox.createEl('div', { text: '顶部名称：Scholarium' });
         previewBox.createEl('div', { text: `笔记栏标签：${s.notebookLabel || '实验记录'}` });
         previewBox.createEl('div', { text: `工作台 Tab：${s.workspaceRole !== 'custom' ? WORKSPACE_ROLE_LABELS[s.workspaceRole] : (s.workspaceTabLabel || '工作台')}` });
 
