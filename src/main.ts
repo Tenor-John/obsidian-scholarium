@@ -1,5 +1,6 @@
 import { Plugin, WorkspaceLeaf } from 'obsidian';
 import { DASHBOARD_VIEW_TYPE, DashboardView } from './dashboard-view';
+import './project-profile';
 import { ChemELNSettingTab, DEFAULT_SETTINGS } from './settings';
 import type { ChemELNSettings } from './settings';
 import type { ExperimentContext } from './ai-assistant-modal';
