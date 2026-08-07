@@ -1,0 +1,9 @@
+{
+	"id": "scholarium",
+	"name": "Scholarium",
+	"version": "2.0.7",
+	"minAppVersion": "1.10.0",
+	"description": "An all-in-one scholarly workspace with AI-assisted writing, literature management, notes, and productivity tools.",
+	"author": "Scholarium Contributors",
+	"isDesktopOnly": false
+}
