@@ -1,0 +1,121 @@
+/**
+ * scholarium-oriental.css - 学院墨韵主题
+ * 设计理念：东方学术美学 · 深靛蓝 + 古铜金 + 宣纸质感
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;600&display=swap');
+
+:root {
+    /* 核心色彩 */
+    --orient-primary: #1B3A5C;
+    --orient-primary-light: #2A5080;
+    --orient-primary-dark: #0F2840;
+    --orient-gold: #C49A3C;
+    --orient-gold-light: #D4AD5A;
+    --orient-paper: #F5F0E6;
+    --orient-paper-deep: #EDE8DE;
+    --orient-surface: #FDFCF8;
+    --orient-ink: #1A1A18;
+    --orient-ink-secondary: #4A4A48;
+    --orient-mute: #8A8A85;
+    --orient-border: rgba(27, 58, 92, 0.10);
+    --orient-radius: 8px;
+    --orient-shadow: 0 4px 16px rgba(27, 58, 92, 0.10);
+    --orient-font-serif: 'Noto Serif SC', Georgia, serif;
+    --orient-font-sans: 'Noto Sans SC', system-ui, sans-serif;
+}
+
+/* 基础样式 */
+.scholarium-dashboard {
+    font-family: var(--orient-font-sans);
+    color: var(--orient-ink);
+    background: var(--orient-paper);
+}
+
+.scholarium-header {
+    background: var(--orient-surface);
+    border-bottom: 1px solid var(--orient-border);
+    padding: 10px 18px;
+}
+
+.scholarium-logo {
+    font-family: var(--orient-font-serif);
+    font-size: 1.1em;
+    font-weight: 700;
+    color: var(--orient-primary);
+}
+
+/* 按钮 */
+.scholarium-btn {
+    padding: 6px 14px;
+    border-radius: var(--orient-radius);
+    border: 1px solid var(--orient-border);
+    background: var(--orient-surface);
+    color: var(--orient-ink);
+    font-family: var(--orient-font-sans);
+    transition: all 0.18s ease;
+}
+
+.scholarium-btn:hover {
+    border-color: var(--orient-primary);
+    color: var(--orient-primary);
+    transform: translateY(-1px);
+}
+
+.scholarium-btn.primary {
+    background: var(--orient-primary);
+    color: #fff;
+    border-color: var(--orient-primary);
+}
+
+/* 实验卡片 */
+.exp-item {
+    padding: 10px 14px;
+    border-radius: var(--orient-radius);
+    background: var(--orient-surface);
+    border: 1px solid transparent;
+    transition: all 0.18s ease;
+}
+
+.exp-item:hover {
+    border-color: var(--orient-border);
+    box-shadow: var(--orient-shadow);
+}
+
+.exp-item.active {
+    border-color: var(--orient-primary);
+    box-shadow: 0 0 0 2px rgba(27, 58, 92, 0.12);
+}
+
+/* RSS 卡片 */
+.rss-card {
+    border-radius: 12px;
+    background: var(--orient-surface);
+    border: 1px solid var(--orient-border);
+    transition: all 0.18s ease;
+}
+
+.rss-card:hover {
+    border-color: var(--orient-gold);
+    box-shadow: 0 4px 16px rgba(196, 154, 60, 0.20);
+}
+
+.rss-card-title {
+    font-family: var(--orient-font-serif);
+    color: var(--orient-primary);
+}
+
+/* AI 按钮 */
+.scholarium-btn.ai-btn {
+    background: linear-gradient(135deg, #6B4FBB, var(--orient-primary));
+    color: #fff;
+    border: none;
+}
+
+/* 暗色模式 */
+.theme-dark .scholarium-dashboard {
+    --orient-paper: #0F1729;
+    --orient-surface: #1A2640;
+    --orient-ink: #E8E4DC;
+    --orient-border: rgba(255, 255, 255, 0.08);
+}
