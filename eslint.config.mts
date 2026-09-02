@@ -38,6 +38,7 @@ export default tseslint.config(
 		// same convention as agent-canvas-demo's own .js files, not part of the
 		// typed-lint surface; verified instead by `npm test`.
 		"src/research-weaver-mount-state.js",
+		"src/bridge-state-response.js",
 		"src/__tests__/**",
 	]),
 );
