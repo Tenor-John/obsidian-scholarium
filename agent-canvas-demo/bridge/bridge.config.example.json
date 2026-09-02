@@ -12,7 +12,7 @@
   "_workspaceRoot": "Default cwd for agent tasks. Normally one of allowedRoots.",
   "workspaceRoot": "C:\\path\\to\\your\\vault\\SomeProjectFolder",
 
-  "_adapters": "CLI agents the bridge may launch. {{prompt}} is substituted with the task prompt. Keep read-only sandbox flags unless you have a specific reason to grant writes.",
+  "_adapters": "CLI agents the bridge may launch. {{prompt}} is substituted with the task prompt. Keep read-only sandbox flags unless you have a specific reason to grant writes. You do not have to hand-write these: open the Settings Center in the Research Weaver app and click '\u68c0\u6d4b\u672c\u673a Agent' (detect local agents) to probe this machine's PATH for the known CLIs in tools/known-agents.js (Claude Code, Codex, OpenCode, Hermes, OpenClaw, Pi, DeepSeek Harness, Kimi Code) and add any it finds with one click -- GET /v1/agents/discover and POST /v1/agents/adapters. Hand-editing below is still supported for anything not in that registry, or to customize args/sandbox for an entry it added.",
   "adapters": {
     "codex": {
       "command": "C:\\path\\to\\node.exe",

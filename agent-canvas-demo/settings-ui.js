@@ -14,8 +14,11 @@
     'codex-full': { label: 'Codex · 完整权限车道', guide: '' },
     'opencode-full': { label: 'OpenCode · 完整权限车道', guide: '' },
     opencode: { label: 'OpenCode', guide: 'https://opencode.ai/docs/' },
-    hermes: { label: 'Hermes', guide: '' },
-    openclaw: { label: 'OpenClaw', guide: '' },
+    hermes: { label: 'Hermes', guide: 'https://hermes-agent.nousresearch.com/docs/reference/cli-commands' },
+    openclaw: { label: 'OpenClaw', guide: 'https://docs.openclaw.ai/cli/agent' },
+    pi: { label: 'Pi Coding Agent', guide: 'https://github.com/earendil-works/pi' },
+    dsh: { label: 'DeepSeek Harness', guide: 'https://github.com/deepseek-ai/deepseek-harness' },
+    kimi: { label: 'Kimi Code', guide: 'https://github.com/MoonshotAI/kimi-cli' },
   };
 
   const dialog = $('#settingsCenterDialog');
@@ -112,6 +115,66 @@
       list.textContent = `无法读取 Agent 状态：${error.message}（Bridge 未连接？）`;
     }
   }
+
+  // “检测本机 Agent”：探测 tools/known-agents.js 里的已知 Agent CLI（claude/codex/opencode/hermes/openclaw/pi/dsh/kimi），
+  // 不依赖 bridge.config.json 的 adapters 是否已经配置过。新用户在新机器上首次打开时，
+  // adapters 往往是空的，loadAgents() 上面会直接显示“未报告任何适配器”，这个列表就是补上“你机器上
+  // 实际装了什么”这一步。
+  function discoveredAgentRow(agent) {
+    const row = document.createElement('div');
+    row.className = 'wv-action-row';
+    const name = document.createElement('code');
+    name.textContent = agent.label;
+    const detail = document.createElement('span');
+    detail.className = 'wv-action-detail';
+    detail.textContent = agent.available
+      ? (agent.alreadyConfigured ? '已检测到，已启用' : `已检测到（${agent.path}），尚未启用`)
+      : '未在本机 PATH 中检测到';
+    row.append(name, detail);
+    if (agent.available && !agent.alreadyConfigured) {
+      const enable = document.createElement('button');
+      enable.type = 'button';
+      enable.textContent = '启用';
+      enable.addEventListener('click', async () => {
+        enable.disabled = true;
+        try {
+          await bridgeFetch('/v1/agents/adapters', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: agent.id }) });
+          await loadAgents();
+          await loadDiscoverableAgents();
+        } catch (error) {
+          setStatus(`启用 ${agent.label} 失败：${error.message}`);
+          enable.disabled = false;
+        }
+      });
+      row.appendChild(enable);
+    } else if (!agent.available && agent.guide) {
+      const link = document.createElement('a');
+      link.href = agent.guide;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = '安装与登录指引';
+      row.appendChild(link);
+    }
+    return row;
+  }
+
+  async function loadDiscoverableAgents() {
+    const list = $('#settingsAgentDiscoverList');
+    const status = $('#settingsAgentDiscoverStatus');
+    if (!list) return;
+    list.innerHTML = '';
+    if (status) status.textContent = '正在检测…';
+    try {
+      const { agents } = await bridgeFetch('/v1/agents/discover');
+      for (const agent of agents) list.appendChild(discoveredAgentRow(agent));
+      const foundCount = agents.filter((agent) => agent.available).length;
+      if (status) status.textContent = `已检测 ${agents.length} 个已知 Agent，其中 ${foundCount} 个在本机可用。`;
+    } catch (error) {
+      if (status) status.textContent = `无法检测本机 Agent：${error.message}`;
+    }
+  }
+
+  $('#detectLocalAgents')?.addEventListener('click', () => { loadDiscoverableAgents(); });
 
   async function loadCredentials() {
     const list = $('#settingsCredentialList');
