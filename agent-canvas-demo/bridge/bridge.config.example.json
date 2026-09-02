@@ -1,0 +1,50 @@
+{
+  "_README": "Copy to bridge.config.json and fill in. The real file holds a bearer token and absolute local paths; it is gitignored and must never be committed. Regenerate the token with: node -e \"console.log(require('crypto').randomBytes(24).toString('hex'))\"",
+
+  "token": "REPLACE_WITH_RANDOM_HEX_TOKEN",
+
+  "_allowExecution": "false = the bridge will only report agent availability; true = it may spawn the adapters below.",
+  "allowExecution": false,
+
+  "_allowedRoots": "Absolute paths the bridge is permitted to touch. Anything outside is refused, including sibling folders. Widen deliberately: adding the vault root exposes every note to the local agents.",
+  "allowedRoots": ["C:\\path\\to\\your\\vault\\SomeProjectFolder"],
+
+  "_workspaceRoot": "Default cwd for agent tasks. Normally one of allowedRoots.",
+  "workspaceRoot": "C:\\path\\to\\your\\vault\\SomeProjectFolder",
+
+  "_adapters": "CLI agents the bridge may launch. {{prompt}} is substituted with the task prompt. Keep read-only sandbox flags unless you have a specific reason to grant writes.",
+  "adapters": {
+    "codex": {
+      "command": "C:\\path\\to\\node.exe",
+      "args": [
+        "C:\\path\\to\\@openai\\codex\\bin\\codex.js",
+        "exec",
+        "--sandbox",
+        "read-only",
+        "--skip-git-repo-check",
+        "--json",
+        "{{prompt}}"
+      ]
+    },
+    "claude": {
+      "command": "C:\\path\\to\\@anthropic-ai\\claude-code\\bin\\claude.exe",
+      "args": ["-p", "{{prompt}}"]
+    },
+    "opencode": {
+      "command": "opencode",
+      "args": ["run", "{{prompt}}"]
+    }
+  },
+
+  "_skillDirectories": "Folders scanned for SKILL.md bundles exposed via /v1/skills.",
+  "skillDirectories": [
+    "C:\\path\\to\\obsidian-scholarium\\agent-canvas-demo\\skills"
+  ],
+
+  "_scholarium": "Separate opt-in for POST /v1/scholarium/actions (rss.refresh_feed / rss.score_feed / rss.clip_high_score). enabled defaults false; this Bridge process never executes an action itself, it only whitelists+queues it under <vaultRoot>/Research/_runs/queue/ for the Scholarium plugin's own queue consumer to run (which re-checks the same whitelist and writes the same Research/_runs/actions/ audit manifest a user-initiated action would). vaultRoot must be the REAL Obsidian vault root, not a workspaceRoot subfolder like allowedRoots above, since Research/ lives at the vault root. L0 read-only actions (project.list / project.get / experiment.scan_outcomes) are the exception: they are served directly by GET /v1/scholarium/state?action=... without queueing, because they only read schema-v1 Markdown and never need a live plugin context. The same enabled/vaultRoot/allowedActions gates apply to both routes.",
+  "scholarium": {
+    "enabled": false,
+    "vaultRoot": "C:\\path\\to\\your\\vault",
+    "allowedActions": ["rss.refresh_feed", "rss.score_feed", "rss.clip_high_score", "project.list", "project.get", "experiment.scan_outcomes"]
+  }
+}

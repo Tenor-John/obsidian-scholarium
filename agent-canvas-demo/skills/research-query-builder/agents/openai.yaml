@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Query Builder"
+  short_description: "Create reproducible literature search queries"
+  default_prompt: "Build a transparent first-pass search strategy from the supplied research question."

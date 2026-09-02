@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Source Inventory"
+  short_description: "Inventory local research evidence before agent analysis."
+  default_prompt: "Inventory the authorized research workspace and return a structured evidence manifest."

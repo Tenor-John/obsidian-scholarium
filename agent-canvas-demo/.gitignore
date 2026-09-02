@@ -1,0 +1,25 @@
+# Local Bridge credential and per-user machine configuration
+bridge/bridge.config.json
+
+# Scholarium local secrets and runtime state — must never be committed
+# (API keys, browser profile, download logs, screenshots, storage state).
+Scholarium/secrets/
+Scholarium/runtime/
+
+# Literature cache is local-only
+literature/
+
+# Full-permission lane audit logs (append-only JSONL, 90-day retention)
+bridge/audit/
+
+# Full-permission lane runtime state (probe status, pre/post-task snapshots)
+bridge/runtime/
+
+# Dependencies and local tooling
+node_modules/
+npm-debug.log*
+.playwright-cli/
+.DS_Store
+
+# Bridge local secrets file (API keys migrated out of bridge.config.json)
+bridge/.env

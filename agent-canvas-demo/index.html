@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>织研者 · Research Weaver</title>
+  <script>
+    // Theme sync: the Obsidian host (main.js) appends ?theme=light|dark to the
+    // iframe URL from Obsidian's own body classes. Standalone browser use falls
+    // back to the OS preference. Runs before the stylesheets so there is no flash.
+    (function () {
+      var t = new URLSearchParams(location.search).get("theme");
+      if (t !== "light" && t !== "dark") {
+        t =
+          window.matchMedia &&
+          matchMedia("(prefers-color-scheme: light)").matches
+            ? "light"
+            : "dark";
+      }
+      if (t === "light") document.documentElement.classList.add("wv-light");
+    })();
+  </script>
+  <link rel="stylesheet" href="./fonts/fonts.css" />
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./bridge.css" />
+  <link rel="stylesheet" href="./theory-ui.css" />
+  <!-- Loaded last on purpose: weaver-ui.css carries the current design system and
+       overrides the earlier stylesheets, which still supply structure for the
+       literature / registry widgets that bridge-ui.js injects. -->
+  <link rel="stylesheet" href="./weaver-ui.css" />
+</head>
+<body>
+  <div class="wv-app">
+
+    <header class="wv-header">
+      <div class="wv-brand">
+        <span class="wv-brand-mark">
+          <img src="./assets/logo.png?v=3" alt="织研者" class="wv-brand-logo" />
+        </span>
+        <span class="wv-brand-copy"><strong>织研者</strong><small>Research Weaver</small></span>
+      </div>
+
+      <div class="wv-viewtabs" role="tablist" aria-label="主视图" hidden>
+        <button id="viewChatTab" class="wv-viewtab is-active" role="tab" aria-selected="true">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.2 9.2 0 0 1-3-.5L4 21l1.4-4a8.3 8.3 0 0 1-1.4-4.6C4 7.7 8 4 12.5 4S21 7.2 21 11.5z"/></svg>
+          对话
+        </button>
+        <button id="viewCanvasTab" class="wv-viewtab" role="tab" aria-selected="false">
+          <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="6" rx="1.5"/><rect x="14" y="14" width="7" height="6" rx="1.5"/><path d="M10 7h2.5a1.5 1.5 0 0 1 1.5 1.5V17"/></svg>
+          画布
+        </button>
+      </div>
+
+      <div id="agentSelector" class="wv-agent-selector"></div>
+
+      <div class="wv-header-actions">
+        <button class="wv-btn" id="searchLiterature">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5 16 16"/></svg>
+          检索开放文献
+        </button>
+        <button class="wv-btn" id="fetchOaPdf" title="完整权限车道：Agent 联网定位开放获取 PDF 并报告地址，Bridge 校验后自行下载到 literature/downloaded-pdfs/（Agent 无写入工具）">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M4 20h16"/></svg>
+          抓取 OA PDF
+        </button>
+        <button class="wv-btn" id="refreshWebvpn" title="打开本机 Chrome 登录/刷新 WebVPN-CARSI 会话，供 paper-downloader 后续复用">
+          <svg class="ic" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          登录/刷新 WebVPN
+        </button>
+        <button class="wv-btn wv-btn-primary" id="runPipeline" title="按 research-pipeline.json 自动执行检索式生成→检索→去重→下载→读取→笔记/画布→综述→证据闸门→初稿→润色。固定流程，不读取画布里的节点/连线。">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M7 4.5 19 12 7 19.5z"/></svg>
+          运行文献 Pipeline
+        </button>
+        <div class="wv-more">
+          <button class="wv-btn wv-btn-icon" id="moreActions" title="更多操作" aria-haspopup="true" aria-expanded="false">
+            <svg class="ic" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+          </button>
+          <div class="wv-menu" id="moreMenu" hidden>
+            <button id="runWorkflow" hidden title="只执行你在画布里实际排列的节点与连线，与「运行文献 Pipeline」是两套独立逻辑">真实运行整个工作流</button>
+            <button id="runCurrentAgent" hidden>运行选中 Agent</button>
+            <button id="runFlow" hidden>模拟预览工作流</button>
+            <button id="exportFlow" hidden>导出 JSON</button>
+            <button id="saveFlow" hidden>保存当前工作流</button>
+            <button id="newFlow" hidden>新建工作流</button>
+            <button id="loadExample" hidden>载入科研论单 Agent 模板</button>
+            <button id="showProfiles">Agent Profile 注册表</button>
+            <button id="showSkills">Skill 库</button>
+            <button id="showBoard">关闭注册表</button>
+            <button id="showPipelineSettings" title="调整「运行文献 Pipeline」的参数与开关；12 步固定顺序本身不在这里改">Pipeline 设置</button>
+            <button id="showSettingsCenter" title="Agent 接入状态与 API 钥匙串：所有可自行配置的项目、申请入口与降级说明都在这里">设置中心</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <aside class="wv-left">
+      <div class="wv-left-scroll">
+
+        <section class="wv-sect">
+          <div class="wv-sect-label">当前课题</div>
+          <div class="wv-project">
+            <div class="wv-project-head">
+              <strong id="flowTitle">课题证据审计 · 标准流程</strong>
+              <span class="wv-mono wv-faint" id="projectPermission">只读</span>
+            </div>
+            <p class="wv-project-goal" id="projectGoalPreview">尚未填写任务目标。</p>
+            <div class="wv-project-ws">
+              <span class="wv-sect-label">工作区</span>
+              <input id="workspaceRoot" type="text" placeholder="例如：D:\\ResearchVault\\Projects\\PROJECT-001" />
+              <label class="wv-project-binding">关联课题
+                <select id="chatProjectId" aria-label="当前聊天关联的 Scholarium 课题">
+                  <option value="">未绑定课题（项目状态将标为未验证）</option>
+                </select>
+              </label>
+              <div class="wv-project-ws-row">
+                <button id="saveWorkspace" class="wv-btn wv-btn-sm" type="button">应用课题目录</button>
+                <span id="workspaceStatus" class="wv-faint">正在检测本机课题目录…</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="wv-sect" id="projectRegistrySection">
+          <div class="wv-sect-head">
+            <span class="wv-sect-label">课题注册表</span>
+            <span class="wv-sect-head-actions">
+              <button class="wv-linkbtn" id="runRehearsal" type="button" title="P7 闭环回扫的只读预演：捞出已出结论但未结算的实验，让 Agent 给出假设结算建议草稿。不写任何正式对象，建议笔记需你确认后才落盘。">结算预演</button>
+              <button class="wv-linkbtn" id="refreshProjectRegistry" type="button">刷新</button>
+            </span>
+          </div>
+          <!-- Consumes GET /v1/scholarium/state?action=project.list / project.get
+               (M1 read channel, tools/research-state.js). Read-only: shows what the
+               vault's schema-v1 Project registry actually contains right now, with a
+               click-to-expand settlement ledger per hypothesis. Does not change
+               workspaceRoot above — that mapping is explicitly deferred to M4
+               (see docs/self-evolving-agent-design.md's known-boundary note). -->
+          <div id="projectRegistryList" class="wv-registry-list">
+            <p class="wv-faint">尚未加载。</p>
+          </div>
+          <!-- P7 只读结算预演的输出区：结算建议卡片 + "存为建议笔记"（走
+               /v1/drafts 两段确认）。全程不写任何正式对象。 -->
+          <div id="rehearsalResult" class="wv-rehearsal" hidden></div>
+        </section>
+
+        <section class="wv-sect">
+          <details class="wv-drawer" id="taskDrawer">
+            <summary>
+              <span class="wv-sect-label">任务上下文</span>
+              <svg class="ic wv-drawer-chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg>
+            </summary>
+            <div class="wv-drawer-body">
+              <label>任务目标<textarea id="taskGoal">审查当前实验结论是否足以支持“双波长条件存在非线性动力学协同”。</textarea></label>
+              <label>允许读取的资料<textarea id="taskContext">DEKC-001 课题画像、Roadmap、关联实验记录、已确认文献笔记。</textarea></label>
+              <label>预期交付物<textarea id="taskDeliverable">结论强度、证据来源、替代解释、缺失对照、72 小时下一步行动。</textarea></label>
+            </div>
+          </details>
+        </section>
+
+        <section class="wv-sect">
+          <div class="wv-sect-head">
+            <span class="wv-sect-label">进化记忆</span>
+            <span class="wv-mono wv-faint" id="evolutionCount">—</span>
+          </div>
+          <div id="evolutionMemoryList" class="wv-memory">
+            <p class="wv-empty">还没有接入进化记忆数据源。运行结束后由 Bridge 写入的纠正 / 洞察 / 偏好会出现在这里。</p>
+          </div>
+        </section>
+
+      </div>
+
+      <div class="wv-left-foot">
+        <div class="wv-bridge-line">
+          <span id="bridgeDot" class="status-dot offline"></span>
+          <span id="bridgeText">本机 Bridge 未连接</span>
+        </div>
+        <small id="bridgeMeta" class="wv-mono">运行 npm start 后会自动连接本机 Agent</small>
+        <button id="connectBridge" class="wv-btn wv-btn-sm wv-btn-block">检查本机 Bridge</button>
+      </div>
+    </aside>
+
+    <main class="wv-main">
+
+      <section class="wv-view wv-view-chat is-active" id="chatView">
+        <!-- chatNarrative: user messages, agent replies, and (during runs) a
+             compact status summary — NOT a 1:1 mirror of the tracker rail. -->
+        <div class="wv-chat-topic-row">
+          <div class="wv-chat-topic" id="chatTopicLabel">课题对话</div>
+          <button type="button" class="wv-btn" id="chatLegacyArchiveBtn" hidden title="查看&quot;每个课题独立对话&quot;功能上线前的旧版对话记录（只读，不会自动合并进任何课题）">旧版对话归档</button>
+        </div>
+        <div id="chatNarrative" class="wv-narrative"></div>
+        <div class="wv-composer">
+          <div class="wv-composer-actions">
+            <button class="wv-btn wv-btn-primary" id="chatRunPipeline">运行文献 Pipeline</button>
+            <button class="wv-btn" id="chatRunWorkflow" hidden>真实运行整个工作流</button>
+            <button class="wv-btn" id="chatSearch">检索开放文献</button>
+            <button class="wv-btn" id="ideaModeBtn" title="给一个主题：检索开放文献 → Agent 综合 → 生成候选问题/假设草稿">Idea 模式</button>
+            <button class="wv-btn" id="queryLoopBtn" title="由简到繁：一个 Agent 构建，另一个按相关性、召回、可执行性与代码计算的简洁度分项评分；最多 3 轮，每轮只改一个组件">打磨检索式</button>
+          </div>
+          <div class="wv-chat-bar">
+            <textarea id="chatInput" rows="1" placeholder="输入消息与 Agent 对话，或按 Enter 发送…"></textarea>
+            <button id="chatSend" class="wv-chat-send" title="发送">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
+            </button>
+          </div>
+          <div class="wv-composer-note">
+            <span class="wv-mono">对话通过本机 Bridge 发送至已安装的 Agent CLI</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="wv-view wv-view-canvas" id="canvasView" hidden>
+        <div class="wv-palette">
+          <div class="wv-sect">
+            <div class="wv-sect-head">
+              <span class="wv-sect-label">Agent Profile</span>
+              <button class="wv-linkbtn" id="openProfiles">管理</button>
+            </div>
+            <div id="agentPalette" class="palette wv-palette-list"></div>
+          </div>
+          <div class="wv-sect">
+            <div class="wv-sect-head">
+              <span class="wv-sect-label">Skill 库</span>
+              <button class="wv-linkbtn" id="openSkills">管理</button>
+            </div>
+            <div id="skillPalette" class="palette skills wv-palette-list"></div>
+          </div>
+        </div>
+
+        <div class="wv-canvas-col">
+          <div class="wv-canvas-bar">
+            <span class="wv-faint">拖动节点 · 空白处平移 · 滚轮缩放 · 端口拖出连线 · <span class="wv-canvas-independence-note" title="顶部“运行文献 Pipeline”按钮固定按 research-pipeline.json 的 12 步跑，不读取这里的节点/连线；这里的画布只对“更多 › 真实运行整个工作流 / 运行选中 Agent”生效，两者相互独立，互不影响。">⚠ 本画布与「运行文献 Pipeline」互不影响</span></span>
+            <div class="wv-canvas-bar-actions">
+              <button id="resetView">重置视图</button>
+              <button id="fitCanvas">整理节点</button>
+              <button id="clearLinks">清除连线</button>
+              <button id="zoomOut">－</button>
+              <button id="zoomIn">＋</button>
+              <span class="wv-mono wv-faint" id="zoomLevel">100%</span>
+            </div>
+          </div>
+          <div id="canvas" class="canvas wv-canvas" aria-label="多 Agent 工作流画板">
+            <div id="canvasStage" class="canvas-stage">
+              <svg id="connections" class="connections" aria-hidden="true"></svg>
+              <div id="canvasHint" class="canvas-hint">从左侧点击 Profile 或 Skill，即可添加到画布</div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="wv-inspector" id="inspector">
+          <div class="inspector-empty" id="emptyInspector">
+            <span>◇</span>
+            <h2>配置节点</h2>
+            <p>把 Agent Profile 与 Skill 加入画布，连线后形成可审计的固定任务。</p>
+          </div>
+          <form id="nodeForm" class="node-form hidden">
+            <div class="inspector-title">
+              <div><span class="eyebrow" id="nodeKind">AGENT</span><h2 id="nodeName">Agent</h2></div>
+              <button type="button" id="deleteNode" title="删除节点">×</button>
+            </div>
+            <label>显示名称<input id="fieldName" type="text" /></label>
+            <label id="profileField">绑定 Profile<select id="fieldProfile"></select></label>
+            <label>角色 / 任务<textarea id="fieldRole"></textarea></label>
+            <label>绑定 Skill<select id="fieldSkill"></select></label>
+            <label>权限范围<select id="fieldPermission">
+              <option value="read">只读：可读取指定课题资料</option>
+              <option value="propose">提议：生成待确认修改</option>
+              <option value="write">写入：确认后修改文件</option>
+            </select></label>
+            <label>输入要求<textarea id="fieldInput"></textarea></label>
+            <label>预期输出<textarea id="fieldOutput"></textarea></label>
+            <div class="form-note">真实运行只执行“只读”节点。Profile 必须绑定 Bridge 中已登记且可用的适配器。</div>
+            <button class="button primary wide" type="submit">保存节点配置</button>
+            <button class="button danger wide" id="deleteNodeButton" type="button">删除当前节点</button>
+          </form>
+        </aside>
+      </section>
+    </main>
+
+    <aside class="wv-right">
+      <div class="wv-right-head">
+        <div class="wv-sect-head">
+          <span class="wv-sect-label">执行追踪器</span>
+          <span class="wv-mono wv-faint" id="runTitle">尚未运行</span>
+        </div>
+        <div class="wv-trackertabs">
+          <button id="trackerStepsTab" class="wv-trackertab is-active">步骤</button>
+          <button id="trackerEvoTab" class="wv-trackertab">进化</button>
+          <button id="trackerTreeTab" class="wv-trackertab">假设—实验关系</button>
+          <button id="trackerIdeasTab" class="wv-trackertab">Idea 卡片</button>
+          <button id="trackerGraphTab" class="wv-trackertab">知识图谱</button>
+        </div>
+      </div>
+
+      <div class="wv-tracker-pane" id="trackerIdeasPane">
+        <div class="wv-tree-toolbar">
+          <div class="wv-tree-filters" id="ideaListFilters">
+            <button class="wv-filter-pill is-active" data-filter="all">全部</button>
+            <button class="wv-filter-pill" data-filter="exploring">探索中</button>
+            <button class="wv-filter-pill" data-filter="promoted">已升级</button>
+            <button class="wv-filter-pill" data-filter="shelved">已搁置</button>
+          </div>
+          <div class="wv-tree-projectrow">
+            <button class="wv-linkbtn" id="ideaListRefresh" type="button">刷新</button>
+          </div>
+        </div>
+        <div class="wv-tracker-scroll">
+          <div id="ideaListCards" class="idea-list-cards"></div>
+          <p class="wv-empty wv-tree-overlay" id="ideaListOverlay">还没有加载 Idea 卡片。点上方「刷新」，或先用「新 Idea」侦察一个主题。</p>
+        </div>
+      </div>
+
+      <div class="wv-tracker-pane" id="trackerGraphPane">
+        <div class="wv-tree-toolbar">
+          <div class="wv-tree-projectrow">
+            <select id="graphListProject" class="wv-tree-project"></select>
+            <button class="wv-linkbtn" id="graphListRefresh" type="button">刷新</button>
+          </div>
+        </div>
+        <div class="wv-tracker-scroll">
+          <div id="graphListCards" class="idea-list-cards"></div>
+          <p class="wv-empty wv-tree-overlay" id="graphListOverlay">还没有加载已发布的知识图谱。选择课题后点「刷新」。</p>
+        </div>
+      </div>
+
+      <div class="wv-tracker-pane" id="trackerTreePane">
+        <div class="wv-tree-toolbar">
+          <div class="wv-tree-search">
+            <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5 16 16"/></svg>
+            <input id="ideaTreeSearch" type="text" placeholder="搜索假设 / 实验 / 问题…" />
+          </div>
+          <div class="wv-tree-filters" id="ideaTreeFilters">
+            <button class="wv-filter-pill is-active" data-filter="all">全部</button>
+            <button class="wv-filter-pill" data-filter="supported"><i class="wv-dot wv-dot-green"></i>有支持</button>
+            <button class="wv-filter-pill" data-filter="contradicted"><i class="wv-dot wv-dot-red"></i>有反驳</button>
+            <button class="wv-filter-pill" data-filter="qualified"><i class="wv-dot wv-dot-amber"></i>有限定</button>
+            <button class="wv-filter-pill" data-filter="pending"><i class="wv-dot wv-dot-dim"></i>待结算</button>
+          </div>
+          <div class="wv-tree-projectrow">
+            <select id="ideaTreeProject" class="wv-tree-project"></select>
+            <button class="wv-linkbtn" id="ideaTreeRefresh" type="button">刷新</button>
+          </div>
+        </div>
+        <div class="wv-tree-graph" id="ideaTreeGraph">
+          <svg id="ideaTreeSvg"></svg>
+          <p class="wv-empty wv-tree-overlay" id="ideaTreeOverlay">还没有加载课题数据。点上方「刷新」从课题注册表读取假设 / 实验 / 问题，生成 Idea 网络。</p>
+          <div class="wv-tree-stats wv-mono wv-faint" id="ideaTreeStats" hidden></div>
+          <div id="ideaTreeDetail" class="wv-tree-detail" hidden></div>
+        </div>
+      </div>
+
+      <div class="wv-tracker-pane is-active" id="trackerStepsPane">
+        <div id="runControlBar" class="wv-run-control is-idle" role="status" aria-live="polite">
+          <span id="runControlStatus">空闲</span>
+          <div>
+            <button id="pauseRun" type="button" disabled>阶段间暂停</button>
+            <button id="stopRun" type="button" disabled>取消本次 Pipeline</button>
+          </div>
+        </div>
+        <div class="wv-progress">
+          <div class="wv-progress-track"><span id="runProgressBar"></span></div>
+          <span class="wv-mono wv-faint" id="runProgressText">0 / 0</span>
+        </div>
+        <div class="wv-tracker-scroll">
+          <div id="runSteps" class="run-steps"></div>
+          <div id="runResult" class="run-result hidden"></div>
+          <p class="wv-empty" id="trackerEmpty">还没有运行记录。点击右上角「运行文献 Pipeline」后，每个阶段的进度与产出会实时出现在这里。</p>
+        </div>
+      </div>
+
+      <div class="wv-tracker-pane" id="trackerEvoPane">
+        <div class="wv-tracker-scroll">
+          <p class="wv-empty">本次会话还没有提取到进化记忆。运行结束后写入 evolution-memory 的纠正 / 洞察 / 偏好会显示在这里。</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Drag handles for manual column widths. shell-ui.js owns the logic;
+         positions follow the --wv-left-w / --wv-right-w custom properties. -->
+    <div class="wv-resizer wv-resizer-left" id="resizeLeft" role="separator" aria-orientation="vertical" title="拖动调整左栏宽度"></div>
+    <div class="wv-resizer wv-resizer-right" id="resizeRight" role="separator" aria-orientation="vertical" title="拖动调整右栏宽度"></div>
+  </div>
+
+  <!-- Kept for compatibility: app.js and bridge-ui.js still address #runDialog,
+       #runTitle and #closeRun. shell-ui.js neutralises showModal() so run output
+       lands in the tracker rail and the chat narrative instead of a modal. -->
+  <dialog id="runDialog" class="run-dialog"><button id="closeRun" hidden>×</button></dialog>
+
+  <dialog id="registryDialog" class="registry-dialog">
+    <div class="run-header"><div><span class="eyebrow" id="registryKind">REGISTRY</span><h2 id="registryTitle">Agent Profile 注册表</h2></div><button id="closeRegistry">×</button></div>
+    <div class="registry-grid">
+      <section id="profileRegistry">
+        <h3>创建 Profile</h3>
+        <label>名称<input id="profileName" placeholder="例如：机制审稿人" /></label>
+        <label>本机适配器<select id="profileAdapter"></select></label>
+        <label>角色<textarea id="profileRole" placeholder="明确此 Agent 的研究职责与边界"></textarea></label>
+        <label>说明<input id="profileDescription" placeholder="在画布左侧显示的简短说明" /></label>
+        <button id="saveProfile" class="button primary">保存 Profile</button>
+        <div id="profileList" class="registry-list"></div>
+      </section>
+      <section id="skillRegistry">
+        <h3>创建或编辑 Skill</h3>
+        <label>已有 Skill<select id="skillEditorSelect"><option value="">＋ 新建自定义 Skill</option></select></label>
+        <label>名称<input id="skillName" placeholder="例如：机制证据反证" /></label>
+        <label>任务协议<textarea id="skillInstruction" placeholder="该 Skill 要求 Agent 如何处理输入、检查什么、输出什么"></textarea></label>
+        <label>输出契约<input id="skillOutput" placeholder="例如：主张、反例、证据路径、下一步验证" /></label>
+        <button id="saveSkill" class="button primary">保存可编辑 Skill</button>
+        <button id="copySkill" class="button ghost">复制为可编辑 Skill</button>
+        <div id="skillList" class="registry-list"></div>
+      </section>
+    </div>
+  </dialog>
+
+  <dialog id="settingsCenterDialog" class="registry-dialog settings-center-dialog">
+    <div class="run-header"><div><span class="eyebrow">SETTINGS</span><h2>设置中心</h2></div><button id="closeSettingsCenter">×</button></div>
+    <div class="pipeline-settings-body">
+      <p class="wv-faint">所有可自行配置的项目都在这里：用哪个 Agent、哪些 API 钥匙。每一项都标注用途、费用与申请入口；没有配置时会明确说明降级后还能用什么。密钥只保存在本机 bridge/.env，不会进入任何明文配置或聊天内容。</p>
+      <h3>Agent 接入</h3>
+      <p class="wv-faint">织研者调用你本机已登录的 Agent CLI 执行任务。状态由 Bridge 实时探测。</p>
+      <div id="settingsAgentList" class="registry-list"></div>
+      <h3>API 钥匙串</h3>
+      <div id="settingsCredentialList" class="registry-list"></div>
+      <div class="wv-action-bar">
+        <button id="migrateLegacySecrets" class="button ghost" title="把 bridge.config.json 里遗留的明文密钥搬进 bridge/.env 并从配置中清除">迁移遗留明文密钥</button>
+        <span id="settingsCenterStatus" class="wv-faint"></span>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="pipelineSettingsDialog" class="registry-dialog pipeline-settings-dialog">
+    <div class="run-header"><div><span class="eyebrow">PIPELINE</span><h2>一键运行文献 Pipeline 设置</h2></div><button id="closePipelineSettings">×</button></div>
+    <div class="pipeline-settings-body">
+      <p class="wv-faint">这里只能调整下面这些参数/开关，不能改 12 步固定顺序或每步用哪个 Skill——那部分改动量大很多，还没做。改动即时生效，保存在本机浏览器里，不影响其他人。</p>
+      <label class="pipeline-setting-row">
+        <span>启用"低相关度自动深化检索"质量门</span>
+        <input type="checkbox" id="psRelevanceGateEnabled" />
+      </label>
+      <label class="pipeline-setting-row">
+        <span>低相关比例阈值（0–1，超过才触发深化；默认 0.6）</span>
+        <input type="number" id="psLowRelevanceRatio" min="0" max="1" step="0.05" />
+      </label>
+      <label class="pipeline-setting-row">
+        <span>触发质量门所需的最少记录数（默认 8）</span>
+        <input type="number" id="psMinRecordsForGate" min="1" step="1" />
+      </label>
+      <label class="pipeline-setting-row">
+        <span>深化时尝试 query_v1（检索式生成器已给出的收紧版）</span>
+        <input type="checkbox" id="psTryQueryV1" />
+      </label>
+      <label class="pipeline-setting-row">
+        <span>深化时尝试 Agent 深化检索式（与顶部 Agent 选择器一致）</span>
+        <input type="checkbox" id="psTryAgentRefinement" />
+      </label>
+      <label class="pipeline-setting-row">
+        <span>第 1.2 步：用 Agent 生成课题概念矩阵（课题无关；关闭时只用确定性词库矩阵。无论开关，课题中出现的化学式都会被兜底强制纳入概念块与检索式）</span>
+        <input type="checkbox" id="psAgentConceptMatrix" />
+      </label>
+      <label class="pipeline-setting-row">
+        <span>第 3.9 步：启用 PubMed / Semantic Scholar / Scopus 补充检索（需要在 Scholarium/secrets/ 里配好对应 key，缺 key 的数据源会跳过并在步骤详情里注明，不影响其他数据源）</span>
+        <input type="checkbox" id="psExtraSearchProviders" />
+      </label>
+      <label class="pipeline-setting-row">
+        <span>执行第 5 步 paper-downloader 下载</span>
+        <input type="checkbox" id="psRunDownloadStep" />
+      </label>
+      <label class="pipeline-setting-row">
+        <span>第 5 步批量下载固定为静默后台模式（需人工验证时请单独登录 WebVPN）</span>
+        <input type="checkbox" id="psDownloadHeaded" />
+      </label>
+      <label class="pipeline-setting-row">
+        <span>合并检索结果的上限条数（默认 80；影响下载步骤的时间预算，不建议超过 100）</span>
+        <input type="number" id="psCompactRecordsLimit" min="10" max="200" step="10" />
+      </label>
+      <div class="pipeline-settings-actions">
+        <button id="savePipelineSettings" class="button primary">保存设置</button>
+        <button id="resetPipelineSettings" class="button ghost">恢复默认值</button>
+      </div>
+    </div>
+  </dialog>
+
+  <template id="nodeTemplate"><article class="node"><span class="node-port input" title="连接输入"></span><div class="node-icon"></div><div class="node-copy"><strong></strong><small></small></div><span class="node-port output" title="从此处开始连线"></span></article></template>
+
+  <script src="./orchestrator.js"></script>
+  <script src="./p7-rehearsal.js"></script>
+  <script src="./app.js"></script>
+  <script src="./bridge-ui.js"></script>
+  <script src="./idea-mode-core.js"></script>
+  <script src="./project-mode-core.js"></script>
+  <script src="./seed-reconstruction-core.js"></script>
+  <script src="./graph-projection-core.js"></script>
+  <script src="./query-loop-core.js"></script>
+  <script src="./full-lane-ui-core.js"></script>
+  <script src="./query-adapt.js"></script>
+  <script src="./chat-actions-core.js"></script>
+  <script src="./research-chat-core.js"></script>
+  <script src="./settings-core.js"></script>
+  <script src="./settings-ui.js"></script>
+  <script src="./knowledge-graph-core.js"></script>
+  <script src="./idea-tree.js"></script>
+  <script src="./idea-list.js"></script>
+  <script src="./graph-list.js"></script>
+  <script src="./idea-mode.js"></script>
+  <script src="./project-mode.js"></script>
+  <script src="./seed-reconstruction-ui.js"></script>
+  <script src="./graph-review-ui.js"></script>
+  <script src="./query-loop.js"></script>
+  <script src="./shell-ui.js"></script>
+</body>
+</html>

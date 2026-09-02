@@ -1,0 +1,4 @@
+interface:
+  display_name: "Open Access Literature"
+  short_description: "Search and download open literature with provenance"
+  default_prompt: "Search OpenAlex, retain provenance, and download only explicitly confirmed open-access PDFs."
