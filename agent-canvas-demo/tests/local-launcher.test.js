@@ -18,6 +18,9 @@ const bridgePort = canvasPort + 400;
 // workspaceRoot to the Bridge's own project root — exactly `root` above.
 const configPath = path.join(os.tmpdir(), `agent-canvas-bridge-test-${process.pid}.config.json`);
 let launcher;
+let launcherExit = null; // set to { code, signal } once the process has exited
+const launcherStderr = [];
+const STDERR_TAIL_LINES = 40;
 
 function request(pathname, options = {}) {
   return new Promise((resolve, reject) => {
@@ -31,18 +34,68 @@ function request(pathname, options = {}) {
     req.end();
   });
 }
+
+// Assembled on demand (readiness failures and, for the one test most exposed
+// to it below, request failures too) so a bare "504 !== 200" never has to be
+// debugged blind: shows whether the Bridge process is even still alive, and
+// its own stderr, not just the HTTP status the launcher's proxy timeout
+// produced.
+function launcherDiagnostics() {
+  const state = launcherExit
+    ? `bridge/launcher process exited (code=${launcherExit.code}, signal=${launcherExit.signal})`
+    : `bridge/launcher process still running (pid ${launcher && launcher.pid})`;
+  const tail = launcherStderr.slice(-STDERR_TAIL_LINES).join('\n') || '(no stderr captured)';
+  return `${state}\n--- launcher/bridge stderr (last ${STDERR_TAIL_LINES} lines) ---\n${tail}`;
+}
+
+// `/bridge/health` (bridge/server.js) is a cheap, synchronous handler that
+// answers as soon as the HTTP server is listening. `/bridge/v1/diagnostics`
+// is not: it calls resolveCommand() per configured agent adapter, which
+// shells out to `where.exe`/`which` via spawnSync — real, blocking work that
+// this test's own first request also depends on (`payload.agents`). Waiting
+// only for /health used to declare the launcher "ready" before diagnostics
+// had ever been asked to do that work once, so the first diagnostics call in
+// the test body could still be a cold call, racing start-local.js's own
+// SHORT_BRIDGE_TIMEOUT_MS (15s) as if it were a readiness check. Poll both
+// endpoints here instead, with bounded retries, and only proceed once both
+// have actually answered 200 — a real readiness probe for what the test is
+// about to exercise, not a fixed sleep-then-assume.
 async function waitForServer() {
-  let lastError;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try { const response = await request('/bridge/health'); if (response.status === 200) return; }
-    catch (error) { lastError = error; }
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  const deadline = Date.now() + 30000;
+  let lastFailure = 'no attempt made yet';
+  while (Date.now() < deadline) {
+    if (launcherExit) {
+      throw new Error(`Bridge/launcher exited before becoming ready.\n${launcherDiagnostics()}`);
+    }
+    try {
+      const health = await request('/bridge/health');
+      if (health.status !== 200) {
+        lastFailure = `GET /bridge/health -> ${health.status}: ${health.body.slice(0, 300)}`;
+      } else {
+        const diagnostics = await request('/bridge/v1/diagnostics');
+        if (diagnostics.status === 200) return;
+        lastFailure = `GET /bridge/v1/diagnostics -> ${diagnostics.status}: ${diagnostics.body.slice(0, 300)}`;
+      }
+    } catch (error) {
+      lastFailure = error.message;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw lastError || new Error('local launcher did not start');
+  throw new Error(`local launcher did not become ready within 30s.\nLast probe: ${lastFailure}\n${launcherDiagnostics()}`);
 }
 
 test.before(async () => {
-  launcher = spawn(process.execPath, ['start-local.js'], { cwd: root, env: { ...process.env, AGENT_CANVAS_PORT: String(canvasPort), AGENT_BRIDGE_PORT: String(bridgePort), AGENT_BRIDGE_CONFIG_PATH: configPath }, stdio: 'ignore', windowsHide: true });
+  launcher = spawn(process.execPath, ['start-local.js'], {
+    cwd: root,
+    env: { ...process.env, AGENT_CANVAS_PORT: String(canvasPort), AGENT_BRIDGE_PORT: String(bridgePort), AGENT_BRIDGE_CONFIG_PATH: configPath },
+    stdio: ['ignore', 'ignore', 'pipe'],
+    windowsHide: true,
+  });
+  launcher.stderr.setEncoding('utf8');
+  launcher.stderr.on('data', (chunk) => {
+    for (const line of chunk.split(/\r?\n/)) if (line) launcherStderr.push(line);
+  });
+  launcher.on('exit', (code, signal) => { launcherExit = { code, signal }; });
   await waitForServer();
 });
 test.after(() => {
@@ -51,20 +104,28 @@ test.after(() => {
 });
 
 test('local launcher serves the canvas and injects Bridge authentication', async () => {
-  const page = await request('/');
-  assert.equal(page.status, 200);
-  assert.match(page.body, /Research Weaver/);
+  try {
+    const page = await request('/');
+    assert.equal(page.status, 200);
+    assert.match(page.body, /Research Weaver/);
 
-  const diagnostics = await request('/bridge/v1/diagnostics');
-  assert.equal(diagnostics.status, 200);
-  const payload = JSON.parse(diagnostics.body);
-  assert.equal(typeof payload.executionEnabled, 'boolean');
-  assert.equal(typeof payload.workspace.root, 'string');
-  assert.ok(payload.agents.every((agent) => ['command_detected', 'missing'].includes(agent.readiness)));
+    const diagnostics = await request('/bridge/v1/diagnostics');
+    assert.equal(diagnostics.status, 200);
+    const payload = JSON.parse(diagnostics.body);
+    assert.equal(typeof payload.executionEnabled, 'boolean');
+    assert.equal(typeof payload.workspace.root, 'string');
+    assert.ok(payload.agents.every((agent) => ['command_detected', 'missing'].includes(agent.readiness)));
 
-  const skills = await request('/bridge/v1/skills');
-  assert.equal(skills.status, 200);
-  assert.ok(Array.isArray(JSON.parse(skills.body).skills));
+    const skills = await request('/bridge/v1/skills');
+    assert.equal(skills.status, 200);
+    assert.ok(Array.isArray(JSON.parse(skills.body).skills));
+  } catch (error) {
+    // This specific test is the one most exposed to the diagnostics
+    // endpoint's spawnSync-driven variability (see waitForServer above), so
+    // give it the same failure diagnostics rather than a bare assertion.
+    error.message = `${error.message}\n${launcherDiagnostics()}`;
+    throw error;
+  }
 });
 
 test('long-running literature search is not assigned the 15-second proxy timeout', () => {
