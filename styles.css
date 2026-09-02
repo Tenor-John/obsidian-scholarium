@@ -13033,3 +13033,36 @@ body.scholarium-resizing-sidebar {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* =====================================================
+   织研者：课题状态与建议入口（M2 只读上下文头部）
+   ===================================================== */
+.scholarium-weaver-header {
+    padding: 8px 4px 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    margin-bottom: 8px;
+}
+.scholarium-weaver-context-status {
+    color: var(--text-faint); font-size: 0.85em; margin: 4px 0;
+}
+.scholarium-weaver-context-status.is-error { color: var(--text-error); }
+.scholarium-weaver-picker-row {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.scholarium-weaver-project-select {
+    flex: 1 1 auto; min-width: 160px; padding: 4px 8px; border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary); color: var(--text-normal);
+    font-size: 0.85em;
+}
+.scholarium-weaver-generate-btn {
+    padding: 4px 12px; border-radius: 4px; border: 1px solid var(--celn-accent-light);
+    background: rgba(var(--celn-accent-rgb), 0.12); color: var(--celn-accent);
+    font-size: 0.85em; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.scholarium-weaver-generate-btn:hover:not(:disabled) { background: rgba(var(--celn-accent-rgb), 0.2); }
+.scholarium-weaver-generate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.scholarium-weaver-project-summary { margin-top: 6px; }
+.scholarium-weaver-project-summary p { margin: 2px 0; }
+.scholarium-weaver-project-counts { color: var(--text-muted); font-size: 0.82em; }
