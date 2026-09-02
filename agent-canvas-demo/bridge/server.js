@@ -20,6 +20,7 @@ const scholariumSchema = require('../../tools/schema-objects.js');
 const ideaProjectPromotion = require('../../tools/idea-project-promotion.js');
 const seedReconstructionCore = require('../seed-reconstruction-core.js');
 const scholariumResearchState = require('../../tools/research-state.js');
+const knownAgentsRegistry = require('../../tools/known-agents.js');
 const graphProjectionCore = require('../graph-projection-core.js');
 const { mergeSearchRecords } = require('./search-merge.js');
 const { adaptQueryForSource } = require('../query-adapt.js');
@@ -1016,6 +1017,27 @@ function agentStatus() {
     executionEnabled: Boolean(config.allowExecution), readiness: resolveCommand(adapter.command) ? 'command_detected' : 'missing',
     sandboxed: adapter.sandboxed === true, permission: adapter.permission || null, lane: adapter.lane || null,
   }));
+}
+// GET /v1/agents/discover's backing function. Unlike agentStatus() above,
+// this does not read config.adapters at all -- it probes PATH (via the
+// same resolveCommand() every configured adapter already uses) for the
+// well-known CLI coding agents in tools/known-agents.js, so a brand-new
+// install with an empty `adapters` object still tells a researcher what is
+// actually installed on this machine. See known-agents.js for why this
+// registry exists and how each entry was verified.
+function discoverKnownAgents() {
+  return knownAgentsRegistry.KNOWN_AGENTS.map((entry) => {
+    const resolved = resolveCommand(entry.command);
+    return {
+      id: entry.id,
+      label: entry.label,
+      command: entry.command,
+      guide: entry.guide,
+      available: Boolean(resolved),
+      path: resolved ? resolved.executable : null,
+      alreadyConfigured: Boolean(config.adapters[entry.id]),
+    };
+  });
 }
 function send(res, status, data) {
   // Reflect only known local origins: the launcher page and the Obsidian
@@ -2048,6 +2070,37 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, host: HOST, port: PORT, executionEnabled: Boolean(config.allowExecution) });
   if (!allowed(req)) return send(res, 401, { error: 'invalid or missing Agent Bridge token' });
   if (req.method === 'GET' && url.pathname === '/v1/agents') return send(res, 200, { agents: agentStatus() });
+  // Read-only: probe the known-agents registry against this machine's PATH,
+  // independent of what bridge.config.json's `adapters` already lists. This
+  // is what makes the Settings Center's "检测本机 Agent" button work on a
+  // fresh install with no adapters configured yet.
+  if (req.method === 'GET' && url.pathname === '/v1/agents/discover') {
+    return send(res, 200, { agents: discoverKnownAgents() });
+  }
+  // Add one adapter entry from the known-agents registry into
+  // bridge.config.json, so a discovered-but-unconfigured agent becomes
+  // usable without the researcher hand-editing JSON. Re-resolves the
+  // command server-side rather than trusting the client's earlier
+  // /discover result (which could be stale); never overwrites an adapter
+  // the researcher already configured (by hand or by a previous call to
+  // this route), so a customized args/sandbox/permission entry is never
+  // silently clobbered. This alone never grants execution: allowExecution
+  // still defaults false and gates every adapter regardless of how it got
+  // into `adapters` (see bridge.config.example.json's _allowExecution).
+  if (req.method === 'POST' && url.pathname === '/v1/agents/adapters') {
+    try {
+      const input = await body(req);
+      const id = String(input.id || '');
+      const entry = knownAgentsRegistry.KNOWN_AGENTS.find((item) => item.id === id);
+      if (!entry) return send(res, 404, { error: `unknown agent id '${id}'; not in the known-agents registry` });
+      if (config.adapters[id]) return send(res, 200, { ok: true, id, alreadyConfigured: true, agents: agentStatus() });
+      const resolved = resolveCommand(entry.command);
+      if (!resolved) return send(res, 409, { error: `'${entry.command}' was not found on PATH; install ${entry.label} first, then retry` });
+      config.adapters[id] = { command: entry.command, args: entry.args };
+      saveConfig();
+      return send(res, 201, { ok: true, id, alreadyConfigured: false, path: resolved.executable, agents: agentStatus() });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
   if (req.method === 'GET' && url.pathname === '/v1/provider-context') return send(res, 200, currentProviderContext());
   if (req.method === 'GET' && url.pathname === '/v1/workspace') return send(res, 200, workspaceStatus());
   if (req.method === 'POST' && url.pathname === '/v1/research-topics') {
