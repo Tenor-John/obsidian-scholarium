@@ -23,3 +23,7 @@ npm-debug.log*
 
 # Bridge local secrets file (API keys migrated out of bridge.config.json)
 bridge/.env
+
+# Python skill scripts generate these when their tests/tools run
+**/__pycache__/
+*.pyc
