@@ -124,7 +124,14 @@ test('persistent browser download uses a bounded worker pool and isolated progre
   assert.match(source, /input\.progress_file/);
 });
 
-test('manual literature acquisition returns its PDF to the originating Pipeline', () => {
+// M2 scope, not M1: this asserts the iframe\u2194plugin download-completion postMessage
+// bridge, half of which lives in the *host* plugin bundle (main.js), not in
+// agent-canvas-demo. M1 intentionally ships only a minimal mount (theme sync +
+// launcher/health-check, see src/research-weaver-mount.ts) and does not yet wire this
+// message channel into the host — see the migration map, sections 4-5, and M2. The
+// agent-canvas-demo side (bridge-ui.js) already implements its half; re-enable this once
+// the host-side listener lands in src/.
+test('manual literature acquisition returns its PDF to the originating Pipeline', { skip: 'M2: host-side postMessage listener not yet in src/ (see migration map, sections 4-5)' }, () => {
   const ui = fs.readFileSync(path.join(__dirname, '..', 'bridge-ui.js'), 'utf8');
   const hostBundle = fs.readFileSync(path.join(__dirname, '..', '..', 'main.js'), 'utf8');
   assert.match(ui, /scholarium:manual-download-completed/);

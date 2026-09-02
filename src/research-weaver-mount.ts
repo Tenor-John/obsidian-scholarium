@@ -1,5 +1,7 @@
 import { App, FileSystemAdapter, Platform, requestUrl } from 'obsidian';
 import ChemELNPlugin from './main';
+import { describeMountState, buildWeaverEntryUrl } from './research-weaver-mount-state';
+import type { WeaverConnectionState } from './research-weaver-mount-state';
 
 const WEAVER_LOCAL_URL = 'http://127.0.0.1:4173/';
 const WEAVER_HEALTH_RETRY_MS = 250;
@@ -33,7 +35,14 @@ interface NodeRequireLike {
  *   1. make sure the local launcher (`agent-canvas-demo/start-local.js`) is
  *      running, starting it on demand via Obsidian's desktop Node access;
  *   2. embed the running app in an iframe that tracks the Obsidian
- *      light/dark theme.
+ *      light/dark theme;
+ *   3. show an understandable status (connecting / error) instead of a
+ *      blank iframe while that launcher is still starting or failed.
+ *
+ * All of the actual state → UI decisions live in the pure, dependency-free
+ * ./research-weaver-mount-state.js so they're unit-testable without an
+ * Obsidian/DOM harness — this file only wires those decisions to real
+ * Obsidian and DOM calls.
  *
  * It deliberately does not talk to any Project/Experiment/Evidence write
  * APIs and knows nothing about institution-specific (e.g. USTC WebVPN)
@@ -45,9 +54,12 @@ interface NodeRequireLike {
  * instead of touching any Node API.
  */
 export class ResearchWeaverPanel {
+    private container: HTMLElement | null = null;
     private frame: HTMLIFrameElement | null = null;
     private themeObserver: MutationObserver | null = null;
     private starting: Promise<void> | null = null;
+    private connection: WeaverConnectionState = 'idle';
+    private lastError: string | undefined;
 
     constructor(private app: App, private plugin: ChemELNPlugin) {}
 
@@ -57,11 +69,33 @@ export class ResearchWeaverPanel {
     }
 
     render(container: HTMLElement): void {
-        if (!Platform.isDesktopApp) {
+        this.container = container;
+        this.paint();
+        this.ensureThemeSync();
+        void this.ensureRunning();
+    }
+
+    destroy(): void {
+        this.themeObserver?.disconnect();
+        this.themeObserver = null;
+        this.container = null;
+        // The local Bridge/launcher is a long-lived shared process — other
+        // panels or a future re-open of this tab may still want it, so we
+        // deliberately do not kill it here.
+    }
+
+    /** Re-render the panel's current state into its last-known container. */
+    private paint(): void {
+        const container = this.container;
+        if (!container) return;
+        const state = describeMountState(Platform.isDesktopApp, this.connection, this.lastError);
+
+        if (state.kind !== 'ready') {
+            this.frame = null;
             container.empty();
             container.createEl('p', {
-                text: '织研者需要在桌面端 Obsidian 中运行（需要启动本机的本地服务进程）。',
-                cls: 'scholarium-placeholder',
+                text: state.text,
+                cls: `scholarium-placeholder scholarium-weaver-status is-${state.kind}`,
             });
             return;
         }
@@ -70,7 +104,7 @@ export class ResearchWeaverPanel {
             container.empty();
             this.frame = container.createEl('iframe', {
                 attr: {
-                    src: this.withTheme(WEAVER_LOCAL_URL),
+                    src: buildWeaverEntryUrl(WEAVER_LOCAL_URL, this.resolveTheme()),
                     sandbox: 'allow-scripts allow-forms allow-same-origin allow-popups allow-downloads',
                 },
             });
@@ -79,27 +113,10 @@ export class ResearchWeaverPanel {
             container.empty();
             container.appendChild(this.frame);
         }
-
-        this.ensureThemeSync();
-        void this.ensureRunning();
-    }
-
-    destroy(): void {
-        this.themeObserver?.disconnect();
-        this.themeObserver = null;
-        // The local Bridge/launcher is a long-lived shared process — other
-        // panels or a future re-open of this tab may still want it, so we
-        // deliberately do not kill it here.
     }
 
     private resolveTheme(): 'light' | 'dark' {
         return activeDocument.body.classList.contains('theme-light') ? 'light' : 'dark';
-    }
-
-    private withTheme(url: string): string {
-        const u = new URL(url);
-        u.searchParams.set('theme', this.resolveTheme());
-        return u.toString();
     }
 
     private ensureThemeSync(): void {
@@ -131,6 +148,12 @@ export class ResearchWeaverPanel {
             await this.starting;
             return;
         }
+        if (!Platform.isDesktopApp) return;
+
+        this.connection = 'connecting';
+        this.lastError = undefined;
+        this.paint();
+
         this.starting = (async () => {
             try {
                 await this.health();
@@ -182,10 +205,14 @@ export class ResearchWeaverPanel {
 
         try {
             await this.starting;
+            this.connection = 'ready';
         } catch (error) {
             console.error('[Scholarium] Research Weaver 启动失败:', error);
+            this.connection = 'error';
+            this.lastError = error instanceof Error ? error.message : String(error);
         } finally {
             this.starting = null;
+            this.paint();
         }
     }
 }
