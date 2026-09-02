@@ -34,5 +34,10 @@ export default tseslint.config(
 		"package.json",
 		"package-lock.json",
 		"main.js",
+		// Plain runtime JS (typed via its .d.ts sibling) and its node:test suite —
+		// same convention as agent-canvas-demo's own .js files, not part of the
+		// typed-lint surface; verified instead by `npm test`.
+		"src/research-weaver-mount-state.js",
+		"src/__tests__/**",
 	]),
 );

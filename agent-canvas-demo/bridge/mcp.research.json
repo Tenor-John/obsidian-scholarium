@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "scansci-pdf": {
+      "type": "stdio",
+      "command": "scansci-pdf",
+      "args": [
+        "run"
+      ],
+      "env": {}
+    }
+  }
+}

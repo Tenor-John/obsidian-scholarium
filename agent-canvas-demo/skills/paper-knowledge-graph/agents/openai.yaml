@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paper Knowledge Graph"
+  short_description: "Build an evidence-located PDF graph view."
+  default_prompt: "Use $paper-knowledge-graph to map the available PDF sidecars without creating research objects."

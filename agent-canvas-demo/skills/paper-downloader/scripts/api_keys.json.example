@@ -1,0 +1,13 @@
+{
+  "_comment": "EXAMPLE ONLY. Replace every value with your own key. This file lives in Scholarium/secrets/, which is gitignored. For safer local use, set the equivalent env vars instead: PUBMED_API_KEY, OPENALEX_API_KEY, SEMANTIC_SCHOLAR_API_KEY, SCOPUS_API_KEY.",
+  "_source_links": {
+    "pubmed": "https://www.ncbi.nlm.nih.gov/account/settings/",
+    "openalex": "https://openalex.org/ (no key required for low-volume use; polite pool via mailto recommended)",
+    "semantic_scholar": "https://www.semanticscholar.org/product/api",
+    "scopus": "https://dev.elsevier.com/apikey/manage (Elsevier / Institutional)"
+  },
+  "pubmed_api_key": "",
+  "openalex_api_key": "",
+  "semantic_scholar_api_key": "",
+  "scopus_api_key": ""
+}

@@ -1,0 +1,168 @@
+{
+  "name": "scholarium-research-agent-pipeline",
+  "version": "0.1.0",
+  "principle": "Search hits are metadata; downloaded and read PDFs become evidence cards; manuscript claims must remain evidence-bounded.",
+  "access_profile": {
+    "primary": {
+      "type": "scansci_pdf_institutional",
+      "skill": "scansci-institutional",
+      "config": "~/.scansci-pdf/config.json (vpnsci_enabled, vpnsci_school, vpnsci_base_url)",
+      "cookies": "~/.scansci-pdf/cache/instsci-cookies.json + browser_state.json (wengine_vpn_ticket…, id.ustc.edu.cn CAS session)",
+      "login_policy": "User logs in to CAS in the browser scansci-pdf opens; only session cookies are stored, never a password.",
+      "why_primary": "This tier is the only one that routes the request through WebVPN — the publisher hostname is rewritten into the wvpn.ustc.edu.cn URL form and the ticket cookie is attached, so the publisher sees the institution's IP and subscription.",
+      "reuse_policy": "scansci-pdf validates the saved session before each batch; on expiry it returns needs_login instead of stalling."
+    },
+    "fallback": {
+      "type": "persistent_browser_session",
+      "skill": "paper-downloader",
+      "path": "Scholarium/runtime/webvpn-browser-profile",
+      "use_only_for": "DOIs the institutional tier could not resolve, plus open-access landing pages.",
+      "known_limitation": "This tier opens the raw publisher URL from the local IP; it reads the WebVPN cookie only to report login state. Expect anti_bot_challenge/access_denied on subscription content.",
+      "legacy": "paper-downloader mode=direct_cookie_jar reads Scholarium/secrets/webvpn-cookies.txt; use only for known direct PDF URLs."
+    },
+    "hard_rule": "paper-downloader itself must not implement WebVPN host encryption. Institutional routing is delegated to the installed scansci-pdf package via the scansci-institutional skill. Pirate mirrors stay disabled (scihub_enabled=False is forced on every call)."
+  },
+  "steps": [
+    {
+      "order": 1,
+      "skill": "literature-search-query-builder",
+      "input": "research_question",
+      "output": "query_manifest"
+    },
+    {
+      "order": 2,
+      "skill": "nature-academic-search",
+      "input": "query_manifest.query_v0 or query_v1_after_record_sampling",
+      "output": "metadata_records"
+    },
+    {
+      "order": 3,
+      "skill": "pop8-scholar-search",
+      "input": "query_manifest.query_v0 or broad query",
+      "output": "broad_metadata_records"
+    },
+    {
+      "order": 3.9,
+      "skill": "pubmed-search",
+      "input": "query_manifest.query_v0 or the query after any relevance-driven deepening",
+      "output": "metadata_records (PubMed)",
+      "note": "Optional supplementary source, gated by Pipeline settings (default on). Skips gracefully with a labeled error in the step detail if Scholarium/secrets/pubmed-api-key.txt is missing/invalid; does not block the run."
+    },
+    {
+      "order": 3.91,
+      "skill": "semantic-scholar-search",
+      "input": "query_manifest.query_v0 or the query after any relevance-driven deepening",
+      "output": "metadata_records (Semantic Scholar)",
+      "note": "Optional supplementary source, gated by Pipeline settings (default on). Auth is header-based (x-api-key); skips gracefully if Scholarium/secrets/semantic-scholar-api-key.txt is missing/invalid."
+    },
+    {
+      "order": 3.92,
+      "skill": "scopus-search",
+      "input": "query_manifest.query_v0 or the query after any relevance-driven deepening",
+      "output": "metadata_records (Scopus)",
+      "note": "Optional supplementary source, gated by Pipeline settings (default on). Even with a valid key, full results often require a subscribing institution's IP range; empty results are not necessarily a broken key. Skips gracefully."
+    },
+    {
+      "order": 4,
+      "skill": "reference-export-dedupe",
+      "input": "metadata_records + broad_metadata_records + PubMed/Semantic Scholar/Scopus records",
+      "output": "RIS/BibTeX/DOI/deduped-records"
+    },
+    {
+      "order": 5,
+      "skill": "scansci-institutional",
+      "input": "literature/exports/deduped-records.json (records[].doi)",
+      "output": "literature/downloaded-pdfs",
+      "requires": "A valid WebVPN/CARSI session in scansci-pdf; on needs_login run scansci_pdf_vpnsci_login (or: scansci-pdf instsci-login)",
+      "note": "Primary download tier. Routes through WebVPN, so subscription content actually resolves."
+    },
+    {
+      "order": 5.1,
+      "skill": "paper-downloader",
+      "input": "the records tier 5 could not download",
+      "output": "literature/downloaded-pdfs",
+      "requires": "Persistent browser session; run paper-downloader mode=login if needs_login is returned",
+      "note": "Fallback tier only. Skipped entirely when tier 5 covered every record."
+    },
+    {
+      "order": 6,
+      "skill": "nature-reader",
+      "input": "downloaded PDFs",
+      "output": "literature/evidence-cards"
+    },
+    {
+      "order": 7,
+      "skill": "pdf",
+      "input": "downloaded PDFs",
+      "output": "literature/evidence-cards",
+      "note": "Executable alias for the PDF evidence-card step."
+    },
+    {
+      "order": 8,
+      "skill": "obsidian-bases",
+      "input": "deduped records + evidence cards",
+      "output": "Literature/metadata-only/ and Literature/fulltext-read/ notes plus _base-index.json",
+      "note": "Notes are shelved by evidence level. Downloaded-but-unread PDFs stay on the metadata-only shelf."
+    },
+    {
+      "order": 8.5,
+      "skill": "literature-partition",
+      "input": "existing literature notes + downloaded PDFs + evidence cards",
+      "output": "literature/fulltext-read/, literature/metadata-only/, literature/_partition-index.json",
+      "note": "Idempotent. Rerun after any reading pass to promote notes from metadata-only to fulltext-read."
+    },
+    {
+      "order": 9,
+      "skill": "zrl-knowledge-graph",
+      "input": "run-scoped evidence cards + Agent semantic entity/relation extraction",
+      "output": "knowledge-graph/knowledge_graph.html + knowledge_graph.json + knowledge_graph-report.md",
+      "note": "Deterministic offline renderer; every scientific edge retains provenance and inferred edges stay visibly unverified."
+    },
+    {
+      "order": 10,
+      "skill": "deep-research",
+      "input": "deduped records + evidence cards",
+      "output": "Research/deep-research-synthesis.json"
+    },
+    {
+      "order": 10.5,
+      "skill": "evidence-gate",
+      "input": "deduped records + downloaded PDFs + evidence cards + download logs",
+      "output": "Research/evidence-gate.json, and Research/retrieval-download-diagnostic.md when blocked",
+      "gate": true,
+      "blocks": ["nature-writing", "nature-polishing"],
+      "note": "Hard precondition. Both writing steps re-evaluate it internally and fail closed if it cannot be loaded."
+    },
+    {
+      "order": 11,
+      "skill": "nature-writing",
+      "requires": "evidence-gate status pass (or an explicit, reasoned override that stamps the draft as not citable)",
+      "input": "deep research synthesis",
+      "output": "Manuscript/manuscript-draft.md"
+    },
+    {
+      "order": 12,
+      "skill": "nature-polishing",
+      "requires": "evidence-gate status pass; polishing an evidence-thin draft only makes it more persuasive",
+      "input": "manuscript draft",
+      "output": "Manuscript/manuscript-polished.md"
+    }
+  ],
+  "evidence_floor": {
+    "min_fulltext_pdfs": 10,
+    "min_download_ratio": 0.2,
+    "min_evidence_cards": 20,
+    "rationale": "A run can complete every step on 1 downloaded PDF and still emit a finished-looking draft. These floors make that impossible.",
+    "on_failure": "Emit Research/retrieval-download-diagnostic.md instead of a manuscript; the run is a retrieval trial, not a result."
+  },
+  "stop_rules": [
+    "If query manifest is empty, stop and ask the researcher to clarify concepts.",
+    "If only metadata exists, do not make strong evidence claims.",
+    "If the evidence floor is not met, nature-writing and nature-polishing must not run; output the retrieval/download diagnostic instead.",
+    "If the evidence gate cannot be loaded, fail closed: no draft.",
+    "Notes without a read full text stay on the metadata-only shelf and may not back mechanism, kinetic, or novelty claims.",
+    "If the scansci-pdf WebVPN/CARSI session is expired, report needs_login and ask the researcher to re-run the instsci login; do not let the browser fallback silently become the only tier.",
+    "If browser session is missing or expired, stop institutional download and ask the researcher to run paper-downloader mode=login.",
+    "If PDF reading fails, mark the paper as needs_manual_review."
+  ]
+}

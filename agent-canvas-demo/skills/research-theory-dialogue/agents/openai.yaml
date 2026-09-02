@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Theory Dialogue"
+  short_description: "Iteratively turn evidence into an auditable research plan"
+  default_prompt: "Use the evidence dossier to ask only high-information questions, then iteratively propose and audit an executable research plan."

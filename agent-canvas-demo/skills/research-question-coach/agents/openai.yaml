@@ -1,0 +1,4 @@
+interface:
+  display_name: "科研问题教练"
+  short_description: "通过持续对谈把模糊想法构造成可证伪且可执行的科研课题"
+  default_prompt: "Use $research-question-coach to help me turn my current idea into one focused, falsifiable, executable research project through dialogue."
