@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, TFile, Notice, MarkdownRenderer, getFrontMatterInfo, parseYaml } from 'obsidian';
+﻿import { ItemView, WorkspaceLeaf, TFile, Notice, MarkdownRenderer, getFrontMatterInfo, parseYaml } from 'obsidian';
 import ChemELNPlugin from './main';
 import { WORKSPACE_ROLE_LABELS, WORKSPACE_ROLE_ICONS } from './settings';
 import { AIChatModal } from './ai-chat-modal';
@@ -15,6 +15,7 @@ import { RssFeedBoard } from './rss-feed-board';
 import { openInsertChemModalForFile } from './chem/chem-markdown';
 import { parseChemBlock, CHEM_CODE_BLOCK } from './chem/chem-block';
 import { namespaceSvgIds } from './chem/svg-ids';
+import { ResearchWeaverPanel } from './research-weaver-mount';
 
 // 本地打包 smiles-drawer（兼容 esbuild 的 ESM→CJS 转换）
 // sync-touch: chem block dashboard preview
@@ -87,8 +88,9 @@ export class DashboardView extends ItemView {
     private ideaLib: IdeaLibrary | null = null;
     // 文献订阅工作台（RSS）
     private rssBoard: RssFeedBoard | null = null;
+    private weaverPanel: ResearchWeaverPanel | null = null;
     private notebookMode: 'experiments' | 'ideas' = 'experiments';
-    private activePanel: 'lab' | 'feeds' | 'workspace' | 'materials' | 'tools' = 'lab';
+    private activePanel: 'lab' | 'feeds' | 'workspace' | 'materials' | 'tools' | 'weaver' = 'lab';
     private resizeTimer: number | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: ChemELNPlugin) {
@@ -123,6 +125,9 @@ export class DashboardView extends ItemView {
             // 文献订阅工作台
             this.rssBoard = new RssFeedBoard(this.app, this.plugin);
             await this.rssBoard.load();
+            // 织研者（Research Weaver）本地伴生应用——仅挂载，读写逻辑都在其自身进程内
+            this.weaverPanel = new ResearchWeaverPanel(this.app, this.plugin);
+            await this.weaverPanel.load();
             await this.render();
             this.clockInterval = this.registerInterval(window.setInterval(() => this.updateClock(), 60000));
             // 窗口/叶子尺寸变化（如折叠侧边栏）时防抖重渲染，让按窗口测量的高度与布局自适应
@@ -144,6 +149,7 @@ export class DashboardView extends ItemView {
         this.materialLib?.destroy();
         this.researchToolLib?.destroy();
         this.rssBoard?.destroy();
+        this.weaverPanel?.destroy();
     }
 
     async render() {
@@ -163,6 +169,10 @@ export class DashboardView extends ItemView {
             // ── 文献订阅工作台（全宽）──
             const rssPanel = main.createDiv({ cls: 'scholarium-panel rss-full-panel' });
             if (this.rssBoard) this.rssBoard.render(rssPanel);
+        } else if (this.activePanel === 'weaver') {
+            // ── 织研者（Research Weaver，全宽）── 仅挂载本地伴生应用，读写逻辑均在其自身进程内
+            const weaverPanel = main.createDiv({ cls: 'scholarium-panel weaver-full-panel' });
+            if (this.weaverPanel) this.weaverPanel.render(weaverPanel);
         } else if (this.activePanel === 'workspace') {
             // ── PhD 工作台（全宽）──
             const wsPanel = main.createDiv({ cls: 'scholarium-panel ws-full-panel' });
@@ -268,7 +278,7 @@ export class DashboardView extends ItemView {
     }
 
     // ───── 顶部品牌栏（重设计 M3）─────
-    private switchTab(panel: 'lab' | 'feeds' | 'workspace' | 'materials' | 'tools'): void {
+    private switchTab(panel: 'lab' | 'feeds' | 'workspace' | 'materials' | 'tools' | 'weaver'): void {
         if (this.activePanel === panel) return;
         this.activePanel = panel;
         void this.render();
@@ -331,12 +341,13 @@ export class DashboardView extends ItemView {
         const roleLabel = s.workspaceRole !== 'custom'
             ? (WORKSPACE_ROLE_LABELS[s.workspaceRole] ?? t('workspace', lang))
             : (s.workspaceTabLabel || t('workspace', lang));
-        const tabs: Array<{ key: 'lab' | 'feeds' | 'workspace' | 'materials' | 'tools'; icon: string; label: string }> = [
+        const tabs: Array<{ key: 'lab' | 'feeds' | 'workspace' | 'materials' | 'tools' | 'weaver'; icon: string; label: string }> = [
             { key: 'lab',        icon: 'notebook',  label: s.notebookLabel || t('notebook', lang) },
             { key: 'feeds',      icon: 'rss',       label: lang === 'zh' ? '文献订阅' : 'Feeds' },
             { key: 'workspace',  icon: 'workspace', label: roleLabel },
             { key: 'materials',  icon: 'folder',    label: t('materials', lang) },
             { key: 'tools',      icon: 'tool',      label: t('tools', lang) },
+            { key: 'weaver',     icon: 'sparkle',   label: lang === 'zh' ? '织研者' : 'Research Weaver' },
         ];
         for (const tab of tabs) {
             const active = this.activePanel === tab.key;
