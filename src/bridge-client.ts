@@ -1,5 +1,4 @@
 import { requestUrl } from 'obsidian';
-import { WEAVER_LOCAL_URL } from './weaver-constants';
 import { classifyScholariumState, describeScholariumReadiness } from './bridge-state-response';
 import type { ScholariumStateErrorKind, ScholariumStatusLike } from './bridge-state-response';
 
@@ -7,9 +6,17 @@ import type { ScholariumStateErrorKind, ScholariumStatusLike } from './bridge-st
  * Typed client for the Bridge's read-only ("L0") Scholarium channel —
  * GET /v1/scholarium/status and GET /v1/scholarium/state in
  * agent-canvas-demo/bridge/server.js — reached through the local launcher's
- * `/bridge/*` proxy (agent-canvas-demo/start-local.js) on WEAVER_LOCAL_URL,
- * the same origin research-weaver-mount.ts already ensures is running
- * before it mounts the iframe.
+ * `/bridge/*` proxy (agent-canvas-demo/start-local.js).
+ *
+ * Every function here takes an explicit `baseUrl` (the calling vault's own
+ * `http://127.0.0.1:<canvasPort>/`, from src/weaver-vault-ports.js) rather
+ * than importing a shared constant. Research Weaver's local companion app
+ * runs on a per-vault port precisely so that two Obsidian vaults open at
+ * once on the same machine never share one Bridge process — see
+ * weaver-vault-ports.js's own comment for the cross-vault bug this
+ * replaced. A module-level constant here would silently reintroduce that
+ * exact bug for this file's own callers, so the base URL is threaded
+ * through explicitly instead.
  *
  * This is the M2 "只读上下文读取" (read-only Project/Experiment/Evidence
  * context) piece: it reads what `project.list` / `project.get` /
@@ -117,8 +124,8 @@ export interface ExperimentOutcomeScan {
     settled: number;
 }
 
-async function getJson(path: string): Promise<{ status: number; body: unknown }> {
-    const res = await requestUrl({ url: new URL(path, WEAVER_LOCAL_URL).toString(), method: 'GET', throw: false });
+async function getJson(baseUrl: string, path: string): Promise<{ status: number; body: unknown }> {
+    const res = await requestUrl({ url: new URL(path, baseUrl).toString(), method: 'GET', throw: false });
     let body: unknown;
     try {
         body = JSON.parse(res.text);
@@ -128,18 +135,18 @@ async function getJson(path: string): Promise<{ status: number; body: unknown }>
     return { status: res.status, body };
 }
 
-async function readState<T>(action: string, input?: Record<string, unknown>): Promise<T> {
+async function readState<T>(baseUrl: string, action: string, input?: Record<string, unknown>): Promise<T> {
     const query = new URLSearchParams({ action });
     if (input) query.set('input', JSON.stringify(input));
-    const { status, body } = await getJson(`/bridge/v1/scholarium/state?${query.toString()}`);
+    const { status, body } = await getJson(baseUrl, `/bridge/v1/scholarium/state?${query.toString()}`);
     const classified = classifyScholariumState(status, body as { error?: string; result?: unknown });
     if (!classified.ok) throw new ScholariumStateError(classified.kind, classified.message, classified.ref);
     return classified.result as T;
 }
 
 /** GET /v1/scholarium/status — cheap, always answers even when the read channel is not usable yet. */
-export async function getScholariumStatus(): Promise<ScholariumStatus> {
-    const { body } = await getJson('/bridge/v1/scholarium/status');
+export async function getScholariumStatus(baseUrl: string): Promise<ScholariumStatus> {
+    const { body } = await getJson(baseUrl, '/bridge/v1/scholarium/status');
     return body as ScholariumStatus;
 }
 
@@ -148,23 +155,23 @@ export async function getScholariumStatus(): Promise<ScholariumStatus> {
  * caller can show a specific "未启用 / vaultRoot 未配置 / 不在白名单" message
  * instead of only finding out from a failed state-read.
  */
-export async function checkReadiness(requiredAction: string) {
-    const status = await getScholariumStatus();
+export async function checkReadiness(baseUrl: string, requiredAction: string) {
+    const status = await getScholariumStatus(baseUrl);
     return { status, readiness: describeScholariumReadiness(status, requiredAction) };
 }
 
-export async function listProjects(): Promise<ProjectSummary[]> {
-    const result = await readState<{ projects: ProjectSummary[] }>('project.list');
+export async function listProjects(baseUrl: string): Promise<ProjectSummary[]> {
+    const result = await readState<{ projects: ProjectSummary[] }>(baseUrl, 'project.list');
     return result.projects;
 }
 
-export async function getProject(ref: { displayId?: string; uid?: string }): Promise<ProjectDetail> {
+export async function getProject(baseUrl: string, ref: { displayId?: string; uid?: string }): Promise<ProjectDetail> {
     const input: Record<string, unknown> = {};
     if (ref.uid) input.project_uid = ref.uid;
     if (ref.displayId) input.display_id = ref.displayId;
-    return readState<ProjectDetail>('project.get', input);
+    return readState<ProjectDetail>(baseUrl, 'project.get', input);
 }
 
-export async function scanExperimentOutcomes(projectUid?: string): Promise<ExperimentOutcomeScan> {
-    return readState<ExperimentOutcomeScan>('experiment.scan_outcomes', projectUid ? { project_uid: projectUid } : {});
+export async function scanExperimentOutcomes(baseUrl: string, projectUid?: string): Promise<ExperimentOutcomeScan> {
+    return readState<ExperimentOutcomeScan>(baseUrl, 'experiment.scan_outcomes', projectUid ? { project_uid: projectUid } : {});
 }

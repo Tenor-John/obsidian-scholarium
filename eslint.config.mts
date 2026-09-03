@@ -39,6 +39,7 @@ export default tseslint.config(
 		// typed-lint surface; verified instead by `npm test`.
 		"src/research-weaver-mount-state.js",
 		"src/bridge-state-response.js",
+		"src/weaver-vault-ports.js",
 		"src/__tests__/**",
 	]),
 );

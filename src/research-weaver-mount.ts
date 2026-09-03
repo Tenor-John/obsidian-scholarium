@@ -2,7 +2,8 @@ import { App, FileSystemAdapter, Platform, requestUrl } from 'obsidian';
 import ChemELNPlugin from './main';
 import { describeMountState, buildWeaverEntryUrl } from './research-weaver-mount-state';
 import type { WeaverConnectionState } from './research-weaver-mount-state';
-import { WEAVER_LOCAL_URL } from './weaver-constants';
+import { deriveWeaverPorts } from './weaver-vault-ports';
+import type { WeaverVaultPorts } from './weaver-vault-ports';
 import { checkReadiness, listProjects, scanExperimentOutcomes, ScholariumStateError } from './bridge-client';
 import type { ProjectSummary, ExperimentOutcomeScan } from './bridge-client';
 
@@ -17,11 +18,12 @@ const WEAVER_START_ATTEMPTS = 50;
 interface NodeRequireLike {
     (id: 'node:path'): { join(...parts: string[]): string; dirname(p: string): string };
     (id: 'node:fs'): { existsSync(p: string): boolean };
+    (id: 'node:process'): { env: Record<string, string | undefined> };
     (id: 'node:child_process'): {
         spawn(
             command: string,
             args: string[],
-            options: { cwd?: string; stdio?: string; windowsHide?: boolean; shell?: boolean },
+            options: { cwd?: string; stdio?: string; windowsHide?: boolean; shell?: boolean; env?: Record<string, string | undefined> },
         ): unknown;
     };
 }
@@ -29,7 +31,7 @@ interface NodeRequireLike {
 /**
  * What the project-context header (M2) currently knows about the Bridge's
  * read-only Scholarium channel. Independent of `connection` above: that
- * tracks the canvas launcher's own static page (WEAVER_LOCAL_URL `/`);
+ * tracks the canvas launcher's own static page (this vault's baseUrl `/`);
  * this tracks GET /v1/scholarium/status + /v1/scholarium/state behind its
  * `/bridge/*` proxy, which can be unavailable (channel disabled, vaultRoot
  * unset) even while the launcher itself answers fine.
@@ -45,10 +47,18 @@ type ProjectContextState =
  * Research Weaver (`agent-canvas-demo/`) is a separate, unbundled static web
  * app plus a local Bridge server that ships alongside this plugin but is not
  * part of the compiled main.js — it runs as its own Node process on
- * 127.0.0.1:4173. This module's job is:
+ * 127.0.0.1:<a port derived from this vault's own path — see
+ * weaver-vault-ports.js>. This module's job is:
  *
  *   1. make sure the local launcher (`agent-canvas-demo/start-local.js`) is
- *      running, starting it on demand via Obsidian's desktop Node access;
+ *      running *for this vault specifically*, starting it on demand via
+ *      Obsidian's desktop Node access, on a port derived from this vault's
+ *      absolute path so a second vault opened at the same time never races
+ *      this one for the same port (see weaver-vault-ports.js — this used
+ *      to be a single hardcoded port shared by every vault, which is what
+ *      caused the 2026-09-03 cross-vault contamination: one vault would
+ *      silently attach to another vault's already-running Bridge, reading
+ *      its registry and task history instead of its own);
  *   2. embed the running app in an iframe that tracks the Obsidian
  *      light/dark theme;
  *   3. show an understandable status (connecting / error) instead of a
@@ -59,10 +69,11 @@ type ProjectContextState =
  *      researcher can see what is actually confirmed before opening the
  *      chat to ask Research Weaver for a next-step suggestion.
  *
- * All of the pure state → UI decisions for (1)-(3) live in the
- * dependency-free ./research-weaver-mount-state.js, and the pure response
- * classification for (4) lives in ./bridge-state-response.js, so both are
- * unit-testable without an Obsidian/DOM harness — this file only wires
+ * All of the pure state → UI decisions for (2)-(3) live in the
+ * dependency-free ./research-weaver-mount-state.js, the port derivation for
+ * (1) lives in ./weaver-vault-ports.js, and the pure response
+ * classification for (4) lives in ./bridge-state-response.js, so all three
+ * are unit-testable without an Obsidian/DOM harness — this file only wires
  * those decisions to real Obsidian and DOM calls.
  *
  * It deliberately does not talk to any Project/Experiment/Evidence *write*
@@ -88,13 +99,24 @@ export class ResearchWeaverPanel {
     private connection: WeaverConnectionState = 'idle';
     private lastError: string | undefined;
 
+    // This vault's own canvas/bridge ports and base URL, derived once from
+    // its absolute path (see weaver-vault-ports.js). Every health check,
+    // spawn, iframe src, and bridge-client call in this class goes through
+    // this — never a shared constant — so two vaults open at once never
+    // contend for the same local process.
+    private readonly weaverPorts: WeaverVaultPorts;
+
     private projectContext: ProjectContextState = { kind: 'loading' };
     private projects: ProjectSummary[] = [];
     private selectedDisplayId: string | null = null;
     private outcomeScan: ExperimentOutcomeScan | null = null;
     private outcomeScanError: string | null = null;
 
-    constructor(private app: App, private plugin: ChemELNPlugin) {}
+    constructor(private app: App, private plugin: ChemELNPlugin) {
+        const adapter = this.app.vault.adapter;
+        const vaultBasePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
+        this.weaverPorts = deriveWeaverPorts(vaultBasePath);
+    }
 
     async load(): Promise<void> {
         // Nothing to preload; the local service is started lazily on first render.
@@ -118,9 +140,10 @@ export class ResearchWeaverPanel {
         this.container = null;
         this.headerEl = null;
         this.bodyEl = null;
-        // The local Bridge/launcher is a long-lived shared process — other
-        // panels or a future re-open of this tab may still want it, so we
-        // deliberately do not kill it here.
+        // The local Bridge/launcher is a long-lived shared process (shared
+        // across re-opens of THIS vault's tab, not across vaults — see the
+        // constructor) — other panels or a future re-open of this tab may
+        // still want it, so we deliberately do not kill it here.
     }
 
     private repaint(): void {
@@ -148,7 +171,7 @@ export class ResearchWeaverPanel {
             container.empty();
             this.frame = container.createEl('iframe', {
                 attr: {
-                    src: buildWeaverEntryUrl(WEAVER_LOCAL_URL, this.resolveTheme()),
+                    src: buildWeaverEntryUrl(this.weaverPorts.baseUrl, this.resolveTheme()),
                     sandbox: 'allow-scripts allow-forms allow-same-origin allow-popups allow-downloads',
                 },
             });
@@ -250,7 +273,7 @@ export class ResearchWeaverPanel {
             lastTheme = theme;
             try {
                 const u = new URL(this.frame.src);
-                if (u.origin !== new URL(WEAVER_LOCAL_URL).origin) return;
+                if (u.origin !== new URL(this.weaverPorts.baseUrl).origin) return;
                 u.searchParams.set('theme', theme);
                 u.searchParams.set('embedded', String(Date.now()));
                 this.frame.src = u.toString();
@@ -262,7 +285,7 @@ export class ResearchWeaverPanel {
     }
 
     private async health(): Promise<void> {
-        await requestUrl({ url: WEAVER_LOCAL_URL, method: 'GET' });
+        await requestUrl({ url: this.weaverPorts.baseUrl, method: 'GET' });
     }
 
     private async ensureRunning(): Promise<void> {
@@ -294,6 +317,7 @@ export class ResearchWeaverPanel {
             const path = req('node:path');
             const fs = req('node:fs');
             const cp = req('node:child_process');
+            const nodeProcess = req('node:process');
 
             const launcher = path.join(
                 adapter.getBasePath(),
@@ -310,6 +334,17 @@ export class ResearchWeaverPanel {
                 stdio: 'ignore',
                 windowsHide: true,
                 shell: false,
+                // Ports derived from THIS vault's own path (see the
+                // constructor / weaver-vault-ports.js), so this launcher
+                // never collides with another vault's already-running one.
+                // start-local.js already supports both env vars (its own
+                // AGENT_CANVAS_PORT/AGENT_BRIDGE_PORT defaults are only
+                // used when unset — see agent-canvas-demo/start-local.js).
+                env: {
+                    ...nodeProcess.env,
+                    AGENT_CANVAS_PORT: String(this.weaverPorts.canvasPort),
+                    AGENT_BRIDGE_PORT: String(this.weaverPorts.bridgePort),
+                },
             });
 
             let lastError: unknown;
@@ -340,13 +375,13 @@ export class ResearchWeaverPanel {
 
     /**
      * Load the read-only Project/Experiment/Evidence/Hypothesis context
-     * (M2 step 1) via src/bridge-client.ts. Retries on transient failures
-     * (the Bridge behind the launcher's `/bridge/*` proxy can still be
-     * starting even after the launcher's own static page answers — the
-     * same class of readiness gap fixed in
-     * agent-canvas-demo/tests/local-launcher.test.js for M1) with a bounded
-     * deadline, not a fixed sleep-then-assume. Does NOT retry on an
-     * application-level readiness failure (channel disabled / vaultRoot
+     * (M2 step 1) via src/bridge-client.ts, against THIS vault's own
+     * weaverPorts.baseUrl. Retries on transient failures (the Bridge behind
+     * the launcher's `/bridge/*` proxy can still be starting even after the
+     * launcher's own static page answers — the same class of readiness gap
+     * fixed in agent-canvas-demo/tests/local-launcher.test.js for M1) with
+     * a bounded deadline, not a fixed sleep-then-assume. Does NOT retry on
+     * an application-level readiness failure (channel disabled / vaultRoot
      * unset / action not whitelisted) — retrying cannot fix a config state.
      */
     private async loadProjectContext(): Promise<void> {
@@ -357,13 +392,13 @@ export class ResearchWeaverPanel {
         let lastError: unknown;
         while (Date.now() < deadline) {
             try {
-                const { readiness } = await checkReadiness('project.list');
+                const { readiness } = await checkReadiness(this.weaverPorts.baseUrl, 'project.list');
                 if (!readiness.ready) {
                     this.projectContext = { kind: 'unavailable', message: readiness.message };
                     this.paintHeader();
                     return;
                 }
-                this.projects = await listProjects();
+                this.projects = await listProjects(this.weaverPorts.baseUrl);
                 this.projectContext = { kind: 'ready' };
                 this.paintHeader();
                 return;
@@ -387,7 +422,7 @@ export class ResearchWeaverPanel {
         const project = this.projects.find((p) => p.display_id === this.selectedDisplayId);
         if (!project) return;
         try {
-            this.outcomeScan = await scanExperimentOutcomes(project.uid);
+            this.outcomeScan = await scanExperimentOutcomes(this.weaverPorts.baseUrl, project.uid);
         } catch (error) {
             this.outcomeScanError = error instanceof ScholariumStateError || error instanceof Error ? error.message : String(error);
         }
