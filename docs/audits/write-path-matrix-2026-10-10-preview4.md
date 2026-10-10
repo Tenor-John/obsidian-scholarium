@@ -2,12 +2,14 @@
 
 Reviewed against the previous fingerprint
 (`224471ff…8044c`, 443 sites, `write-path-matrix-2026-09-26-native-weaver.md`).
+The public source snapshot additionally includes the TypeScript build source
+and its version-bump helper, which are not present in the host-only worktree.
 
 ## Result
 
 ```text
-digest  1d57f88a8a96a4e1c51b453c96b9e9b0994afa242b14dabe8b35291a1d0c2c3f
-count   488
+digest  7988e80632f3f38f907b8f9f497b77a6571d324b47fcab8bbd4008208b384546
+count   544
 unknown 0
 ```
 
@@ -15,11 +17,13 @@ unknown 0
 | --- | ---: | ---: | ---: |
 | Agent UI state | 40 | 40 | 0 |
 | Bridge runtime | 94 | 94 | 0 |
-| Skill runtime | 47 | 47 | 0 |
+| Skill runtime | 47 | 46 | -1 |
 | Ketcher generated bundle | 14 | 14 | 0 |
 | Generated `main.js` | 128 | 150 | +22 |
 | Domain and maintenance tools | 114 | 128 | +14 |
 | Native Weaver vendor | 6 | 15 | +9 |
+| Gated build source | 0 | 55 | +55 |
+| Build tooling | 0 | 2 | +2 |
 
 The fixed-Bridge-address repair in this candidate (研究推演室 `bridgeFetch`
 now resolves this Vault's runtime port through `schDeductionBridgeBase`)
@@ -66,3 +70,11 @@ copies, then `main.js` and `styles.css` of the test-vault plugin).
 
 This review does not authorize installation into a research Vault and does
 not lift DEC-008.
+
+## Public source snapshot (+57)
+
+The 55 `src/` sites and 2 `version-bump.mjs` sites are the original build
+source for the preview bundle and its release-version helper. They are
+included so the public repository can reproduce the candidate rather than
+depending on an opaque bundle. They are classified as `gated-build-source`
+and `build-tooling`; the scan reports no unknown persistence surface.

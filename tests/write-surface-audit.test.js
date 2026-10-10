@@ -13,16 +13,18 @@ const { scanProductionWrites } = require("../tools/write-surface-audit");
 // docs/audits/write-path-matrix-2026-09-26-native-weaver.md and
 // docs/audits/write-path-matrix-2026-10-10-preview4.md
 const APPROVED = Object.freeze({
-  digest: "1d57f88a8a96a4e1c51b453c96b9e9b0994afa242b14dabe8b35291a1d0c2c3f",
-  count: 488,
+  digest: "7988e80632f3f38f907b8f9f497b77a6571d324b47fcab8bbd4008208b384546",
+  count: 544,
   by_surface: {
     "agent-ui-state": 40,
     "bridge-runtime": 94,
-    "skill-runtime": 47,
+    "skill-runtime": 46,
     "third-party-generated-bundle": 14,
     "generated-main": 150,
     "domain-and-maintenance-tools": 128,
     "native-weaver-vendor": 15,
+    "gated-build-source": 55,
+    "build-tooling": 2,
   },
 });
 

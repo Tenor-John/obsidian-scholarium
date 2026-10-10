@@ -35,27 +35,19 @@ test("[L1] bundled runtime bootstrap is mechanically tied to its reviewed source
     "/* SCHOLARIUM_RUNTIME_BOOTSTRAP_EMBED_BEGIN */",
     "/* SCHOLARIUM_RUNTIME_BOOTSTRAP_EMBED_END */",
   );
-  const context = { window: { require }, process, Buffer, result: null };
+  const context = { window: { require }, process, Buffer, fetch, result: null };
   vm.runInNewContext(`${block}\nresult = schRuntimeBootstrap;`, context, { filename: "embedded-runtime-bootstrap.js" });
-  for (const name of ["status", "install", "rollback", "resolveRoot"]) {
+  for (const name of ["status", "install", "installFromIncoming", "rollback", "resolveRoot"]) {
     assert.equal(typeof context.result[name], "function", `${name} missing from embedded bootstrap`);
   }
-  assert.equal(context.result.installFromIncoming, undefined);
 });
 
-test("[L1] verified runtime bytes are embedded in the bundle", () => {
+test("[L1] release manifest bytes and URL are pinned in the bundle", () => {
   const manifestBytes = fs.readFileSync(manifestPath);
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
-  const packStart = main.indexOf("/* SCHOLARIUM_RUNTIME_PACK_EMBED_BEGIN */");
-  const payloadStart = main.indexOf("var SCH_EMBEDDED_RUNTIME_PACK_BASE64", packStart);
-  assert.notEqual(packStart, -1);
-  assert.notEqual(payloadStart, -1);
-  const packHeader = main.slice(packStart, payloadStart);
+  assert.match(main, new RegExp(`manifestSha256: "${sha256(manifestBytes)}"`));
   assert.match(main, new RegExp(`version: "${manifest.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
-  assert.match(packHeader, /var SCH_EMBEDDED_RUNTIME_PACK = Object\.freeze\(/);
-  assert.match(packHeader, new RegExp(`"sha256":"${manifest.packs[0].sha256}"`));
-  assert.match(packHeader, new RegExp(`"size":${manifest.packs[0].size}`));
-  assert.doesNotMatch(main.slice(0, 5000), /manifestUrl|installFromIncoming/);
+  assert.match(main, /scholarium-runtime-manifest-2\.0\.9-preview\.4\.json/);
   assert.equal(manifest.packs[0].sha256, "91c7e74e46c2da635a8092badefc072d93a48f6131155fd7be2eff1c296257f0");
 });
 
@@ -151,9 +143,8 @@ test("[L1] runtime ports are assigned by the owning processes and reported over 
 
 test("[L1] XLSX entry translates runtime failures into actionable user text", () => {
   const notice = between(main, "function schDescribeMaterialRuntimeFailure", "async function schOpenMaterialNormalization");
-  assert.match(notice, /内置运行时/);
-  assert.match(notice, /重新加载插件/);
-  assert.doesNotMatch(notice, /下载|incoming|GitHub/);
+  assert.match(notice, /已尝试自动下载并校验/);
+  assert.match(notice, /incoming/);
   assert.match(notice, /原文件未被改动|原文件保持只读/);
   const modal = between(main, "async function schOpenMaterialNormalization", "async function schMaterialRunSkill");
   assert.match(modal, /status\.setText\(schDescribeMaterialRuntimeFailure\(error\)\)/);

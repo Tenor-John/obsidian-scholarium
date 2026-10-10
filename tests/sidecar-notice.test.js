@@ -18,8 +18,8 @@ describe("C2 缺失降级：三件套环境（运行时未安装）", () => {
       const n = describeXlsxEntryUnavailable("absent", err);
       assert.eq(n.kind, KINDS.RUNTIME_ABSENT);
       assert.eq(n.message.includes("运行时"), true, "说明是什么坏了");
-      assert.eq(n.message.includes("重新加载插件"), true, "给出本地恢复出路");
-      assert.eq(n.message.includes("不访问 GitHub"), true, "明确不会联网获取运行时");
+      assert.eq(n.message.includes("一键下载"), true, "给出修复出路");
+      assert.eq(n.message.includes("incoming/"), true, "给出离线出路");
       assert.eq(n.actions.length >= 2, true, "必须有可行动作");
       // 原始错误只允许出现在 detail，不得单独充当用户提示
       assert.eq(/^fetch failed$|^connect ECONNREFUSED/.test(n.message), false, "message 不得是原始错误");

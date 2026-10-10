@@ -13,7 +13,7 @@
  *  - 任何输入都返回 { kind, title, message, actions[], detail? }，绝不抛错；
  *  - message 必须是完整中文句子，包含「是什么坏了」和「怎么办」；
  *  - 原始技术错误只出现在 detail 字段，绝不单独作为 message；
- *  - runtime-absent 时只允许从插件内置包恢复，不得引导联网或手动找包。
+ *  - runtime-absent 时必须给出两条出路：一键下载 / 手动放入包文件（离线）。
  */
 
 const KINDS = Object.freeze({
@@ -38,17 +38,18 @@ function classifyError(error) {
 
 const NOTICES = {
   [KINDS.RUNTIME_ABSENT]: {
-    title: "内置运行时尚未完成初始化",
+    title: "本地运行时尚未安装",
     message:
-      "XLSX 聊天卡与数据规范化使用 Scholarium 插件内置的本地运行时。请重新加载插件以自动恢复；" +
-      "若仍失败，请重新安装完整的 Scholarium 插件包。此过程不访问 GitHub，也不需要另找运行时文件。",
-    actions: ["重新加载插件", "重新安装完整插件包"],
+      "XLSX 聊天卡与数据规范化由本地运行时（Bridge 与技能服务）提供，当前安装只包含插件本体，" +
+      "运行时还没有下载。修复方式：① 打开「设置 → Scholarium → 本地运行时」点击一键下载（约 90 MB，自动校验安装）；或 " +
+      "② 离线环境：把运行时包文件放入运行时目录的 incoming/ 文件夹后点击「从本地安装」。安装完成后此入口自动可用。",
+    actions: ["打开运行时设置并下载", "离线：从本地包文件安装"],
   },
   [KINDS.RUNTIME_DEGRADED]: {
     title: "本地运行时文件不完整",
     message:
       "运行时目录存在但内容缺失（可能是被杀毒软件清理或磁盘异常）。请到「设置 → Scholarium → 本地运行时」" +
-      "执行「修复」：系统会先尝试回滚到上一可用版本，失败则从插件内置包重新展开。你的 Vault 数据不受影响。",
+      "执行「修复」：系统会先尝试回滚到上一可用版本，失败则重新下载安装。你的 Vault 数据不受影响。",
     actions: ["修复运行时（回滚或重装）"],
   },
   [KINDS.BRIDGE_UNREACHABLE]: {
@@ -69,8 +70,8 @@ const NOTICES = {
     title: "Bridge 中未找到所需技能",
     message:
       "Bridge 在运行，但没有注册 sch-data-normalize 技能，通常是运行时版本与插件不匹配。" +
-      "请重新加载 Scholarium 以恢复同版本的内置运行时，或重启 Bridge 后重试。",
-    actions: ["重新加载插件", "重启 Bridge"],
+      "请到「设置 → Scholarium → 本地运行时」检查更新，或重启 Bridge 后重试。",
+    actions: ["检查运行时更新", "重启 Bridge"],
   },
   [KINDS.UNKNOWN]: {
     title: "读取文件结构失败",

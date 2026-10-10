@@ -49,7 +49,9 @@ describe("RssFeedBoard direct-open & literature search (bundle)", () => {
     assert.match(bundle, /待手动下载/);
     assert.match(bundle, /literature\/downloaded-pdfs/);
     assert.match(bundle, /manualQueueId/);
-    assert.match(bundle, /completeManualDownload\(e\.manualQueueId\)/);
+    assert.match(bundle, /notifyManualCaptureResult\(e, "pdf", savedPdf\.path/);
+    assert.match(bundle, /notifyManualCaptureResult\(e, "webclip", p\.file\.path/);
+    assert.match(bundle, /this\.completeManualDownload\(article\.manualQueueId\)/);
     assert.match(bundle, /manualDownloadQueue:\s*\(r == null \? void 0 : r\.manualDownloadQueue\) \|\| \[\]/);
     assert.match(bundle, /this\.data\.manualDownloadQueue = this\.manualDownloadQueue/);
   });

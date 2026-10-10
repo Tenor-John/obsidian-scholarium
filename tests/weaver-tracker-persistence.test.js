@@ -25,9 +25,10 @@ describe("织研者执行追踪器跨页面持久化", () => {
     assert.match(src, /legacyHost\.style\.visibility = "visible"/);
   });
 
-  it("returns a completed manual download to the actual Weaver tab", () => {
+  it("returns a completed manual download to the native Weaver mount", () => {
     const src = source();
-    assert.match(src, /dashboard\?\.switchTab\?\.\("deduction"\)/);
-    assert.noMatch(src, /dashboard\?\.switchTab\?\.\("weaver"\)/);
+    assert.match(src, /dashboard\.__notifyManualCapture\(artifact\)/);
+    assert.match(src, /nativePage\.acceptManualCapture\(item\)/);
+    assert.noMatch(src, /dashboard\?\.__weaverFrame\?\.contentWindow\?\.postMessage/);
   });
 });

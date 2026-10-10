@@ -4,9 +4,9 @@
  * R1 deployment preflight.
  *
  * A generated main.js may be deployed only when its pinned runtime is already
- * active on this machine, or the exact verified core is embedded in main.js.
- * This command is read-only: it proves installability without mutating the
- * active runtime.
+ * active on this machine, or the exact manifest/core pair is present locally
+ * and passes every pinned hash/size/platform check. This command is read-only:
+ * it proves installability without mutating the active runtime.
  */
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -25,36 +25,47 @@ function readPins(mainSource) {
     if (!match) throw new Error(`SCH_RUNTIME_RELEASE is missing ${name}`);
     return match[1];
   };
-  const embedded = mainSource.match(/var SCH_EMBEDDED_RUNTIME_PACK = Object\.freeze\((\{[^\n]+\})\);/);
-  if (!embedded) throw new Error("main.js does not contain SCH_EMBEDDED_RUNTIME_PACK");
-  const pack = JSON.parse(embedded[1]);
-  return { version: value("version"), platform: value("platform"), pack };
+  return {
+    version: value("version"),
+    platform: value("platform"),
+    manifestUrl: value("manifestUrl"),
+    manifestSha256: value("manifestSha256"),
+  };
 }
 
-function verifyEmbeddedPack(mainSource, pins) {
-  const start = mainSource.indexOf("/* SCHOLARIUM_RUNTIME_PACK_EMBED_BEGIN */");
-  const end = mainSource.indexOf("/* SCHOLARIUM_RUNTIME_PACK_EMBED_END */", start);
-  if (start < 0 || end <= start) throw new Error("embedded runtime block is missing");
-  const block = mainSource.slice(start, end);
-  const chunks = [...block.matchAll(/^\s*"([A-Za-z0-9+/=]+)"[,]?$/gm)].map((match) => match[1]);
-  if (!chunks.length) throw new Error("embedded runtime payload is empty");
-  const bytes = Buffer.from(chunks.join(""), "base64");
-  if (pins.pack.version !== pins.version) throw new Error(`embedded runtime version ${pins.pack.version} does not match ${pins.version}`);
-  if (pins.pack.platform !== pins.platform) throw new Error(`embedded runtime platform ${pins.pack.platform} does not match ${pins.platform}`);
-  if (bytes.length !== pins.pack.size) throw new Error(`embedded runtime size mismatch: ${bytes.length}`);
-  const actual = sha256(bytes);
-  if (actual !== pins.pack.sha256) throw new Error(`embedded runtime SHA-256 mismatch: ${actual}`);
-  return { mode: "embedded-pack", version: pins.version, platform: pins.platform, packs: ["core"] };
+function verifyLocalPack({ pins, manifestPath, packDir }) {
+  if (!manifestPath || !fs.existsSync(manifestPath)) {
+    throw new Error("pinned runtime is not installed and no local manifest is available");
+  }
+  const manifestBytes = fs.readFileSync(manifestPath);
+  const manifestHash = sha256(manifestBytes);
+  if (manifestHash !== pins.manifestSha256) {
+    throw new Error(`local manifest SHA-256 does not match main.js pin: ${manifestHash}`);
+  }
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
+  if (manifest.schema !== bootstrap.MANIFEST_SCHEMA) throw new Error(`unexpected runtime manifest schema: ${manifest.schema}`);
+  if (manifest.version !== pins.version) throw new Error(`local runtime version ${manifest.version} does not match ${pins.version}`);
+  if (manifest.platform !== pins.platform) throw new Error(`local runtime platform ${manifest.platform} does not match ${pins.platform}`);
+  const required = (manifest.packs || []).filter((pack) => pack.required);
+  if (required.length === 0) throw new Error("local runtime manifest has no required packs");
+  for (const pack of required) {
+    const file = path.join(packDir || path.dirname(manifestPath), pack.file || path.basename(pack.url || ""));
+    if (!fs.existsSync(file)) throw new Error(`local runtime pack is missing: ${path.basename(file)}`);
+    const bytes = fs.readFileSync(file);
+    if (bytes.length !== pack.size) throw new Error(`local runtime pack size mismatch: ${path.basename(file)}`);
+    const actual = sha256(bytes);
+    if (actual !== pack.sha256) throw new Error(`local runtime pack SHA-256 mismatch: ${path.basename(file)}`);
+  }
+  return { mode: "local-pack", version: pins.version, platform: pins.platform, packs: required.map((pack) => pack.name) };
 }
 
-function verifyDeploymentRuntime({ mainPath, runtimeRoot }) {
-  const mainSource = fs.readFileSync(mainPath, "utf8");
-  const pins = readPins(mainSource);
+function verifyDeploymentRuntime({ mainPath, runtimeRoot, manifestPath, packDir }) {
+  const pins = readPins(fs.readFileSync(mainPath, "utf8"));
   const current = bootstrap.status(runtimeRoot);
   if (current.state === "ready" && current.activeVersion === pins.version) {
     return { mode: "installed", version: pins.version, platform: pins.platform, previousVersion: current.previousVersion };
   }
-  return verifyEmbeddedPack(mainSource, pins);
+  return verifyLocalPack({ pins, manifestPath, packDir });
 }
 
 function parseArgs(argv) {
@@ -77,6 +88,8 @@ if (require.main === module) {
     const result = verifyDeploymentRuntime({
       mainPath: path.resolve(args.main || path.join(repoRoot, "main.js")),
       runtimeRoot: path.resolve(args["runtime-root"] || bootstrap.defaultRuntimeRoot()),
+      manifestPath: args.manifest ? path.resolve(args.manifest) : null,
+      packDir: args["pack-dir"] ? path.resolve(args["pack-dir"]) : null,
     });
     process.stdout.write(`runtime deployment gate passed (${result.mode}): ${result.version} ${result.platform}\n`);
   } catch (error) {
@@ -85,4 +98,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { sha256, readPins, verifyEmbeddedPack, verifyDeploymentRuntime, parseArgs };
+module.exports = { sha256, readPins, verifyLocalPack, verifyDeploymentRuntime, parseArgs };

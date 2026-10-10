@@ -5,7 +5,7 @@
  * 在任意一台干净 Windows 机器上（只需预装 Node ≥20 用于跑本脚本；
  * 被验证的安装路径本身不依赖系统 Node）：
  *
- *   node verify-clean-install.js --manifest <本地 manifest.json 路径> \
+ *   node verify-clean-install.js --manifest <manifest.json 路径或 URL> \
  *     [--pack-dir <本地包目录>] [--root <运行时根目录>]
  *
  * 行为：
@@ -43,7 +43,7 @@ async function main() {
   const args = {};
   for (let i = 2; i < process.argv.length; i += 2) args[process.argv[i].replace(/^--/, "")] = process.argv[i + 1];
   if (!args.manifest) {
-    console.error("用法: node verify-clean-install.js --manifest <本地路径> [--pack-dir DIR] [--root DIR]");
+    console.error("用法: node verify-clean-install.js --manifest <path|url> [--pack-dir DIR] [--root DIR]");
     process.exit(2);
   }
   const root = args.root
@@ -60,17 +60,15 @@ async function main() {
   };
 
   const manifestArg = args.manifest;
-  if (/^https?:\/\//i.test(manifestArg)) {
-    throw new Error("干净安装验证只接受插件构建产物中的本地 manifest，不允许联网下载运行时");
-  }
-  const manifestPath = path.resolve(manifestArg);
-  const packDir = args["pack-dir"] ? path.resolve(args["pack-dir"]) : path.dirname(manifestPath);
+  const isUrl = /^https?:\/\//.test(manifestArg);
+  const packDir = args["pack-dir"] ? path.resolve(args["pack-dir"]) : null;
 
   const result = await bootstrap.install({
     rootDir: root,
-    manifestPath,
+    ...(isUrl ? { manifestUrl: manifestArg } : { manifestPath: path.resolve(manifestArg) }),
     resolvePackUrl: (pack) => {
-      return path.join(packDir, pack.file || path.basename(pack.url || ""));
+      if (packDir) return path.join(packDir, pack.file || path.basename(pack.url || ""));
+      return pack.url;
     },
     onProgress: null,
   });

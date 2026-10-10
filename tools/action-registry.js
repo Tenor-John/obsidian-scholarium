@@ -111,6 +111,9 @@ const ACTIONS = {
   // tools/pending-review-scan.js's header comment for why.
   "workspace.rescan_pending": { level: "L0", risk: "read_only", requires_confirmation: false, handler: (v, input, o) => PRS.scanPendingReview(v, input) },
   "material.list": { level: "L0", risk: "read_only", requires_confirmation: false, handler: (v, input, o) => MA.list(v, input, o) },
+  // P2 describe for one RSS article. Reads the persisted board only; scoring
+  // and mark changes remain the existing L1 actions below.
+  "rss.list_articles": { level: "L0", risk: "read_only", requires_confirmation: false, handler: (v, input, o) => R.listArticles(v, input, o) },
   "workspace.timeblock_add": { level: "L1", risk: "reversible", requires_confirmation: true, async: true, handler: (v, input, o, live) => WA.timeblockAdd(v, input, o, live) },
   "workspace.timeblock_update": { level: "L1", risk: "reversible", requires_confirmation: true, async: true, handler: (v, input, o, live) => WA.timeblockUpdate(v, input, o, live) },
   "workspace.timeblock_remove": { level: "L1", risk: "reversible", requires_confirmation: true, async: true, handler: (v, input, o, live) => WA.timeblockRemove(v, input, o, live) },

@@ -29,7 +29,6 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const os = require('node:os');
 
 // Mirror browser_downloader.js so the two never drift. Any host that becomes
 // allowed here must also become allowed there, and vice versa.
@@ -62,15 +61,6 @@ function loadKeys(root) {
       if (!out.scopus && raw.scopus_api_key) out.scopus = String(raw.scopus_api_key);
     } catch (error) {
       console.error(`api_resolver: failed to parse ${file}: ${error.message}`);
-    }
-  }
-  const central = process.env.SCHOLARIUM_SECRETS_FILE || path.join(os.homedir(), 'Scholarium', 'scholarium-secrets.json');
-  if (fs.existsSync(central)) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(central, 'utf8').replace(/^﻿/, ''));
-      if (!out.openalex && raw.openalex && raw.openalex.apiKey) out.openalex = String(raw.openalex.apiKey);
-    } catch (error) {
-      console.error(`api_resolver: failed to parse ${central}: ${error.message}`);
     }
   }
   return out;

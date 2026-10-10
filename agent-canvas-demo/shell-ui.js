@@ -122,207 +122,16 @@
   // in whichever topic is open, and let the researcher decide what to do with
   // it, rather than guessing which topic it "belongs" to.
   const CHAT_STORE_LEGACY_ARCHIVE = 'weaver.shell.chat.legacy-archived';
-  // 正文本身一律在 Vault 的 Scholarium/Chat/v1/ 里，localStorage 只剩这一件
-  // 事：记住每个课题当前打开的是哪个会话。此前整段对话正文都存在
-  // `weaver.shell.chat.<flowId>` 里，而 canvas 端口每次启动都可能不同——不同
-  // 端口就是不同 Origin，于是"上次的对话"在换端口后变成一片空白存储。这个键
-  // 现在只读不写，也绝不删除：旧值留给恢复工具，见 docs/plans/chat-persistence-contract.md §5。
-  const CHAT_ACTIVE_SESSION_KEY = 'weaver.shell.chat.activeSessionId';
-  const CHAT_PAGE_SIZE = 50;   // 首屏条数；更早的靠"加载更早"翻，绝不截断磁盘数据
+  const chatKey = (flowId) => `weaver.shell.chat.${flowId || 'default'}`;
   let chatFlowId = window.researchWeaver?.activeFlowId || 'default';
-  let chatMessages = [];   // 渲染源：内存里已载入的这段历史（不再写 localStorage）
+  let chatMessages = [];   // { role: 'user'|'agent'|'system', text, at }
   let chatBusy = false;     // true while waiting for agent reply
-  let chatHasMore = false;  // 还有更早的消息没载入
-  let chatNextCursor = null;
-  let chatTotal = 0;
-  let chatStorageError = '';    // 非空 = 正文存储不可用；对话区必须说出来，不许假装已保存
-  let chatStorageBusy = true;   // 首次读取完成前不允许发送
 
-  function newChatMessageId() {
-    return `m-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10).padEnd(8, '0')}`;
+  function readChat(flowId) {
+    try { return JSON.parse(localStorage.getItem(chatKey(flowId)) || '[]'); } catch { return []; }
   }
-  function readActiveSessionMap() {
-    try { return JSON.parse(localStorage.getItem(CHAT_ACTIVE_SESSION_KEY) || '{}') || {}; } catch { return {}; }
-  }
-  function rememberActiveSession(flowId, sessionId) {
-    const map = readActiveSessionMap();
-    map[flowId] = sessionId;
-    try { localStorage.setItem(CHAT_ACTIVE_SESSION_KEY, JSON.stringify(map)); } catch { /* private mode */ }
-  }
-  // 会话归属：绑定课题就用 project:<projectId>，没绑定才退回 topic:<flowId>。
-  // 两者都只用于算目录哈希，原文不会进文件名。
-  function chatScopeFor(flowId) {
-    const bound = flowId === chatFlowId ? (window.researchWeaver?.activeTopic?.projectId || '') : '';
-    const topicId = flowId || 'default';
-    return { scopeKey: bound ? `project:${bound}` : `topic:${topicId}`, topicId, projectId: bound || null };
-  }
-
-  /* 正文消息在会话文件里的形状：role/text/at 是契约字段，其余原始字段（确认卡、
-   * 协议审计、confirmationStates、绘图请求……）整包进 payload。存储层不解释
-   * payload，所以这里放什么，重新载入时就原样回来什么。 */
-  function chatWireMessage(message) {
-    const { messageId, role, text, at, taskId, provider, ...rest } = message;
-    return {
-      messageId: messageId || newChatMessageId(),
-      role,
-      text: String(text ?? ''),
-      at: at || new Date().toISOString(),
-      taskId: taskId ?? null,
-      provider: provider ?? null,
-      payload: rest,
-    };
-  }
-  function chatMessageFromWire(wire) {
-    const payload = wire.payload && typeof wire.payload === 'object' ? wire.payload : {};
-    return { ...payload, messageId: wire.messageId, role: wire.role, text: wire.text, at: wire.at };
-  }
-
-  /* ------------------------------------------------- 对话写队列（唯一） --
-   * 为什么要有它：`saveChat()` 有二十来个调用点，散落在确认卡执行、绘图、笔记
-   * 修改、归档各处。把每一处单独改成 await，等于让"落盘"渗透进所有业务逻辑，
-   * 漏掉任何一处都是静默丢历史。所以正文写入收敛成两个入口——appendMessage
-   * 与 updateSession——它们共用一条串行链：后一次写必须等前一次 settle，磁盘上
-   * 的顺序才会和对话里看到的顺序一致。调用点只把增量交给队列，不碰 HTTP。
-   *
-   * await 这个边界的点分三类，口径写全（只说"只有 N 处"会让读的人以为别处没有，
-   * 而冻结审计据此就会报一条假 BLOCK）：
-   *   1. **关键路径**——`await flushChat` 恰好 3 处：用户消息派发任务前、Agent
-   *      回复标记完成前，再加用户手点的"重试保存"（retryChatPersistence）。
-   *      只有前两处是"顺序不变量"的闸门：它们之后分别要派发任务、要收尾解锁，
-   *      所以必须等落盘真的 settle。
-   *   2. 历史列表里的归档/改名——`await updateSession` 3 处：用户点出来的动作，
-   *      要拿返回值刷新列表，**不在对话回合的路径上**，不构成闸门。
-   *   3. 确认事件——`await appendConfirmation` 1 处：契约 §2.1 硬性规则 1 要求
-   *      "先落 claimed 再投递"，它等的是确认事件而不是正文，同样不在正文回合
-   *      的路径上，闸门由它自己那条规则定义。 */
-  const chatSessions = new Map();        // flowId -> { sessionId, scopeKey, ..., persisted, failed }
-  const chatSessionOpens = new Map();    // flowId -> Promise，防止并发开出两个会话
-  const chatWriteChains = new Map();     // flowId -> 串行链尾
-
-  function serializeChatWrite(flowId, task) {
-    // 前一次失败也要继续往下走（then(task, task)），否则一次网络抖动会卡死
-    // 这个课题之后的所有写入。
-    const tail = chatWriteChains.get(flowId) || Promise.resolve(true);
-    const next = tail.then(task, task);
-    chatWriteChains.set(flowId, next);
-    return next;
-  }
-
-  /* 入口 1：追加一条正文。已开好的会话必须**同步**入队：如果这里先 await 再
-   * serializeChatWrite，调用方紧接着读到的链尾就还是旧的，await flushChat 会在
-   * 这次写真正发生之前就返回——"先落盘再派发"于是变成一句空话。 */
-  function appendMessage(flowId, message) {
-    const ctx = chatSessions.get(flowId);
-    if (!ctx) return ensureChatSession(flowId).then((opened) => (opened ? appendMessage(flowId, message) : false));
-    // 同一条消息已经在队列里就不要重复发一次：saveChat 与关键路径常常都会碰
-    // 到同一条消息，服务端虽然幂等，但没必要为它多跑一趟网络。
-    if (ctx.inFlight.has(message.messageId)) return chatWriteChains.get(flowId) || Promise.resolve(true);
-    ctx.inFlight.add(message.messageId);
-    return serializeChatWrite(flowId, async () => {
-      try {
-        await bridgeFetch(`/v1/chat/sessions/${ctx.sessionId}/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: chatWireMessage(message) }) });
-        ctx.persisted.add(message.messageId);
-        if (ctx.failed.delete(message.messageId)) scheduleChatPaint(flowId);
-        ctx.lastError = '';
-        return true;
-      } catch (error) {
-        if (!ctx.failed.has(message.messageId)) { ctx.failed.add(message.messageId); scheduleChatPaint(flowId); }
-        ctx.lastError = chatStorageErrorMessage(error);
-        return false;
-      } finally {
-        // 成功或失败都出队：失败的消息留在 failed 里，下一次 flush 会再试一次。
-        ctx.inFlight.delete(message.messageId);
-      }
-    });
-  }
-
-  /* 入口 2：改会话本身（只有 title / archived）。归档只是追加一个状态事件，
-   * 正文行一个字节都不动，所以随时可以恢复。
-   * sessionId 可省略（默认改当前会话）：历史会话列表里归档/改名别的会话时，改的
-   * 必须是点中的那一个，而不是碰巧打开着的那一个。 */
-  function updateSession(flowId, patch, sessionId = null) {
-    const ctx = chatSessions.get(flowId);
-    if (!ctx) return ensureChatSession(flowId).then((opened) => (opened ? updateSession(flowId, patch, sessionId) : null));
-    const target = sessionId || ctx.sessionId;
-    return serializeChatWrite(flowId, async () => {
-      try {
-        const updated = await bridgeFetch(`/v1/chat/sessions/${target}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) });
-        if (target === ctx.sessionId) {
-          ctx.title = updated?.session?.title ?? ctx.title;
-          ctx.archived = Boolean(updated?.session?.archived);
-        }
-        return updated?.session || null;
-      } catch (error) {
-        ctx.lastError = chatStorageErrorMessage(error);
-        return null;
-      }
-    });
-  }
-
-  /* 渲染源和队列的分工：chatMessages 永远是唯一的渲染源（顺序、字段都不变），
-   * 队列只负责把"还没落盘的"按顺序送出去。所以 saveChat 不再是"把整个数组写
-   * 进 localStorage"，而是"把增量交给队列"——二十来个调用点因此一个都不用改。 */
-  function saveChat() {
-    const ctx = chatSessions.get(chatFlowId);
-    if (!ctx) { void ensureChatSession(chatFlowId); return Promise.resolve(false); }
-    void flushChat(chatFlowId);
-    return chatWriteChains.get(chatFlowId) || Promise.resolve(true);
-  }
-
-  /* 交给队列并等它 settle。
-   *
-   * ok 的含义是"调用方真正关心的那几条消息确实进 Vault 了"。两条关键路径会传
-   * targets（就是那条用户消息 / 那条 Agent 回复），所以一条更早的失败不会让现在
-   * 这一条被误判；不传 targets 时，当前课题按本次排队的增量算，切走的课题按它
-   * 自己整条链算（那上面只有这一轮的消息）。 */
-  async function flushChat(flowId = chatFlowId, targets = null) {
-    if (!chatSessions.has(flowId)) {
-      const opened = await ensureChatSession(flowId);
-      if (!opened) return { ok: false, failed: [], error: chatStorageError || '正文存储不可用' };
-    }
-    const ctx = chatSessions.get(flowId);
-    const outstanding = [];
-    if (flowId === chatFlowId) {
-      for (const message of chatMessages) {
-        if (!message || typeof message !== 'object') continue;
-        if (!message.messageId) message.messageId = newChatMessageId();
-        if (!ctx.persisted.has(message.messageId)) { outstanding.push(message); appendMessage(flowId, message); }
-      }
-    }
-    await (chatWriteChains.get(flowId) || Promise.resolve(true));
-    const watched = targets || (flowId === chatFlowId ? outstanding : [...ctx.failed]);
-    const failed = watched.filter((message) => ctx.failed.has(message.messageId)).map((message) => message.messageId);
-    return { ok: failed.length === 0, failed, error: ctx.lastError };
-  }
-
-  // 用户手动点"重试保存"：第三条 await 这个边界的地方，但它是人触发的重试，
-  // 不是关键路径。
-  async function retryChatPersistence() {
-    await flushChat(chatFlowId);
-    renderChat();
-  }
-
-  // 入口 3：追加一条确认事件（契约 §2.1）。和正文共用同一条串行链——确认状态
-  // 是防重复执行的锁，它必须和它保护的那次写入一样"要么落盘、要么没发生"。
-  function appendConfirmation(flowId, event) {
-    const ctx = chatSessions.get(flowId);
-    if (!ctx) return ensureChatSession(flowId).then((opened) => (opened ? appendConfirmation(flowId, event) : false));
-    if (ctx.inFlight.has(event.eventId)) return chatWriteChains.get(flowId) || Promise.resolve(true);
-    ctx.inFlight.add(event.eventId);
-    return serializeChatWrite(flowId, async () => {
-      try {
-        const response = await bridgeFetch(`/v1/chat/sessions/${ctx.sessionId}/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirmation: event }) });
-        ctx.persisted.add(event.eventId);
-        if (ctx.failed.delete(event.eventId)) scheduleChatPaint(flowId);
-        return Boolean(response?.ok);
-      } catch (error) {
-        if (!ctx.failed.has(event.eventId)) { ctx.failed.add(event.eventId); scheduleChatPaint(flowId); }
-        ctx.lastError = chatStorageErrorMessage(error);
-        return false;
-      } finally {
-        ctx.inFlight.delete(event.eventId);
-      }
-    });
+  function writeChat(flowId, messages) {
+    try { localStorage.setItem(chatKey(flowId), JSON.stringify(messages.slice(-200))); } catch { /* private mode */ }
   }
   let legacyMigrationNotice = null;
   try {
@@ -333,167 +142,11 @@
       legacyMigrationNotice = '检测到升级前的旧版对话记录（未按课题分区，可能横跨多个课题）。为避免把不相关的历史内容混进当前课题，这份记录已归档、不会自动出现在任何课题的对话框里。如需查看，点击本对话区顶部的"旧版对话归档"按钮即可只读浏览、或复制为文本。';
     }
   } catch { /* private mode */ }
-  /* 打开某个课题的会话：先用记住的 sessionId 直接读；读不到（会话被删、换了
-   * Vault、换了机器）就退回按 scope 找最近一个；一个都没有才新建。整个过程只
-   * 读不写，所以 Bridge 不在时页面照样不是空白——只是明确告诉你读不到。 */
-  function adoptChatSession(flowId, page) {
-    const session = page.session;
-    const ctx = {
-      sessionId: session.sessionId,
-      scopeKey: session.scopeKey,
-      topicId: session.topicId,
-      projectId: session.projectId,
-      title: session.title,
-      archived: Boolean(session.archived),
-      persisted: new Set(page.messages.map((message) => message.messageId)),
-      failed: new Set(),
-      inFlight: new Set(),
-      lastError: '',
-    };
-    chatSessions.set(flowId, ctx);
-    rememberActiveSession(flowId, session.sessionId);
-    if (flowId === chatFlowId) {
-      chatMessages = page.messages.map(chatMessageFromWire);
-      chatHasMore = Boolean(page.hasMore);
-      chatNextCursor = page.nextCursor || null;
-      chatTotal = page.total;
-      chatStorageBusy = false;
-      chatStorageError = '';
-      renderChat();
-    }
-    return ctx;
-  }
-
-  async function openChatSession(flowId) {
-    const scope = chatScopeFor(flowId);
-    const remembered = readActiveSessionMap()[flowId];
-    if (remembered) {
-      try {
-        const page = await bridgeFetch(`/v1/chat/sessions/${remembered}?limit=${CHAT_PAGE_SIZE}`);
-        return adoptChatSession(flowId, page);
-      } catch { /* 记住的会话读不到：退回按 scope 找，而不是直接报错 */ }
-    }
-    const listed = await bridgeFetch(`/v1/chat/sessions?scopeKey=${encodeURIComponent(scope.scopeKey)}&includeArchived=1`);
-    const candidates = listed.sessions || [];
-    const latest = candidates.find((item) => !item.archived) || candidates[0];
-    if (latest) return adoptChatSession(flowId, await bridgeFetch(`/v1/chat/sessions/${latest.sessionId}?limit=${CHAT_PAGE_SIZE}`));
-    return createChatSession(flowId, chatTopicName());
-  }
-
-  // 会话创建只有这一处：包括"新建会话"按钮。"正文写队列"管的是往已有会话里
-  // 追加，而创建会话是会话生命周期，所以它独立成一个函数——不是为了绕过队列，
-  // 而是为了让"哪里会新建会话"这个问题只有一个答案。
-  async function createChatSession(flowId, title) {
-    const scope = chatScopeFor(flowId);
-    const created = await bridgeFetch('/v1/chat/sessions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scopeKey: scope.scopeKey, topicId: scope.topicId, projectId: scope.projectId, title: title || chatTopicName() }) });
-    return adoptChatSession(flowId, await bridgeFetch(`/v1/chat/sessions/${created.session.sessionId}?limit=${CHAT_PAGE_SIZE}`));
-  }
-
-  function ensureChatSession(flowId) {
-    const existing = chatSessions.get(flowId);
-    if (existing) return Promise.resolve(existing);
-    if (!chatSessionOpens.has(flowId)) {
-      const opening = openChatSession(flowId).then((ctx) => {
-        chatSessionOpens.delete(flowId);
-        return ctx;
-      }).catch((error) => {
-        chatSessionOpens.delete(flowId);
-        if (flowId === chatFlowId) setChatStorageError(chatStorageErrorMessage(error));
-        return null;
-      });
-      chatSessionOpens.set(flowId, opening);
-    }
-    return chatSessionOpens.get(flowId);
-  }
-
-  // 正文存储不可用时的措辞：这里最常见的失败根本不是"接口报错"，而是 Bridge
-  // 进程没起来（代理还在，fetch 拿到一个 HTML 错误页，JSON 解析直接炸）。把
-  // 这种底层报错直接甩给研究员，只会让人看到 "Unexpected token <"。
-  function chatStorageErrorMessage(error) {
-    const raw = String(error?.message || error || '');
-    if (/Failed to fetch|NetworkError|Unexpected token|not valid JSON|JSON at position/.test(raw)) {
-      return '连不上本机 Bridge（读写正文需要它）。请确认 npm start 仍在运行，然后点左下角「检查本机 Bridge」。';
-    }
-    return humanizeActionError(raw);
-  }
-
-  function setChatStorageError(text) {
-    const next = String(text || '');
-    const changed = next !== chatStorageError;
-    chatStorageError = next;
-    chatStorageBusy = false;
-    updateChatStorageStatus();
-    updateComposerState();
-    if (changed) renderChat();
-  }
-
-  // 首次（以及 Bridge 重新连上、用户点重试之后）把当前课题的正文读回来。
-  // 这里只读：读不到就停在"明确提示 + 发送禁用"，绝不退回 localStorage 兜底——
-  // 那只会让"暂时读不到"变成"两份互不相干的历史"。
-  async function bootstrapChat(force = false) {
-    if (force) { chatSessions.delete(chatFlowId); chatSessionOpens.delete(chatFlowId); }
-    else if (chatSessions.has(chatFlowId)) return;
-    chatStorageBusy = true;
-    chatStorageError = '';
-    updateComposerState();
-    renderChat();
-    await ensureChatSession(chatFlowId);
-  }
-
-  function loadEarlierChat() {
-    const ctx = chatSessions.get(chatFlowId);
-    if (!ctx || !chatNextCursor) return Promise.resolve();
-    return bridgeFetch(`/v1/chat/sessions/${ctx.sessionId}?limit=${CHAT_PAGE_SIZE}&before=${encodeURIComponent(chatNextCursor)}`)
-      .then((page) => {
-        // 分页只在渲染层：更早的消息接到前面，磁盘上一条都没被删过。
-        chatMessages = [...page.messages.map(chatMessageFromWire), ...chatMessages];
-        chatHasMore = Boolean(page.hasMore);
-        chatNextCursor = page.nextCursor || null;
-        chatTotal = page.total;
-        renderChat();
-      })
-      .catch((error) => { window.researchWeaver?.toast?.(`读取更早的对话失败：${error.message}`); });
-  }
-
-  let chatPaintTimer = null;
-  function scheduleChatPaint(flowId) {
-    if (flowId && flowId !== chatFlowId) return;
-    clearTimeout(chatPaintTimer);
-    // 一次写入刚失败/刚恢复时重绘一下，让"未保存"标记跟着真实状态走；正常
-    // 成功不重绘，避免每条消息落地都翻一次滚动位置。
-    chatPaintTimer = setTimeout(() => { updateChatStorageStatus(); renderChat(); }, 60);
-  }
-
-  function updateChatStorageStatus() {
-    const node = document.getElementById('chatStorageStatus');
-    if (!node) return;
-    if (chatStorageError) node.textContent = `正文未保存：${chatStorageError}`;
-    else if (chatStorageBusy) node.textContent = '正在读取本课题的对话正文…';
-    else {
-      const failed = chatSessions.get(chatFlowId)?.failed?.size || 0;
-      node.textContent = failed
-        ? `有 ${failed} 条消息未保存到 Vault`
-        : `正文已存入 Vault · 本会话 ${chatTotal} 条`;
-    }
-    node.hidden = false;
-  }
-
-  // 发送按钮的可用状态只有一个来源：正在等 Agent、正文还没读回来、或正文存储
-  // 明确不可用。输入框不禁用——正文存不下去不代表不能再打字。
-  function updateComposerState() {
-    if (chatSend) chatSend.disabled = chatBusy || chatStorageBusy || Boolean(chatStorageError);
-  }
-
-  function isChatMessageUnsaved(message) {
-    const ctx = chatSessions.get(chatFlowId);
-    return Boolean(message?.messageId && ctx && ctx.failed.has(message.messageId));
-  }
-
+  chatMessages = readChat(chatFlowId);
+  function saveChat() { writeChat(chatFlowId, chatMessages); }
   if (legacyMigrationNotice) {
-    // 这条提示以前是塞进对话数组里的（于是刷新后就没了，或者被当成历史的一
-    // 部分）。现在它不属于任何一段会话正文，所以放在正文上面单独显示。
-    const notice = document.getElementById('chatNotice');
-    if (notice) { notice.textContent = legacyMigrationNotice; notice.hidden = false; }
+    chatMessages.push({ role: 'system', text: legacyMigrationNotice, at: new Date().toISOString() });
+    saveChat();
   }
   // The system-bubble notice above only ever appears once, in whichever topic
   // happened to be open the moment the migration ran — reload the page, switch
@@ -520,92 +173,11 @@
         </div>
         <footer class="pipeline-topic-actions">
           <button type="button" class="button ghost" id="legacyArchiveCopyBtn">复制全部为文本</button>
-          <button type="button" class="button ghost" id="legacyArchiveImportBtn">导入到当前课题…</button>
           <button type="button" class="button primary" id="legacyArchiveCloseBtn">关闭</button>
         </footer>
-        <div id="legacyArchiveImportState" class="wv-faint" role="status" aria-live="polite"></div>
       </form>`;
     document.body.appendChild(dialog);
     return dialog;
-  }
-
-  async function sha256Hex(value) {
-    const bytes = new TextEncoder().encode(String(value));
-    const digest = await crypto.subtle.digest('SHA-256', bytes);
-    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-  }
-
-  /* 旧数据导入：preview 先给研究员看条数/首尾时间/来源哈希，人点确认后才
-   * commit；commit 必须带 x-scholarium-user-confirmed 与预览的指纹，服务端
-   * 还要求一次性 ticket。来源（localStorage 里的旧键）全程只读——导入只新建
-   * 会话，绝不合并进现有会话，也绝不改写旧键。 */
-  // 导入按钮是两段式的（先预览、再确认），因为"人看过这份清单"这件事必须由人
-  // 在界面上做出，而不是由调用方在请求里声称。第二次点击才发 commit，并且带上
-  // 头、ticket 与 preview 给的指纹。
-  let pendingLegacyImport = null;
-
-  async function importLegacyArchiveIntoCurrentTopic(dialog, archived, button) {
-    const state = dialog.querySelector('#legacyArchiveImportState');
-    const say = (text) => { if (state) state.textContent = text; };
-    if (pendingLegacyImport) {
-      const { ticket, fingerprint } = pendingLegacyImport;
-      pendingLegacyImport = null;
-      button.textContent = '导入到当前课题…';
-      try {
-        const committed = await bridgeFetch('/v1/chat/import/commit', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-scholarium-user-confirmed': 'true' },
-          body: JSON.stringify({ ticket, fingerprint, confirm: true }),
-        });
-        const imported = committed.imported?.[0];
-        say(imported
-          ? `已导入 ${imported.count} 条，新会话 ${imported.sessionId}（可在"历史会话"里打开）。旧记录与来源键都保持原样。`
-          : '提交完成，但没有新建会话。');
-        window.researchWeaver?.toast?.(imported ? `已导入 ${imported.count} 条旧版对话。` : '导入完成。');
-      } catch (error) {
-        say(`导入失败，没有写入任何内容：${chatStorageErrorMessage(error)}。门票是一次性的，重试需要重新预览。`);
-      }
-      return;
-    }
-    const scope = chatScopeFor(chatFlowId);
-    let sourceSha256;
-    try {
-      sourceSha256 = await sha256Hex(localStorage.getItem(CHAT_STORE_LEGACY_ARCHIVE) || '');
-    } catch {
-      say('无法计算来源哈希（当前环境不提供 SHA-256），因此没有做任何改动。');
-      return;
-    }
-    button.disabled = true;
-    say('正在生成预览…');
-    let preview;
-    try {
-      preview = await bridgeFetch('/v1/chat/import/preview', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          items: [{
-            scopeKey: scope.scopeKey,
-            topicId: scope.topicId,
-            projectId: scope.projectId,
-            title: `旧版对话归档 · ${chatTopicName()}`,
-            sourceOrigin: location.origin,
-            sourcePath: null,
-            sourceKey: CHAT_STORE_LEGACY_ARCHIVE,
-            sourceSha256,
-            messages: archived.map((msg) => ({ role: msg.role, text: msg.text, at: msg.at })),
-          }],
-        }),
-      });
-    } catch (error) {
-      say(`预览失败，没有做任何改动：${chatStorageErrorMessage(error)}`);
-      return;
-    } finally { button.disabled = false; }
-    const item = preview.items?.[0] || {};
-    const summary = `共 ${preview.totalMessages} 条，重复跳过 ${preview.duplicateMessages} 条，实际写入 ${item.count ?? 0} 条\n首条 ${item.firstAt || '未知'} · 末条 ${item.lastAt || '未知'}\n来源哈希 ${sourceSha256.slice(0, 16)}… · 预览指纹 ${String(preview.fingerprint).slice(0, 12)}…\n目标课题 ${scope.scopeKey}（只新建会话，不合并进当前会话；旧记录保持原样）`;
-    if (!item.count) { say(`没有可导入的内容。\n${summary}`); return; }
-    pendingLegacyImport = { ticket: preview.ticket, fingerprint: preview.fingerprint };
-    button.textContent = `确认导入 ${item.count} 条`;
-    say(`请确认下列内容后再次点击按钮：\n${summary}`);
   }
   function openLegacyArchiveDialog() {
     const dialog = ensureLegacyArchiveDialog();
@@ -626,15 +198,9 @@
         window.researchWeaver?.toast?.('复制失败，请手动选中文字复制。');
       }
     };
-    const importBtn = dialog.querySelector('#legacyArchiveImportBtn');
-    pendingLegacyImport = null;
-    importBtn.textContent = '导入到当前课题…';
-    importBtn.onclick = () => { void importLegacyArchiveIntoCurrentTopic(dialog, archived, importBtn); };
     const close = () => dialog.close();
     dialog.querySelector('.pipeline-topic-close').onclick = close;
     dialog.querySelector('#legacyArchiveCloseBtn').onclick = close;
-    const importState = dialog.querySelector('#legacyArchiveImportState');
-    if (importState) importState.textContent = '';
     if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', '');
   }
   function updateLegacyArchiveButton() {
@@ -646,164 +212,19 @@
   }
   updateLegacyArchiveButton();
   document.getElementById('chatLegacyArchiveBtn')?.addEventListener('click', openLegacyArchiveDialog);
-
-  /* 历史会话 / 归档 · 恢复。会话列表按当前 scope 取，ARCHIVED 的也列出来（否则
-   * "归档"就等于"再也找不到"）。归档只追加状态事件，正文不改，所以恢复就是
-   * 再追加一个 archived:false。 */
-  function ensureChatSessionsDialog() {
-    let dialog = document.querySelector('#chatSessionsDialog');
-    if (dialog) return dialog;
-    dialog = document.createElement('dialog');
-    dialog.id = 'chatSessionsDialog';
-    dialog.className = 'registry-dialog pipeline-topic-dialog';
-    dialog.innerHTML = `
-      <form method="dialog" class="pipeline-topic-form" onsubmit="return false">
-        <div class="run-header">
-          <div><span class="eyebrow">SESSIONS</span><h2>本课题的历史会话</h2></div>
-          <button type="button" class="pipeline-topic-close" aria-label="关闭">×</button>
-        </div>
-        <div class="pipeline-topic-body">
-          <div class="wv-faint">对话正文保存在 Vault 的 Scholarium/Chat/v1/ 下。归档不移动、不删除任何正文，随时可以恢复。</div>
-          <div id="chatSessionsList" class="wv-narrative"></div>
-        </div>
-        <footer class="pipeline-topic-actions">
-          <button type="button" class="button ghost" id="chatSessionsNewBtn">新建会话</button>
-          <button type="button" class="button primary" id="chatSessionsCloseBtn">关闭</button>
-        </footer>
-        <div id="chatSessionsState" class="wv-faint" role="status" aria-live="polite"></div>
-      </form>`;
-    document.body.appendChild(dialog);
-    return dialog;
-  }
-
-  async function renderChatSessionsDialog(dialog) {
-    const list = dialog.querySelector('#chatSessionsList');
-    const state = dialog.querySelector('#chatSessionsState');
-    const scope = chatScopeFor(chatFlowId);
-    let sessions = [];
-    try {
-      sessions = (await bridgeFetch(`/v1/chat/sessions?scopeKey=${encodeURIComponent(scope.scopeKey)}&includeArchived=1`)).sessions || [];
-    } catch (error) {
-      list.replaceChildren(chatBubble('system', `读取会话列表失败：${humanizeActionError(String(error?.message || error))}`));
-      return;
-    }
-    if (state) state.textContent = `共 ${sessions.length} 个会话`;
-    const active = chatSessions.get(chatFlowId)?.sessionId;
-    const fragment = document.createDocumentFragment();
-    for (const session of sessions) {
-      const row = document.createElement('div');
-      row.className = 'wv-action-card';
-      const head = document.createElement('div');
-      head.className = 'wv-action-title';
-      head.textContent = `${session.archived ? '［已归档］' : ''}${session.title || '未命名课题'}${session.sessionId === active ? ' · 当前' : ''}`;
-      const meta = document.createElement('div');
-      meta.className = 'wv-faint';
-      meta.textContent = `${session.messageCount} 条 · 最后更新 ${session.updatedAt || session.createdAt || '未知'} · ${session.sessionId}`;
-      const bar = document.createElement('div');
-      bar.className = 'wv-action-bar';
-      const open = document.createElement('button');
-      open.type = 'button'; open.className = 'wv-btn wv-btn-sm'; open.textContent = '打开';
-      open.onclick = () => {
-        chatSessions.delete(chatFlowId);
-        chatSessionOpens.delete(chatFlowId);
-        chatStorageBusy = true;
-        updateComposerState();
-        adoptChatSession(chatFlowId, { session, messages: [], hasMore: false, nextCursor: null, total: session.messageCount });
-        bridgeFetch(`/v1/chat/sessions/${session.sessionId}?limit=${CHAT_PAGE_SIZE}`)
-          .then((page) => adoptChatSession(chatFlowId, page))
-          .catch((error) => setChatStorageError(chatStorageErrorMessage(error)));
-        void renderChatSessionsDialog(dialog);
-      };
-      const toggle = document.createElement('button');
-      toggle.type = 'button'; toggle.className = 'wv-btn wv-btn-sm';
-      toggle.textContent = session.archived ? '恢复' : '归档';
-      // 每一行都改自己那一行对应的会话：不能因为某一行被点，就把当前打开着的
-      // 会话归档掉。
-      toggle.onclick = async () => {
-        const updated = await updateSession(chatFlowId, { archived: !session.archived }, session.sessionId);
-        if (!updated) { window.researchWeaver?.toast?.('归档/恢复失败，请稍后重试。'); return; }
-        if (session.sessionId === chatSessions.get(chatFlowId)?.sessionId) updateChatStorageStatus();
-        void renderChatSessionsDialog(dialog);
-      };
-      const rename = document.createElement('button');
-      rename.type = 'button'; rename.className = 'wv-btn wv-btn-sm'; rename.textContent = '改名';
-      rename.onclick = async () => {
-        const next = window.prompt('会话名称', session.title || '');
-        if (next === null || !next.trim()) return;
-        const updated = await updateSession(chatFlowId, { title: next.trim().slice(0, 200) }, session.sessionId);
-        if (!updated) { window.researchWeaver?.toast?.('改名失败，请稍后重试。'); return; }
-        if (session.sessionId === chatSessions.get(chatFlowId)?.sessionId) syncChatTopicLabel();
-        void renderChatSessionsDialog(dialog);
-      };
-      bar.append(open, toggle, rename);
-      row.append(head, meta, bar);
-      fragment.appendChild(row);
-    }
-    if (!sessions.length) fragment.appendChild(chatBubble('system', '这个课题还没有会话。'));
-    list.replaceChildren(fragment);
-  }
-
-  function openChatSessionsDialog() {
-    const dialog = ensureChatSessionsDialog();
-    dialog.querySelector('#chatSessionsNewBtn').onclick = async () => {
-      chatSessions.delete(chatFlowId);
-      chatSessionOpens.delete(chatFlowId);
-      chatStorageBusy = true;
-      updateComposerState();
-      try {
-        await createChatSession(chatFlowId, `${chatTopicName()} · 新会话`);
-        void renderChatSessionsDialog(dialog);
-      } catch (error) { setChatStorageError(chatStorageErrorMessage(error)); }
-    };
-    dialog.querySelector('.pipeline-topic-close').onclick = () => dialog.close();
-    dialog.querySelector('#chatSessionsCloseBtn').onclick = () => dialog.close();
-    if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', '');
-    void renderChatSessionsDialog(dialog);
-  }
-
-  document.getElementById('chatHistoryBtn')?.addEventListener('click', openChatSessionsDialog);
-  document.getElementById('chatArchiveBtn')?.addEventListener('click', async () => {
-    const ctx = chatSessions.get(chatFlowId);
-    if (!ctx) { window.researchWeaver?.toast?.('正文存储还没有就绪，暂时无法归档。'); return; }
-    const updated = await updateSession(chatFlowId, { archived: !ctx.archived });
-    if (!updated) { window.researchWeaver?.toast?.(`归档失败：${ctx.lastError || '未知原因'}`); return; }
-    window.researchWeaver?.toast?.(updated.archived ? '已归档本会话（正文未改动，可随时在"历史会话"里恢复）。' : '已恢复本会话。');
-    updateChatStorageStatus();
-  });
-  // Bridge 重新连上后重试读取：这是"离线→在线"的唯一恢复入口，用户点重试也走它。
-  window.addEventListener('bridge:agents', () => {
-    if (chatStorageError) void bootstrapChat(true);
-  });
-
   // A reply landing after the user switched topics still belongs to the topic
-  // that started the turn: hand that single message to the write queue, which
-  // already knows that topic's session. Loading that topic's whole transcript
-  // here would be wrong: the render source is the open topic only.
+  // that started the turn: append straight to that topic's store.
   function appendToChat(flowId, message) {
-    if (!message.messageId) message.messageId = newChatMessageId();
-    if (flowId === chatFlowId) { chatMessages.push(message); renderChat(); void flushChat(flowId); return; }
-    void appendMessage(flowId, message);
+    if (flowId === chatFlowId) { chatMessages.push(message); saveChat(); renderChat(); return; }
+    const stored = readChat(flowId);
+    stored.push(message);
+    writeChat(flowId, stored);
   }
 
   const CONFIRMATION_KINDS = ['action', 'draft', 'legacyNoteEdit', 'run', 'normalize', 'plot', 'plotRevision', 'suggestReconstruction'];
   let focusPendingCardsOnNextRender = true;
 
-  /* 确认状态一律读**派生值**（契约 §2.1 规则 6）。
-   *
-   * `message.confirmations[kind].state` 是 Bridge 从会话文件里的 confirmation 事件
-   * 归并出来的（本地刚写完一条时也是同一形状），它才是防重复执行的唯一真相。
-   * 下面是给 P0 之前写下的老消息留的兼容推导——那时候状态只活在内存/localStorage
-   * 里，磁盘上没有事件可依据，只能按展示字段猜，猜的结果就是 "pending"。 */
-  const CHAT_CONFIRMATION_STATES = ['pending', 'claimed', 'confirmed', 'failed', 'abandoned'];
-  /* 只有 pending 可再点（契约 §2.4）。failed 也**不再**在原卡上提供重试：控制器
-   * 抛错意味着"这次投递的结果未知或不完整"（可能已经写了一半），fail-closed 的
-   * 做法是让研究员重新走一遍产生这张卡的流程，而不是把同一个请求再发一次。
-   * claimed/confirmed/abandoned 同样锁死。 */
-  function isConfirmableState(state) { return state === 'pending'; }
-
   function confirmationState(message, kind) {
-    const derived = message?.confirmations?.[kind]?.state;
-    if (CHAT_CONFIRMATION_STATES.includes(derived)) return derived;
     const explicit = message.confirmationStates?.[kind];
     if (['pending', 'confirmed', 'abandoned'].includes(explicit)) return explicit;
     if (kind === 'action' && Array.isArray(message.actions) && message.actions.length)
@@ -829,19 +250,9 @@
     return Object.fromEntries(CONFIRMATION_KINDS.map((kind) => [kind, confirmationState(message, kind)]));
   }
 
-  // 待确认与待核对分开数：claimed 的卡片不能点、但需要人去看——如果只在"待确认"
-  // 里数 pending，崩溃窗口里的那些卡片在界面上就完全没有入口了。
-  function confirmationCounts() {
-    let pending = 0;
-    let claimed = 0;
-    for (const message of chatMessages) {
-      for (const kind of CONFIRMATION_KINDS) {
-        const state = confirmationState(message, kind);
-        if (state === 'pending') pending += 1;
-        else if (state === 'claimed') claimed += 1;
-      }
-    }
-    return { pending, claimed };
+  function pendingConfirmationCount() {
+    return chatMessages.reduce((total, message) => total
+      + CONFIRMATION_KINDS.filter((kind) => confirmationState(message, kind) === 'pending').length, 0);
   }
 
   function ensurePendingConfirmationButton() {
@@ -895,154 +306,15 @@
     } catch { /* audit is best-effort and must never break the conversation */ }
   }
 
-  const LEGACY_CONFIRMATION_FIELD = { action: 'actionsState', draft: 'draftsState', legacyNoteEdit: 'legacyNoteEditsState' };
-
-  function newEventId() {
-    return `evt-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10).padEnd(8, '0')}`;
-  }
-  function newOperationId() {
-    return `op-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10).padEnd(8, '0')}`;
-  }
-
-  /* 写一条确认事件并等它落盘。返回 false 表示没写进去——调用方**不许**在这种情况下
-   * 继续投递真实写入（契约 §2.1 硬性规则 1）。
-   *
-   * 本地派生值在 await 之前就先按"意图"更新：卡片要立刻锁住，不能让第二次点击
-   * 在等待期间挤进来。真正的权威仍然是落盘后重新读回来的那一份。 */
-  async function markConfirmation(message, kind, state, options = {}) {
-    if (!message?.messageId) return false;
-    const event = {
-      eventId: options.eventId || newEventId(),
-      messageId: message.messageId,
-      kind,
-      state,
-      operationId: options.operationId || null,
-      detail: options.detail ?? null,
-      at: new Date().toISOString(),
-    };
-    message.confirmations = { ...(message.confirmations || {}), [kind]: { state, operationId: event.operationId, detail: event.detail, at: event.at } };
-    message.confirmationStates = { ...(message.confirmationStates || {}), [kind]: state };
-    if (LEGACY_CONFIRMATION_FIELD[kind]) message[LEGACY_CONFIRMATION_FIELD[kind]] = state;
+  function markConfirmation(message, kind, state) {
+    message.confirmationStates ||= {};
+    message.confirmationStates[kind] = state;
     void auditChatTurn(message);
-    renderChat();
-    const stored = await appendConfirmation(chatFlowId, event);
-    if (!stored) window.researchWeaver?.toast?.('确认状态没能保存到 Vault；这次没有执行任何写入，请检查 Bridge 后重试。');
-    return stored;
   }
 
-  async function abandonConfirmation(message, kind) {
-    await markConfirmation(message, kind, 'abandoned');
-    renderChat();
-  }
-
-  /* 账本（§2.2）：claim 在投递之前占位，resolve 在事后闭合（confirmed / failed）。
-   * 用 bridgeFetchRaw 而不是 bridgeFetch —— 这里必须看得见状态码：409 与 404 是
-   * 不同的处置方式（"已经占过位" vs "查无此单"），不能被压成同一句错误文本。 */
-  async function chatLedger(path, body, options = {}) {
-    return bridgeFetchRaw(path, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(options.confirmed ? { 'x-scholarium-user-confirmed': 'true' } : {}),
-      },
-      body: JSON.stringify(body),
-    });
-  }
-
-  /* 投递的唯一入口：把 operationId 注入每一个**会真实写入**的请求。
-   *
-   * 为什么要收敛成一个函数：八个确认处理器里有十几处写端点调用，逐个手加请求头
-   * 一定会漏，而漏掉的那一处就是"点了两次写两次"——和 `saveChat` 那次的教训一模
-   * 一样。只读的 preview / 查询端点（`/v1/.../preview`、`/v1/skills`、
-   * `/v1/scholarium/status`、`/v1/scholarium/actions/:id` 轮询）不走这里：它们
-   * 不需要幂等，带上号反而会先占掉这张票据。
-   *
-   * 一次确认可能fan-out 出多个写请求（一批草稿 = N 个批次、一次改版 = 预览 + 提交）。
-   * 账本按 operationId 唯一，所以第 2 个之后的写请求用 `<operationId>-<n>`：可追溯、
-   * 可重放（同一次确认重放的顺序一致，号码就一致），又不会互相撞成
-   * "operation id reused with a different request"。 */
-  const chatDispatchCounts = new Map();
-  function chatDispatch(path, options, operationId) {
-    if (!operationId) return Promise.reject(new Error('chatDispatch 缺少 operationId：这张卡片没有可重放的依据'));
-    const sequence = (chatDispatchCounts.get(operationId) || 0) + 1;
-    chatDispatchCounts.delete(operationId);
-    chatDispatchCounts.set(operationId, sequence);
-    // 页面可以开很久，这张表不能只涨不消：顺序号只在一次确认的投递期间有用，
-    // 留最近 200 次确认足够（Map 保插入序，删最早的）。
-    while (chatDispatchCounts.size > 200) chatDispatchCounts.delete(chatDispatchCounts.keys().next().value);
-    const headers = { ...(options?.headers || {}) };
-    // 大小写不同也算同一个头：同一次请求里出现两个拼写，服务端读到哪个是不确定的。
-    for (const key of Object.keys(headers)) {
-      if (key.toLowerCase() === 'x-scholarium-operation-id') delete headers[key];
-    }
-    headers['x-scholarium-operation-id'] = sequence === 1 ? operationId : `${operationId}-${sequence}`;
-    return bridgeFetch(path, { ...options, headers });
-  }
-
-  /* 一次人工确认的完整生命周期。八个确认处理器共用它，区别只在 request（要施加
-   * 的载荷）与 guarded（执行端能不能自己守卫）。
-   *   claimed 没落盘 → 不投递；
-   *   投递成功 → confirmed；抛错 → failed（重试必须生成新的 operationId）。
-   *
-   * guarded=true（action/draft/legacyNoteEdit/normalize/plot/plotRevision）：账本
-   * 那一行由**执行端点**在收到 `x-scholarium-operation-id` 时创建并闭合——这样
-   * 投递本身就幂等，重放时由端点返回原结果、一个字节都不写。shell 不预先占位，
-   * 否则同一个号码会被占两次（预占一次 + 端点一次），第二次就被判成"同 ID 换请求"。
-   * guarded=false（run 的真实派发在 bridge-ui.js，挂不上头；suggestReconstruction
-   * 的真实写入在重建面板里）：账本那一行只能由 shell 预先占位，用来记录"这张卡片
-   * 投过"，并且保证它不会再被投第二次。 */
-  async function beginChatConfirmation(message, kind, request, detail, options = {}) {
-    if (!message?.messageId) return { ok: false };
-    if (!isConfirmableState(confirmationState(message, kind))) return { ok: false, locked: true };
-    const guarded = options.guarded !== false;
-    const operationId = newOperationId();
-    const claimed = await markConfirmation(message, kind, 'claimed', { operationId, detail: detail ?? null });
-    if (!claimed) return { ok: false };
-    if (guarded) return { ok: true, operationId };
-    let claim;
-    try {
-      claim = await chatLedger(`/v1/chat/operations/${operationId}/claim`, { kind, messageId: message.messageId, request: request ?? null });
-    } catch (error) {
-      await markConfirmation(message, kind, 'failed', { operationId, detail: { reason: chatStorageErrorMessage(error) } });
-      return { ok: false, operationId, error: chatStorageErrorMessage(error) };
-    }
-    if (claim.status !== 200) {
-      const reason = String(claim.payload?.error || `HTTP ${claim.status}`);
-      await markConfirmation(message, kind, 'failed', { operationId, detail: { reason, needsReview: true } });
-      appendToChat(chatFlowId, {
-        role: 'system',
-        text: `这次确认没有执行：${reason}。为避免重复写入，请先核对账本（operationId ${operationId}）确认上一次到底写了什么，再重新发起一次新的确认。`,
-        at: new Date().toISOString(),
-      });
-      return { ok: false, operationId, error: reason };
-    }
-    return { ok: true, operationId };
-  }
-
-  async function settleChatConfirmation(message, kind, operationId, outcome = {}) {
-    const state = outcome.error ? 'failed' : 'confirmed';
-    const detail = outcome.error ? { reason: outcome.error } : (outcome.detail ?? null);
-    await markConfirmation(message, kind, state, { operationId, detail });
-    try {
-      await chatLedger(`/v1/chat/operations/${operationId}/resolve`, { outcome: state, detail }, { confirmed: true });
-    } catch { /* 账本闭合失败不影响"这次确实执行过"这个事实；会话文件里已有终态 */ }
-    return state;
-  }
-
-  /* 重载后处于 claimed 的卡片：显示"正在核对执行结果"，按 operationId 查账本，
-   * **禁止直接重跑**。研究员核对过 Vault 之后自己决定标 confirmed 还是 failed。 */
-  async function resolveClaimedConfirmation(message, kind, operationId, outcome) {
-    const detail = outcome === 'confirmed'
-      ? { note: '研究员核对 Vault 后确认这次执行已经生效' }
-      : { reason: '研究员核对 Vault 后确认这次执行没有生效' };
-    await settleChatConfirmation(message, kind, operationId, {
-      error: outcome === 'failed' ? detail.reason : null, detail,
-    });
-    appendToChat(chatFlowId, {
-      role: 'system',
-      text: `已把这次确认标记为「${outcome === 'confirmed' ? '已完成' : '未生效'}」。${outcome === 'confirmed' ? '' : '如果需要重新执行，请重新发起一次新的确认（会生成新的一次性编号）。'}`,
-      at: new Date().toISOString(),
-    });
+  function abandonConfirmation(message, kind) {
+    markConfirmation(message, kind, 'abandoned');
+    saveChat();
     renderChat();
   }
 
@@ -1399,19 +671,10 @@
   window.addEventListener('weaver:flow-changed', (event) => {
     const flowId = event.detail?.flowId || 'default';
     if (flowId !== chatFlowId) {
-      saveChat();   // 切走前把上一个课题还没落盘的增量交给队列，它记得那是哪个会话
+      saveChat();
       chatFlowId = flowId;
-      // 新课题的正文还没有：先清空、停在"正在读取"，读到之前发送是禁用的。
-      // 这里绝不 readChat(flowId) —— 正文不再有 localStorage 副本。
-      chatMessages = [];
-      chatHasMore = false;
-      chatNextCursor = null;
-      chatTotal = 0;
-      chatStorageBusy = true;
-      chatStorageError = '';
+      chatMessages = readChat(flowId);
       focusPendingCardsOnNextRender = true;
-      updateComposerState();
-      void ensureChatSession(flowId);
     }
     syncChatTopicLabel();
     renderChat();
@@ -1437,179 +700,15 @@
     return { ...message, text: concealed.text, protocolFailures: failures };
   }
 
-  // 正文存储不可用/还没读完时的提示条。绝不静默：读不到就说读不到，页面上
-  // 其余部分照常渲染（"不空白"），发送按钮在 updateComposerState 里禁用。
-  function chatStorageNotice(kind, text) {
-    const row = document.createElement('div');
-    row.className = `wv-msg wv-msg-system wv-chat-storage-${kind}`;
-    row.setAttribute('role', 'status');
-    row.setAttribute('aria-live', 'polite');
-    const head = document.createElement('div');
-    head.className = 'wv-msg-head';
-    const who = document.createElement('span');
-    who.className = 'wv-msg-who';
-    who.textContent = kind === 'error' ? '正文未保存' : '正文存储';
-    const body = document.createElement('div');
-    body.className = 'wv-msg-body';
-    body.textContent = text;
-    head.appendChild(who);
-    row.append(head, body);
-    if (kind === 'error') {
-      const retry = document.createElement('button');
-      retry.type = 'button';
-      retry.className = 'wv-btn wv-btn-sm wv-chat-storage-retry';
-      retry.textContent = '重试连接并读取';
-      retry.addEventListener('click', () => { void bootstrapChat(true); });
-      row.appendChild(retry);
-    }
-    return row;
-  }
-
-  // "未保存"标记 + 复制 + 重试：既不能伪称已保存，也不能让人只能靠截图救回
-  // 一段正文。重试走的是同一条写队列，不新增任何写路径。
-  function unsavedBadge(message) {
-    const box = document.createElement('div');
-    box.className = 'wv-msg-unsaved';
-    const label = document.createElement('span');
-    label.textContent = '未保存：这条还没写进 Vault，刷新页面会丢。';
-    const copy = document.createElement('button');
-    copy.type = 'button';
-    copy.className = 'wv-btn wv-btn-sm';
-    copy.textContent = '复制正文';
-    copy.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(String(message.text || ''));
-        window.researchWeaver?.toast?.('已复制这条未保存的正文。');
-      } catch { window.researchWeaver?.toast?.('复制失败，请手动选中文字复制。'); }
-    });
-    const retry = document.createElement('button');
-    retry.type = 'button';
-    retry.className = 'wv-btn wv-btn-sm';
-    retry.textContent = '重试保存';
-    retry.addEventListener('click', () => { void retryChatPersistence(); });
-    box.append(label, copy, retry);
-    return box;
-  }
-
-  // 八种确认类型各自的载荷字段与中文名（锁定条与账本提示都要用）。
-  const CONFIRMATION_ITEMS = {
-    action: 'actions', draft: 'drafts', legacyNoteEdit: 'legacyNoteEdits', run: 'runs',
-    normalize: 'normalizations', plot: 'plots', plotRevision: 'plotRevisions',
-    suggestReconstruction: 'suggestReconstructions',
-  };
-  const CONFIRMATION_LABEL = {
-    action: '面板动作', draft: '记录草稿', legacyNoteEdit: '既有笔记修改', run: '对话运行',
-    normalize: '数据规范化', plot: '绘图', plotRevision: '图表改版', suggestReconstruction: '种子重建',
-  };
-
-  function confirmationDetailText(detail) {
-    if (!detail) return '';
-    try {
-      const text = typeof detail === 'string' ? detail : JSON.stringify(detail);
-      return text.length > 160 ? `${text.slice(0, 157)}…` : text;
-    } catch { return ''; }
-  }
-
-  /* 锁定态卡片：claimed / confirmed / abandoned。
-   *
-   * claimed 是崩溃窗口的形状——"点了确认、但没人知道那次写入到底发生没有"。这时
-   * 唯一正确的做法是不再执行、去账本和 Vault 里核对，然后由研究员落一个终态。
-   * 抢着重跑一次才是真正的危险：experiment.transition 会再改一遍研究记录。 */
-  function confirmationLockBar(message, kind) {
-    const items = message?.[CONFIRMATION_ITEMS[kind]];
-    if (!Array.isArray(items) || !items.length) return null;
-    const state = confirmationState(message, kind);
-    if (state !== 'claimed' && state !== 'confirmed' && state !== 'abandoned' && state !== 'failed') return null;
-    const entry = message.confirmations?.[kind] || {};
-    const card = document.createElement('div');
-    card.className = `wv-action-card wv-confirmation-lock is-${state}`;
-    card.dataset.confirmationState = state;
-    const title = document.createElement('div');
-    title.className = 'wv-action-title';
-    title.textContent = state === 'claimed'
-      ? `${CONFIRMATION_LABEL[kind]}：正在核对执行结果`
-      : state === 'failed'
-        ? `${CONFIRMATION_LABEL[kind]}：本次没有生效`
-        : `${CONFIRMATION_LABEL[kind]}：${state === 'confirmed' ? '已执行' : '已放弃'}`;
-    const meta = document.createElement('div');
-    meta.className = 'wv-faint';
-    meta.textContent = `一次性编号 ${entry.operationId || '（旧记录没有编号）'}${entry.at ? ` · ${entry.at}` : ''}`
-      + `${entry.detail ? ` · ${confirmationDetailText(entry.detail)}` : ''}`;
-    card.append(title, meta);
-    if (state === 'failed') {
-      // §2.4：只是一段说明 + 明确的下一步，**没有**执行按钮。原位重试被拿掉了，
-      // 因为"这次投递的结果未知"时把同一个请求再发一次正是要避免的事。
-      const note = document.createElement('div');
-      note.className = 'wv-faint';
-      note.textContent = '这张卡片不会再执行。控制器这次没有完整成功，磁盘上可能已经有一部分写入；请核对结果后重新发起一遍这次请求（需要预览的类型会重新预览），那会是一次新的确认。';
-      card.appendChild(note);
-      return card;
-    }
-    if (state !== 'claimed') return card;
-
-    const note = document.createElement('div');
-    note.className = 'wv-faint';
-    note.textContent = '这张卡片已经投递过（或崩在投递前后），不会再执行第二次。请先核对 Vault 里是否已经出现这次写入，再选择下面两项之一。';
-    const ledger = document.createElement('div');
-    ledger.className = 'wv-faint';
-    ledger.textContent = '正在查询执行账本…';
-    const bar = document.createElement('div');
-    bar.className = 'wv-action-bar';
-    const markDone = document.createElement('button');
-    markDone.type = 'button';
-    markDone.className = 'wv-action-confirm';
-    markDone.textContent = '已核对：这次执行生效了';
-    markDone.addEventListener('click', () => { void resolveClaimedConfirmation(message, kind, entry.operationId, 'confirmed'); });
-    const markFailed = document.createElement('button');
-    markFailed.type = 'button';
-    markFailed.className = 'wv-action-cancel';
-    markFailed.textContent = '已核对：这次没有生效';
-    markFailed.addEventListener('click', () => { void resolveClaimedConfirmation(message, kind, entry.operationId, 'failed'); });
-    // 编号缺失（P0 之前的老卡片）时不能拿一个假编号去 resolve：只提示人工处理。
-    if (entry.operationId) bar.append(markDone, markFailed);
-    else markFailed.disabled = true;
-    card.append(note, ledger, bar);
-    if (entry.operationId) {
-      bridgeFetchRaw(`/v1/chat/operations/${entry.operationId}`)
-        .then(({ status, payload }) => {
-          ledger.textContent = status === 200
-            ? `账本记录：${payload.status}${payload.error ? `（${payload.error}）` : ''} · ${payload.at || ''}`
-            : `账本里查不到这个编号（HTTP ${status}）——说明它崩在占位之前，磁盘上应该没有这次写入。`;
-        })
-        .catch((error) => { ledger.textContent = `账本查询失败：${chatStorageErrorMessage(error)}`; });
-    }
-    return card;
-  }
-
-  function loadEarlierRow() {
-    const row = document.createElement('div');
-    row.className = 'wv-chat-load-earlier';
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'wv-btn wv-btn-sm';
-    button.textContent = `加载更早（已载入 ${chatMessages.length} / ${chatTotal} 条）`;
-    button.addEventListener('click', () => { void loadEarlierChat(); });
-    row.appendChild(button);
-    return row;
-  }
-
   function renderChat() {
     if (!narrative) return;
     const fragment = document.createDocumentFragment();
-    if (chatStorageError) fragment.appendChild(chatStorageNotice('error', `${chatStorageError}\n对话正文没有保存到 Vault，也没有从 Vault 读回来。已读到的历史仍显示在下面；发送已禁用，并且不会退回浏览器本地存储。`));
-    else if (chatStorageBusy) fragment.appendChild(chatStorageNotice('pending', '正在从 Vault 读取本课题的对话正文…'));
-    if (chatHasMore) fragment.appendChild(loadEarlierRow());
-    if (!chatMessages.length && !chatStorageError && !chatStorageBusy) {
+    if (!chatMessages.length) {
       fragment.appendChild(chatBubble('system', `这是「${chatTopicName()}」的专属对话区。每个研究主题的对话相互独立，新建或切换主题时对话记录会一起切换。`));
     }
     for (const storedMessage of chatMessages) {
       const msg = displayMessageForChat(storedMessage);
-      const unsaved = isChatMessageUnsaved(msg);
-      if (msg.role !== 'agent' || String(msg.text || '').trim()) {
-        const bubble = chatBubble(msg.role, msg.text);
-        if (unsaved) bubble.appendChild(unsavedBadge(msg));
-        fragment.appendChild(bubble);
-      }
+      if (msg.role !== 'agent' || String(msg.text || '').trim()) fragment.appendChild(chatBubble(msg.role, msg.text));
       const runRequest = runRequestCard(msg);
       if (runRequest) fragment.appendChild(runRequest);
       const card = actionCard(msg);
@@ -1628,12 +727,6 @@
       if (protocolFailure) fragment.appendChild(protocolFailure);
       const suggestReconstruction = suggestReconstructionCard(msg);
       if (suggestReconstruction) fragment.appendChild(suggestReconstruction);
-      // 锁定态（claimed/confirmed/abandoned）不是"卡片上的一个开关"，而是这次
-      // 确认自己的状态，所以单独渲染在卡片下面，且不随业务卡片的重绘而消失。
-      for (const kind of CONFIRMATION_KINDS) {
-        const lock = confirmationLockBar(msg, kind);
-        if (lock) fragment.appendChild(lock);
-      }
     }
     narrative.replaceChildren(fragment);
     summaryHost = null;
@@ -1648,7 +741,6 @@
     if (focusPendingCardsOnNextRender && firstPending) firstPending.scrollIntoView({ block: 'center' });
     else narrative.scrollTop = narrative.scrollHeight;
     focusPendingCardsOnNextRender = false;
-    updateChatStorageStatus();
   }
 
   // A task can also end as 'cancelled'. Waiting only for completed|failed meant
@@ -1873,9 +965,8 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
   // Research/ 树，说明这条路径一旦被触发，会在错误的地方新建一棵 Research/，
   // project.get 等只读端点根本读不到——不是理论风险，是实际会发生的静默错位。
   async function executeDraftRequests(flowId, message) {
-    if (!message.drafts || !isConfirmableState(confirmationState(message, 'draft'))) return;
-    const lifecycle = await beginChatConfirmation(message, 'draft', { drafts: message.drafts });
-    if (!lifecycle.ok) return;
+    if (!message.drafts || message.draftsState === 'executing' || message.draftsState === 'settled') return;
+    markConfirmation(message, 'draft', 'confirmed');
     message.draftsState = 'executing';
     saveChat(); renderChat();
     const outcomes = [];
@@ -1894,11 +985,11 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
             serverManagedMetadata: true, projectDisplayId: message.projectDisplayId || '',
           }),
         });
-        const committed = await chatDispatch(`/v1/drafts/batch/${batch.id}/commit`, {
+        const committed = await bridgeFetch(`/v1/drafts/batch/${batch.id}/commit`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: '{}',
-        }, lifecycle.operationId);
+        });
         const paths = committed.items.map((item) => item.path);
         outcomes.push({ paths, status: 'completed' });
         if (req.openAfterCommit && paths[0]) {
@@ -1920,8 +1011,6 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       ? `✔ 已写入：${o.paths.join('、')}`
       : `✘ 未写入 ${o.paths.join('、')}：${o.detail}`);
     appendToChat(flowId, { role: 'system', text: '记录保存结果：\n' + lines.join('\n') + '\n（新建的记录为 review_status: pending，请到 Scholarium 面板核实后确认）', at: new Date().toISOString() });
-    await settleChatConfirmation(message, 'draft', lifecycle.operationId,
-      retryableDrafts.length ? { error: `有 ${retryableDrafts.length} 组草稿未写入` } : { detail: { paths: outcomes.flatMap((o) => o.paths) } });
     saveChat(); renderChat();
   }
 
@@ -1929,9 +1018,8 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
   // click creates a fresh preview, then commits that exact preview; the Bridge
   // rejects any note changed after preview instead of overwriting it.
   async function executeLegacyNoteEdits(flowId, message) {
-    if (!message.legacyNoteEdits || !isConfirmableState(confirmationState(message, 'legacyNoteEdit'))) return;
-    const lifecycle = await beginChatConfirmation(message, 'legacyNoteEdit', { edits: message.legacyNoteEdits });
-    if (!lifecycle.ok) return;
+    if (!message.legacyNoteEdits || message.legacyNoteEditsState === 'executing' || message.legacyNoteEditsState === 'settled') return;
+    markConfirmation(message, 'legacyNoteEdit', 'confirmed');
     message.legacyNoteEditsState = 'executing';
     saveChat(); renderChat();
     const outcomes = [];
@@ -1943,9 +1031,9 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
           headers: { 'content-type': 'application/json', 'x-scholarium-user-confirmed': 'true' },
           body: JSON.stringify({ path: edit.path, content: edit.content, reason: edit.reason, changes: edit.changes, sourceTaskId: message.taskId }),
         });
-        const committed = await chatDispatch(`/v1/edits/${preview.id}/commit`, {
+        const committed = await bridgeFetch(`/v1/edits/${preview.id}/commit`, {
           method: 'POST', headers: { 'content-type': 'application/json', 'x-scholarium-user-confirmed': 'true' }, body: '{}',
-        }, lifecycle.operationId);
+        });
         outcomes.push({ path: committed.path || edit.path, status: 'completed' });
       } catch (error) {
         outcomes.push({ path: edit.path, status: 'failed', detail: humanizeActionError(String(error.message || error)) });
@@ -1958,8 +1046,6 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       ? `✔ 已修改：${outcome.path}`
       : `✘ 未修改 ${outcome.path}：${outcome.detail}`);
     appendToChat(flowId, { role: 'system', text: '既有笔记修改结果：\n' + lines.join('\n'), at: new Date().toISOString() });
-    await settleChatConfirmation(message, 'legacyNoteEdit', lifecycle.operationId,
-      retryable.length ? { error: `有 ${retryable.length} 条笔记未修改` } : { detail: { paths: outcomes.map((o) => o.path) } });
     saveChat(); renderChat();
   }
 
@@ -1996,7 +1082,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
         card.appendChild(row);
       }
     }
-    if (isConfirmableState(state) && message.draftsState !== 'settled') {
+    if (message.draftsState !== 'settled' && state !== 'abandoned') {
       const bar = document.createElement('div');
       bar.className = 'wv-action-bar';
       const btn = document.createElement('button');
@@ -2005,7 +1091,9 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       btn.disabled = message.draftsState === 'executing';
       btn.textContent = message.draftsState === 'executing'
         ? '正在写入…'
-        : '确认写入（新建文件，不会覆盖已有记录）';
+        : message.draftsState === 'failed'
+          ? '重新预览并写入失败的记录'
+          : '确认写入（新建文件，不会覆盖已有记录）';
       btn.addEventListener('click', () => executeDraftRequests(chatFlowId, message));
       bar.appendChild(btn);
       appendAbandonButton(bar, message, 'draft');
@@ -2061,13 +1149,15 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
         table.appendChild(body); card.appendChild(table);
       }
     }
-    if (isConfirmableState(state) && message.legacyNoteEditsState !== 'settled') {
+    if (message.legacyNoteEditsState !== 'settled' && state !== 'abandoned') {
       const bar = document.createElement('div');
       bar.className = 'wv-action-bar';
       const button = document.createElement('button');
       button.type = 'button'; button.className = 'wv-action-confirm';
       button.disabled = message.legacyNoteEditsState === 'executing';
-      button.textContent = message.legacyNoteEditsState === 'executing' ? '正在预览并写入…' : '确认修改（会检测并发改动）';
+      button.textContent = message.legacyNoteEditsState === 'executing' ? '正在预览并写入…'
+        : message.legacyNoteEditsState === 'failed' ? '重新预览并修改失败的笔记'
+          : '确认修改（会检测并发改动）';
       button.addEventListener('click', () => executeLegacyNoteEdits(chatFlowId, message));
       bar.appendChild(button); appendAbandonButton(bar, message, 'legacyNoteEdit'); card.appendChild(bar);
     }
@@ -2124,26 +1214,20 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'wv-action-confirm';
-      btn.textContent = state === 'abandoned' ? '已放弃' : state === 'failed' ? '本次没有生效' : state === 'confirmed' ? '再次打开重建面板' : '打开重建面板';
-      btn.disabled = !isConfirmableState(state) && state !== 'confirmed';
-      btn.addEventListener('click', async () => {
+      btn.textContent = state === 'abandoned' ? '已放弃' : state === 'confirmed' ? '再次打开重建面板' : '打开重建面板';
+      btn.disabled = state === 'abandoned';
+      btn.addEventListener('click', () => {
         const displayId = message.projectDisplayId || document.querySelector('.project-mode-seed-reconstruct')?.dataset.project;
         if (!displayId) return window.researchWeaver.toast('请先在项目面板打开对应课题，再点击"从种子重建 P1–P2"。');
-        // 这一步本身只是"打开重建面板"，真实写入在面板里由研究员逐步确认；但
-        // 它同样是一次人工确认，同样要有锁定态——否则刷新后这条建议又能被反复
-        // 打开，而面板里那一步的进度已经无从对应。
-        // 种子重建的真实写入发生在重建面板自己的多步确认里（不在本卡片范围内），
-        // 同样只能由 shell 预先占位。
-        const lifecycle = await beginChatConfirmation(message, 'suggestReconstruction', { suggestions: [s] }, null, { guarded: false });
-        if (!lifecycle.ok) return;
-        await settleChatConfirmation(message, 'suggestReconstruction', lifecycle.operationId, { detail: { opened: s.seed_doi } });
+        markConfirmation(message, 'suggestReconstruction', 'confirmed');
+        saveChat();
         updatePendingConfirmationButton();
         window.weaverSeedReconstruction?.openSeedReconstructionDialog(displayId, s.seed_doi);
       });
       row.append(label, btn);
       card.appendChild(row);
     }
-    if (isConfirmableState(state)) {
+    if (state === 'pending') {
       const bar = document.createElement('div');
       bar.className = 'wv-action-bar';
       appendAbandonButton(bar, message, 'suggestReconstruction');
@@ -2173,33 +1257,14 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
   async function executeRunRequest(flowId, message, index) {
     const request = message.runs?.[index];
     if (!request || request.state === 'running' || request.state === 'completed') return;
-    if (!isConfirmableState(confirmationState(message, 'run'))) return;
     if (typeof window.runScholariumConversationOperation !== 'function') {
       window.researchWeaver.toast('对话运行控制器未加载，请重载 Scholarium 后重试。');
       return;
     }
-    /* 这一条的派发不在 Bridge 路由里（它走 launcher 里的 pipeline/skill 派发，
-     * bridge-ui.js 的代码不在本次改动范围内），所以没法把 operationId 挂到请求头
-     * 上。仍然先在账本占位：这样崩溃之后能查、能人工核对，而且同一张卡片在
-     * claimed 期间不许再被点一次——这是"点了两次跑两次"最现实的那条路径。 */
-    // run 的真实派发在 bridge-ui.js 的 pipeline/skill 派发里，挂不上 x-scholarium-operation-id，
-    // 所以账本那一行只能由 shell 预先占位（guarded: false），保证它不会被投第二次。
-    const lifecycle = await beginChatConfirmation(message, 'run', { runs: [request] }, null, { guarded: false });
-    if (!lifecycle.ok) return;
     request.state = 'running';
     void auditChatTurn(message);
     saveChat(); renderChat();
     try {
-      // 契约 §2.3：号随请求交给控制器（它一路透传到 pipeline 入口的写请求头）。
-      // 说清边界——run 在 P0 **只有 claimed 锁**：literature.queue 分支走
-      // postMessage 交宿主，头机制物理上到不了；literature.search / pipeline.rerun
-      // 只在**入口**做到幂等，阶段内部的写入不受保护。不要在别处宣称 run 有执行端
-      // 幂等；完整的 host / 多阶段幂等属于 P1。
-      // 号挂在 request 上而不是改调用形状：`runScholariumConversationOperation(request)`
-      // 这一行的形状有既有测试钉着（tests/pipeline-resume.test.js），而 request 本身
-      // 在这个处理器里本来就是被就地改的（下面的 request.state 等），所以就地加一个
-      // 字段既不改变调用契约，也不会写进任何持久化载荷。
-      request.operationId = lifecycle.operationId;
       const outcome = await window.runScholariumConversationOperation(request);
       request.state = outcome?.status === 'stopped' ? 'stopped' : 'completed';
       request.resolvedRunId = outcome?.runId || '';
@@ -2214,8 +1279,6 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       request.error = humanizeActionError(String(error?.message || error));
       appendToChat(flowId, { role: 'system', text: `对话运行失败：${request.error}`, at: new Date().toISOString() });
     }
-    await settleChatConfirmation(message, 'run', lifecycle.operationId,
-      request.state === 'failed' ? { error: request.error || '运行失败' } : { detail: { runId: request.resolvedRunId || '', state: request.state } });
     saveChat(); renderChat();
   }
 
@@ -2270,11 +1333,9 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
   async function executeNormalizeRequest(flowId, message, index) {
     const request = message.normalizations?.[index];
     if (!request || request.state === 'running' || request.state === 'completed') return;
-    if (!isConfirmableState(confirmationState(message, 'normalize'))) return;
-    const lifecycle = await beginChatConfirmation(message, 'normalize', { normalizations: [request] });
-    if (!lifecycle.ok) return;
     request.state = 'running';
     delete request.error;
+    markConfirmation(message, 'normalize', 'confirmed');
     saveChat(); renderChat();
     try {
       const skills = await bridgeFetch('/v1/skills');
@@ -2296,10 +1357,10 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
         throw new Error('scholarium.vaultRoot 未配置或不存在；无法从 Vault 的 Materials/ 目录规范化数据。');
       }
       void auditChatTurn(message, 'skill-submission', { kind: 'normalize', skill: 'sch-data-normalize', input });
-      const response = await chatDispatch('/v1/skills/run', {
+      const response = await bridgeFetch('/v1/skills/run', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ skillId: skill.id, workspace: vaultRoot, input: JSON.stringify(input) }),
-      }, lifecycle.operationId);
+      });
       const manifest = response?.manifest || {};
       request.state = 'completed';
       request.result = {
@@ -2324,8 +1385,6 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       request.error = humanizeActionError(String(error?.message || error));
       appendToChat(flowId, { role: 'system', text: `规范化失败：${request.error}`, at: new Date().toISOString() });
     }
-    await settleChatConfirmation(message, 'normalize', lifecycle.operationId,
-      request.state === 'failed' ? { error: request.error || '规范化失败' } : { detail: request.result || null });
     saveChat(); renderChat();
   }
 
@@ -2358,7 +1417,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       ].filter(Boolean).join('\n');
       copy.append(name, detail);
       row.appendChild(copy);
-      if (isConfirmableState(state) && (!request.state || request.state === 'failed')) {
+      if (state !== 'abandoned' && (!request.state || request.state === 'failed')) {
         const knownSheets = Array.isArray(request.sheetChoices) && request.sheetChoices.length
           ? request.sheetChoices
           : normalizeSheetChoices(request.error);
@@ -2408,7 +1467,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
         button.type = 'button';
         button.className = 'wv-action-confirm';
         const needsExplicitSheet = /\.xlsx$/i.test(String(request.data_path || '')) && knownSheets.length > 1 && !request.sheet;
-        button.textContent = needsExplicitSheet ? '先选择工作表' : '确认并规范化';
+        button.textContent = needsExplicitSheet ? '先选择工作表' : (request.state === 'failed' ? '修复后重试' : '确认并规范化');
         button.disabled = needsExplicitSheet;
         button.addEventListener('click', () => executeNormalizeRequest(chatFlowId, message, index));
         row.appendChild(button);
@@ -2422,7 +1481,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       }
       card.appendChild(row);
     });
-    if (isConfirmableState(state)) {
+    if (state === 'pending') {
       const bar = document.createElement('div');
       bar.className = 'wv-action-bar';
       appendAbandonButton(bar, message, 'normalize');
@@ -2450,14 +1509,12 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
     return (Array.isArray(manifest?.outputs) ? manifest.outputs : []).find((path) => String(path).endsWith(name)) || '';
   }
 
-  // operationId 由调用方（确认处理器）传进来：Skill 写的是真实的图表产物，
-  // 同一次确认重复到达时必须由执行端认出"这单已经跑过"。
-  async function runChartRecipe(input, operationId) {
+  async function runChartRecipe(input) {
     const { skill, vaultRoot } = await chartSkillContext();
-    return chatDispatch('/v1/skills/run', {
+    return bridgeFetch('/v1/skills/run', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ skillId: skill.id, workspace: vaultRoot, input: JSON.stringify(input) }),
-    }, operationId);
+    });
   }
 
   async function readChartManifest(targetManifestPath) {
@@ -2489,11 +1546,9 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
   async function executePlotRequest(flowId, message, index) {
     const request = message.plots?.[index];
     if (!request || request.state === 'running' || request.state === 'completed') return;
-    if (!isConfirmableState(confirmationState(message, 'plot'))) return;
-    const lifecycle = await beginChatConfirmation(message, 'plot', { plots: [request] });
-    if (!lifecycle.ok) return;
     request.state = 'running';
     delete request.error;
+    markConfirmation(message, 'plot', 'confirmed');
     saveChat(); renderChat();
     try {
       const input = {
@@ -2502,7 +1557,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       };
       if (request.title) input.title = request.title;
       void auditChatTurn(message, 'skill-submission', { kind: 'plot', skill: 'sch-data-plot', input });
-      const response = await runChartRecipe(input, lifecycle.operationId);
+      const response = await runChartRecipe(input);
       const manifest = response?.manifest || {};
       request.state = 'completed';
       request.result = {
@@ -2521,19 +1576,15 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       request.error = humanizeActionError(String(error?.message || error));
       appendToChat(flowId, { role: 'system', text: `绘图失败：${request.error}`, at: new Date().toISOString() });
     }
-    await settleChatConfirmation(message, 'plot', lifecycle.operationId,
-      request.state === 'failed' ? { error: request.error || '绘图失败' } : { detail: request.result || null });
     saveChat(); renderChat();
   }
 
   async function executePlotRevision(flowId, message, index) {
     const request = message.plotRevisions?.[index];
     if (!request || request.state === 'running' || request.state === 'completed') return;
-    if (!isConfirmableState(confirmationState(message, 'plotRevision'))) return;
-    const lifecycle = await beginChatConfirmation(message, 'plotRevision', { plotRevisions: [request] });
-    if (!lifecycle.ok) return;
     request.state = 'running';
     delete request.error;
+    markConfirmation(message, 'plotRevision', 'confirmed');
     saveChat(); renderChat();
     try {
       // Source, variables and plot kind are read fresh from the selected
@@ -2555,7 +1606,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       // overwrite mode it also names the only directory that may be replaced.
       input.target_manifest_path = request.target_manifest_path;
       void auditChatTurn(message, 'skill-submission', { kind: 'plotRevision', skill: 'sch-data-plot', input });
-      const response = await runChartRecipe(input, lifecycle.operationId);
+      const response = await runChartRecipe(input);
       const manifest = response?.manifest || {};
       request.state = 'completed';
       request.result = {
@@ -2578,8 +1629,6 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       request.error = humanizeActionError(String(error?.message || error));
       appendToChat(flowId, { role: 'system', text: `图表改版失败：${request.error}`, at: new Date().toISOString() });
     }
-    await settleChatConfirmation(message, 'plotRevision', lifecycle.operationId,
-      request.state === 'failed' ? { error: request.error || '图表改版失败' } : { detail: request.result || null });
     saveChat(); renderChat();
   }
 
@@ -2604,9 +1653,9 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
         request.result?.svg_path ? `SVG：${request.result.svg_path}` : '', request.error ? `失败：${request.error}` : '',
       ].filter(Boolean).join('\n');
       copy.append(name, detail); row.appendChild(copy);
-      if (isConfirmableState(state) && (!request.state || request.state === 'failed')) {
+      if (state !== 'abandoned' && (!request.state || request.state === 'failed')) {
         const button = document.createElement('button'); button.type = 'button'; button.className = 'wv-action-confirm';
-        button.textContent = '确认并生成图表';
+        button.textContent = request.state === 'failed' ? '修复后重试' : '确认并生成图表';
         button.addEventListener('click', () => executePlotRequest(chatFlowId, message, index)); row.appendChild(button);
       } else {
         const status = document.createElement('span'); status.className = 'wv-action-detail';
@@ -2615,7 +1664,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       }
       card.appendChild(row);
     });
-    if (isConfirmableState(state)) { const bar = document.createElement('div'); bar.className = 'wv-action-bar'; appendAbandonButton(bar, message, 'plot'); card.appendChild(bar); }
+    if (state === 'pending') { const bar = document.createElement('div'); bar.className = 'wv-action-bar'; appendAbandonButton(bar, message, 'plot'); card.appendChild(bar); }
     return card;
   }
 
@@ -2640,7 +1689,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
         request.reason ? `理由：${request.reason}` : '', request.result?.svg_path ? `SVG：${request.result.svg_path}` : '', request.error ? `失败：${request.error}` : '',
       ].filter(Boolean).join('\n');
       copy.append(name, detail); row.appendChild(copy);
-      if (isConfirmableState(state) && (!request.state || request.state === 'failed')) {
+      if (state !== 'abandoned' && (!request.state || request.state === 'failed')) {
         // Overwrite is not model-controlled: the parser rejects this field.
         // This researcher-only checkbox is its sole path.  Do not resurrect
         // legacy `allowOverwrite`: a saved/stale card must fail closed.
@@ -2654,7 +1703,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
         allow.append(box, document.createTextNode(' 覆盖此目标版本（会重写该 SVG、报告和 manifest）'));
         copy.appendChild(allow);
         const button = document.createElement('button'); button.type = 'button'; button.className = 'wv-action-confirm';
-        button.textContent = '确认并改版';
+        button.textContent = request.state === 'failed' ? '修复后重试' : '确认并改版';
         button.addEventListener('click', () => executePlotRevision(chatFlowId, message, index)); row.appendChild(button);
       } else {
         const status = document.createElement('span'); status.className = 'wv-action-detail';
@@ -2663,7 +1712,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       }
       card.appendChild(row);
     });
-    if (isConfirmableState(state)) { const bar = document.createElement('div'); bar.className = 'wv-action-bar'; appendAbandonButton(bar, message, 'plotRevision'); card.appendChild(bar); }
+    if (state === 'pending') { const bar = document.createElement('div'); bar.className = 'wv-action-bar'; appendAbandonButton(bar, message, 'plotRevision'); card.appendChild(bar); }
     return card;
   }
 
@@ -2689,11 +1738,11 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       detail.textContent = `${runRequestDetail(request)}${request.reason ? `\n理由：${request.reason}` : ''}${request.error ? `\n失败：${request.error}` : ''}`;
       copy.append(name, detail);
       row.appendChild(copy);
-      if (isConfirmableState(state) && (!request.state || request.state === 'failed')) {
+      if (state !== 'abandoned' && (!request.state || request.state === 'failed')) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'wv-action-confirm';
-        button.textContent = '确认并运行';
+        button.textContent = request.state === 'failed' ? '修复后重试' : '确认并运行';
         button.addEventListener('click', () => executeRunRequest(chatFlowId, message, index));
         row.appendChild(button);
       } else {
@@ -2706,7 +1755,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       }
       card.appendChild(row);
     });
-    if (isConfirmableState(state)) {
+    if (state === 'pending') {
       const bar = document.createElement('div');
       bar.className = 'wv-action-bar';
       appendAbandonButton(bar, message, 'run');
@@ -2719,10 +1768,8 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
   // 执行中按钮逐条显示进度（i/n + 动作名），并提供「取消」——取消的语义如实：
   // 已经投递并结算的动作无法撤回（它们是真实写入），取消只是不再投递剩余项。
   async function executeScholariumActions(flowId, message) {
-    if (!message.actions || !isConfirmableState(confirmationState(message, 'action'))) return;
-    // 先落 claimed 再投递：这一步是 experiment.transition 不会被写第二次的前提。
-    const lifecycle = await beginChatConfirmation(message, 'action', { actions: message.actions });
-    if (!lifecycle.ok) return;
+    if (!message.actions || message.actionsState === 'executing' || message.actionsState === 'settled') return;
+    markConfirmation(message, 'action', 'confirmed');
     message.actionsState = 'executing';
     message.actionsDone = 0;
     message.actionsCancel = false;
@@ -2747,9 +1794,9 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify(payload),
           });
-          const committed = await chatDispatch(`/v1/edits/${preview.id}/commit`, {
+          const committed = await bridgeFetch(`/v1/edits/${preview.id}/commit`, {
             method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
-          }, lifecycle.operationId);
+          });
           const plan = committed.result || {};
           outcomes.push({
             action: req.action,
@@ -2766,11 +1813,11 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
         continue;
       }
       try {
-        const submitted = await chatDispatch('/v1/scholarium/actions', {
+        const submitted = await bridgeFetch('/v1/scholarium/actions', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ action: req.action, input: req.input, by: 'weaver-chat-confirmed', sourceTaskId: message.taskId }),
-        }, lifecycle.operationId);
+        });
         let item = submitted;
         for (let i = 0; i < 90 && !(item.outcome && item.outcome.status); i++) {
           if (message.actionsCancel) break;
@@ -2823,12 +1870,6 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       ? '\n（可切到对应面板查看；若显示失败，通常是 Obsidian 未打开或「允许织研者执行 Scholarium 动作」开关未开）'
       : '';
     appendToChat(flowId, { role: 'system', text: '面板修改执行结果：\n' + lines.join('\n') + ambiguousHint, at: new Date().toISOString() });
-    // 有超时/未知的动作时不算"已确认完成"：那正是崩溃窗口的形状，留给研究员按
-    // 账本核对（锁定条会显示"正在核对执行结果"），而不是自己宣布成功。
-    const unresolved = outcomes.some((o) => o.status === 'timeout' || o.status === 'unknown');
-    await settleChatConfirmation(message, 'action', lifecycle.operationId, unresolved
-      ? { error: '部分动作未结算（超时或状态未知），需要人工核对', detail: { outcomes } }
-      : { detail: { outcomes: outcomes.map((o) => ({ action: o.action, status: o.status })) } });
     saveChat(); renderChat();
   }
 
@@ -2913,7 +1954,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
         card.appendChild(row);
       }
     }
-    if (isConfirmableState(state) && message.actionsState !== 'settled') {
+    if (message.actionsState !== 'settled' && state !== 'abandoned') {
       const bar = document.createElement('div');
       bar.className = 'wv-action-bar';
       const btn = document.createElement('button');
@@ -2968,40 +2009,22 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
     if (!text || chatBusy) return;
     const ownerFlow = chatFlowId; // the reply lands here even if the user switches topics mid-turn
 
-    // 正文存储没就绪（Bridge 不在/读不到）时连本地都不留：既不能假装已保存，
-    // 也不能退回 localStorage 生成第二份互不相干的历史。输入框内容保留。
-    if (chatStorageError || chatStorageBusy || !chatSessions.get(ownerFlow)) {
-      chatMessages.push({ role: 'system', text: `这句话没有发送，也没有保存：${chatStorageError || '正文存储还在读取中'}。输入的内容仍在输入框里；等左下角显示「本机 Bridge 已连接」、或对话区顶部的提示消失后，再按 Enter 重发即可。`, at: new Date().toISOString() });
-      renderChat();
-      return;
-    }
-
     // Add user message
-    const userMessage = { messageId: newChatMessageId(), role: 'user', text, at: new Date().toISOString() };
-    chatMessages.push(userMessage);
+    chatMessages.push({ role: 'user', text, at: new Date().toISOString() });
     chatInput.value = '';
     chatInput.style.height = 'auto';
+    saveChat();
     renderChat();
-
-    // ── 关键路径 ①：先把这句落进 Vault，再派发任务 ──────────────────────
-    // 为什么必须在这里 await：任务一旦派出去，Agent 会开始按这句话行动。
-    // 如果此时正文还没落盘，用户看到的是一个已经"发生过"的回合，而磁盘上
-    // 什么都没有——这正是这次要修的缺陷本身。落盘失败就到此为止，不发送。
-    const persistedUser = await flushChat(ownerFlow, [userMessage]);
-    if (!persistedUser.ok) {
-      chatMessages.push({ role: 'system', text: `这句话没有保存到 Vault，因此也没有发送给 Agent（${persistedUser.error || '原因未知'}）。上面那条气泡标了"未保存"，可以复制正文，或修好 Bridge 后点"重试保存"再重发。`, at: new Date().toISOString() });
-      renderChat(); return;
-    }
 
     // Check Bridge
     if (!zhiyanBridge.online) {
-      chatMessages.push({ role: 'system', text: '这句话已保存到本课题的会话里，但 Bridge 未连接，所以没有发给 Agent。请先在启动织研者的终端确认 npm start 仍在运行（看到监听信息即正常）；如果它已经退出，重新执行 npm start，再点左下角「检查本机 Bridge」连接后重发。', at: new Date().toISOString() });
-      renderChat(); return;
+      chatMessages.push({ role: 'system', text: 'Bridge 未连接。请先在启动织研者的终端确认 npm start 仍在运行（看到监听信息即正常）；如果它已经退出，重新执行 npm start，再点左下角「检查本机 Bridge」连接后对话。', at: new Date().toISOString() });
+      saveChat(); renderChat(); return;
     }
 
     // Show thinking
     chatBusy = true;
-    updateComposerState();
+    if (chatSend) chatSend.disabled = true;
 
     try {
       const profile = chatProfile();
@@ -3194,18 +2217,6 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       }
       const storedReply = { ...reply, taskId: created.id, provider: created.provider, projectDisplayId: projectId, flowId: ownerFlow, at: new Date().toISOString() };
       appendToChat(ownerFlow, storedReply);
-      // ── 关键路径 ②：回复先落盘，再把它当成"已完成" ────────────────────
-      // 思考指示熄灭、输入框解锁，对用户来说就是"这轮结束了"。如果这时正文
-      // 还没进 Vault，人会以为已经记下来，而磁盘上什么都没有。所以这里必须
-      // 等出结果；失败就明确标"未保存"，不改成"看起来成功了"。
-      const persistedReply = await flushChat(ownerFlow, [storedReply]);
-      if (!persistedReply.ok) {
-        appendToChat(ownerFlow, {
-          role: 'system',
-          text: `织研者这条回复没有保存到 Vault（${persistedReply.error || '原因未知'}）。上面那条气泡标了"未保存"，请先用"复制正文"留底；Bridge 恢复后点"重试保存"即可补上，不需要再问一遍 Agent。`,
-          at: new Date().toISOString(),
-        });
-      }
       if (storedReply.protocolAudit) {
         void auditChatTurn(storedReply, 'parsed');
         const writeParsed = (protocolBlocks.action?.parsed || 0) + (protocolBlocks.draft?.parsed || 0) + (protocolBlocks.legacyNoteEdit?.parsed || 0);
@@ -3259,8 +2270,8 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
     } finally {
       pending = null;
       chatBusy = false;
-      saveChat();   // 把 finally 之前产生的增量交给队列；关键路径已各自 await 过
-      updateComposerState();
+      if (chatSend) chatSend.disabled = false;
+      saveChat();
       renderChat();
     }
   }
@@ -3433,8 +2444,4 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
   } catch { /* private mode */ }
   setView(storedView);
   setTracker(storedTracker);
-
-  // 正文读取放在整个模块初始化之后：renderChat 会用到后面才声明的宿主节点，
-  // 在这里调用才保证那些 let 已经初始化（否则就是 TDZ 报错，而不是"读不到"）。
-  void bootstrapChat();
 })();

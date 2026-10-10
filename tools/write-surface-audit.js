@@ -14,7 +14,7 @@ const fs = require("fs");
 const path = require("path");
 
 const DEFAULT_EXCLUDES = new Set([
-  ".git", "node_modules", "tests", "development", "docs", "backup",
+  ".git", "node_modules", "tests", "development", "docs", "backup", "release-assets",
 ]);
 
 const SOURCE_EXTENSIONS = new Set([".js", ".cjs", ".mjs", ".ts", ".tsx"]);

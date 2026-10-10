@@ -23,7 +23,6 @@ const seedReconstructionCore = require('../seed-reconstruction-core.js');
 const scholariumResearchState = require('../../tools/research-state.js');
 const graphProjectionCore = require('../graph-projection-core.js');
 const { mergeSearchRecords } = require('./search-merge.js');
-const chatStore = require('./chat-store.js');
 const { adaptQueryForSource } = require('../query-adapt.js');
 const settingsCore = require('../settings-core.js');
 const { readCcSwitchProvider, untrusted: untrustedProvider } = require('./provider-context.js');
@@ -484,7 +483,7 @@ function defaultScholariumConfig() {
     enabled: false,
     vaultRoot: null,
     allowedActions: ['rss.refresh_feed', 'rss.score_feed', 'rss.clip_high_score', 'rss.clip_url', 'rss.fetch_pdf',
-      'rss.set_article_score', 'rss.mark_article',
+      'rss.set_article_score', 'rss.mark_article', 'rss.list_articles',
       'project.list', 'project.get', 'experiment.scan_outcomes', 'idea.list', 'decision.list', 'lesson.list', 'research.ids',
       'workspace.get_state', 'workspace.timeblock_drift_audit', 'workspace.rescan_pending', 'workspace.timeblock_add', 'workspace.timeblock_update', 'workspace.timeblock_remove',
       'workspace.checkin_upsert', 'workspace.habit_add', 'workspace.habit_log', 'workspace.emotion_log',
@@ -1272,60 +1271,6 @@ function scholariumVaultStatus() {
   };
 }
 
-/* 执行幂等账本（契约 §2.2）。
- *
- * 为什么必须有：只把 `claimed` 写进会话文件还不够——claimed 落盘之后、真实写入
- * 之前的崩溃是个已知窗口（页面被杀、断电、Bridge 重启）。那段窗口里磁盘上的文件
- * 可能已经写了一半，而 UI 只知道"点了确认"。所以执行端按 operationId 幂等：同一
- * 次确认重复到达时，要么返回上一次的原结果且一个字节都不写，要么明确 409 要求
- * 人工核对。
- *
- * 幂等键是请求头 `x-scholarium-operation-id`。**没有这个头时行为与今天完全一致**
- * ——main.js 的动作队列和既有测试都不带它，强制要求会把这些调用方一次性打断。
- * shell 的八条确认路径一律带这个头（见 shell-ui.js）。
- *
- * 用法：进入真正的写入分支前取一次守卫，然后每个 `send()` 前调 `finish()` 记账。
- * 只有显式带头的请求才会产生账本记录，因此没带的调用方连账本文件都不会碰。 */
-function chatOperationGuard(req, { kind, request }) {
-  const operationId = String(req.headers['x-scholarium-operation-id'] || '');
-  if (!operationId) return null;
-  // 账本只允许落在真实的 Vault 根里。vaultRoot 没配好时如果退回 workspaceRoot/
-  // ROOT，就会在插件目录下凭空长出一棵 Scholarium/Chat/ —— 那正是这次修复要
-  // 消灭的"写到不该写的地方"。
-  const store = chatStoreOr400();
-  const requestSha256 = chatStore.operationRequestSha256(request);
-  const decision = store.beginOperation({ operationId, kind, messageId: null, requestSha256 });
-  return {
-    operationId,
-    decision,
-    // 终态按"这次响应是不是错误"记：2xx 记 confirmed（带原结果），其余记 failed。
-    // 账本写不进去不改变这次请求的结果——文件已经写了，谎报失败只会更糟。
-    finish(status, payload) {
-      try {
-        store.finishOperation({
-          operationId,
-          status: status < 400 ? 'confirmed' : 'failed',
-          result: status < 400 ? (payload ?? null) : null,
-          error: status < 400 ? null : String(payload?.error || `HTTP ${status}`),
-        });
-      } catch { /* 账本追加失败不影响本次写入的既成事实 */ }
-    },
-    // 重放：一个字节都不写，直接把上一次的原结果端回去（契约 §2.2 第二行）。
-    replayResponse(res) {
-      if (decision.status === 'confirmed') return send(res, 200, { ...(decision.result || {}), replayed: true, operationId });
-      return send(res, 409, { error: decision.error || 'operation already failed', replayed: true, operationId });
-    },
-  };
-}
-function chatRoot() {
-  return path.resolve(scholariumConfig().vaultRoot || config.workspaceRoot || ROOT);
-}
-function chatStoreOr400() {
-  const status = scholariumVaultStatus();
-  if (!status.vaultRootExists) throw new chatStore.ChatStoreError('scholarium.vaultRoot is not configured or does not exist.', 400);
-  return chatStore.storeFor(chatRoot());
-}
-
 const MCP_VAULT_TEXT_EXTENSIONS = new Set(['.md', '.txt', '.json', '.csv', '.tsv', '.yaml', '.yml', '.bib', '.ris']);
 const MCP_VAULT_EXCLUDED_DIRS = new Set(['.obsidian', '.git', '.trash', '.scholarium', 'node_modules']);
 function mcpVaultRoot() {
@@ -1735,7 +1680,10 @@ function agentStatus() {
   return Object.entries(config.adapters).map(([id, adapter]) => {
     const resolved = resolveCommand(adapter.command);
     const probed = byFamily.get(adapterFamily(id)) || null;
-    const readiness = !resolved && (!probed || probed.readiness === 'missing') ? 'missing'
+    // A family-level probe may find another installation on PATH, but the
+    // adapter dispatches the command saved in this config. Never let that
+    // unrelated installation turn a missing configured command green.
+    const readiness = !resolved ? 'missing'
       : probed?.readiness === 'broken' ? 'broken'
         : probed?.readiness === 'ready' || probed?.readiness === 'no_credential' ? 'ready'
           : resolved ? 'command_detected' : 'missing';
@@ -1743,9 +1691,9 @@ function agentStatus() {
       id, command: adapter.command,
       // `installed` still means "we found something to run", which is what
       // callers have always used it for. `runnable` is the new, stricter fact.
-      installed: Boolean(resolved) || Boolean(probed?.installed),
-      runnable: probed ? probed.readiness !== 'missing' && probed.readiness !== 'broken' : null,
-      path: resolved?.executable || probed?.command || null,
+      installed: Boolean(resolved),
+      runnable: !resolved ? false : probed ? probed.readiness !== 'missing' && probed.readiness !== 'broken' : null,
+      path: resolved?.executable || null,
       executionEnabled: Boolean(config.allowExecution), readiness,
       problem: probed?.problem || null,
       verifiedAt: environmentCache.at ? new Date(environmentCache.at).toISOString() : null,
@@ -1775,8 +1723,8 @@ function send(res, status, data) {
     : {};
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
-    'access-control-allow-headers': 'content-type,x-agent-bridge-token,x-scholarium-user-confirmed,x-scholarium-operation-id',
-    'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS',
+    'access-control-allow-headers': 'content-type,x-agent-bridge-token,x-scholarium-user-confirmed',
+    'access-control-allow-methods': 'GET,POST,OPTIONS',
     ...cors,
   });
   res.end(JSON.stringify(data));
@@ -3000,106 +2948,6 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, host: HOST, port: PORT, executionEnabled: Boolean(config.allowExecution) });
   if (!allowed(req) && !allowedMcpRead(req, url.pathname)) return send(res, 401, { error: 'invalid or missing Agent Bridge token' });
-  // 对话正文（P0 止血）：正文只落 <vaultRoot>/Scholarium/Chat/v1/。此前它只存在
-  // 于某个动态 canvas 端口的 localStorage 里，换端口就是换 Origin，历史随之消失。
-  // 契约：docs/plans/chat-persistence-contract.md §4。
-  if (url.pathname === '/v1/chat/sessions' || url.pathname.startsWith('/v1/chat/sessions/')
-    || url.pathname.startsWith('/v1/chat/operations/')
-    || url.pathname === '/v1/chat/import/preview' || url.pathname === '/v1/chat/import/commit') {
-    const vaultStatus = scholariumVaultStatus();
-    if (!vaultStatus.vaultRootExists) return send(res, 400, { error: 'scholarium.vaultRoot is not configured or does not exist.' });
-    const store = chatStore.storeFor(path.resolve(scholariumConfig().vaultRoot || config.workspaceRoot || ROOT));
-    // 未预期的磁盘错误按 500 出去，不要伪装成一次"参数不对"的 400。
-    const chatFail = (error) => send(res, Number(error?.status) || (error?.message === 'invalid JSON' ? 400 : 500),
-      { error: error?.message || 'chat store failure', ...(error?.details || {}) });
-    const sessionRoute = url.pathname.match(/^\/v1\/chat\/sessions\/([^/]+)(\/messages)?$/);
-    try {
-      if (req.method === 'GET' && url.pathname === '/v1/chat/sessions') {
-        return send(res, 200, { sessions: store.listSessions({
-          scopeKey: url.searchParams.get('scopeKey') || '',
-          includeArchived: url.searchParams.get('includeArchived') === '1',
-          rebuild: url.searchParams.get('rebuild') === '1',
-        }) });
-      }
-      if (req.method === 'POST' && url.pathname === '/v1/chat/sessions') {
-        return send(res, 200, store.createSession(await body(req)));
-      }
-      if (req.method === 'POST' && url.pathname === '/v1/chat/import/preview') {
-        const input = await body(req);
-        return send(res, 200, chatStore.registerPreview(store, input?.items));
-      }
-      if (req.method === 'POST' && url.pathname === '/v1/chat/import/commit') {
-        // 导入写的是研究员的 Vault，光有 Bridge token 不够：必须同时带上
-        // "研究员本人点过确认"的头部、预览发的一次性 ticket，以及预览内容的
-        // 指纹。三者缺一即拒，见契约 §4.3.1。
-        if (String(req.headers['x-scholarium-user-confirmed'] || '').toLowerCase() !== 'true')
-          return send(res, 400, { error: 'user confirmation required' });
-        const input = await body(req);
-        return send(res, 200, chatStore.commitPreview(store, input || {}));
-      }
-      // 执行幂等账本的读写面（契约 §2.2）。claim 是客户端主动占位的形式——用来给
-      // 那些真实写入不在 Bridge 路由里的确认类型（例如 run 走的是 launcher 里的
-      // pipeline/skill 派发）也留下一条可人工核对的记录。
-      const operationRoute = url.pathname.match(/^\/v1\/chat\/operations\/([^/]+)(\/claim|\/resolve)?$/);
-      if (operationRoute) {
-        const operationId = decodeURIComponent(operationRoute[1]);
-        const operationAction = operationRoute[2] || '';
-        if (!operationAction && req.method === 'GET') {
-          const record = store.readOperation(operationId);
-          if (!record) return send(res, 404, { error: 'operation not found' });
-          return send(res, 200, {
-            operationId: record.operationId, status: record.status, result: record.result,
-            error: record.error, at: record.at, kind: record.kind, messageId: record.messageId,
-          });
-        }
-        if (operationAction === '/claim' && req.method === 'POST') {
-          const input = await body(req);
-          return send(res, 200, store.beginOperation({
-            operationId,
-            kind: input?.kind ?? null,
-            messageId: input?.messageId ?? null,
-            requestSha256: chatStore.operationRequestSha256(input?.request ?? null),
-          }));
-        }
-        if (operationAction === '/resolve' && req.method === 'POST') {
-          // 把 claimed 人工判成终态是研究员的动作，不是调用方的动作：光有 Bridge
-          // token 不够，必须带上"研究员本人点过"的头。
-          if (String(req.headers['x-scholarium-user-confirmed'] || '').toLowerCase() !== 'true')
-            return send(res, 400, { error: 'user confirmation required' });
-          const input = await body(req);
-          return send(res, 200, store.resolveOperation({
-            operationId, outcome: input?.outcome, detail: input?.detail ?? null,
-          }));
-        }
-        return send(res, 405, { error: 'method not allowed' });
-      }
-      if (sessionRoute) {
-        const sessionId = decodeURIComponent(sessionRoute[1]);
-        if (sessionRoute[2]) {
-          if (req.method !== 'POST') return send(res, 405, { error: 'method not allowed' });
-          const input = await body(req);
-          // 确认事件与正文共用这条 append-only 写路径：同一把锁、同一套幂等。
-          if (input?.confirmation !== undefined || input?.confirmations !== undefined) {
-            const confirmations = Array.isArray(input.confirmations) ? input.confirmations : input.confirmation;
-            if (confirmations === undefined) return send(res, 400, { error: 'confirmation must be an object or an array of objects' });
-            return send(res, 200, store.appendConfirmations(sessionId, confirmations));
-          }
-          const list = Array.isArray(input?.messages) ? input.messages : input?.message;
-          if (list === undefined) return send(res, 400, { error: 'message or messages is required' });
-          return send(res, 200, store.appendMessages(sessionId, list));
-        }
-        if (req.method === 'GET') {
-          return send(res, 200, store.readSession(sessionId, {
-            limit: url.searchParams.get('limit'),
-            before: url.searchParams.get('before'),
-          }));
-        }
-        if (req.method === 'PATCH') return send(res, 200, store.patchSession(sessionId, await body(req)));
-        return send(res, 405, { error: 'method not allowed' });
-      }
-      return send(res, 404, { error: 'not found' });
-    } catch (error) { return chatFail(error); }
-  }
   if (req.method === 'GET' && url.pathname === '/v1/agents') return send(res, 200, { agents: agentStatus() });
   if (req.method === 'GET' && url.pathname === '/v1/agents/detection') {
     if (config.agentDetection?.status === 'pending') return send(res, 200, { status: 'pending', detected: {}, notes: [] });
@@ -3237,25 +3085,13 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname === '/v1/skills') return send(res, 200, { skills: localSkills(), directories: config.skillDirectories });
   if (req.method === 'POST' && url.pathname === '/v1/skills/run') {
-    let operation = null;
     try {
       const input = await body(req);
-      // normalize / plot / plotRevision 三条确认路径的真实写入都落到这里（Skill
-      // 自己写产物）。它们各自带一次性的 operationId，所以重复到达时不会第二次
-      // 覆盖研究员已经看过的图或已经规范化好的 CSV。
-      try { operation = chatOperationGuard(req, { kind: 'skills.run', request: { path: url.pathname, skillId: String(input.skillId || ''), input: input.input } }); }
-      catch (error) { return send(res, Number(error?.status) || 400, { error: error.message, ...(error?.details || {}) }); }
-      if (operation?.decision.replayed) return operation.replayResponse(res);
       const root = path.resolve(input.workspace || config.workspaceRoot || ROOT);
-      if (!allowedSkillRoot(root)) { operation?.finish(403, { error: 'workspace is outside configured allowedRoots' }); return send(res, 403, { error: 'workspace is outside configured allowedRoots' }); }
-      if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) { operation?.finish(400, { error: 'workspace root does not exist or is not a directory' }); return send(res, 400, { error: 'workspace root does not exist or is not a directory' }); }
-      const result = await executableSkill(String(input.skillId || ''), root, input.input);
-      operation?.finish(200, result);
-      return send(res, 200, result);
-    } catch (error) {
-      operation?.finish(Number(error?.status) || 400, { error: error.message });
-      return send(res, Number(error?.status) || 400, { error: error.message });
-    }
+      if (!allowedSkillRoot(root)) return send(res, 403, { error: 'workspace is outside configured allowedRoots' });
+      if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return send(res, 400, { error: 'workspace root does not exist or is not a directory' });
+      return send(res, 200, await executableSkill(String(input.skillId || ''), root, input.input));
+    } catch (error) { return send(res, 400, { error: error.message }); }
   }
   if (req.method === 'POST' && url.pathname === '/v1/skill-runs') {
     try {
@@ -3956,15 +3792,8 @@ const server = http.createServer(async (req, res) => {
     } catch (error) { return send(res, 502, { error: error.message }); }
   }
   if (req.method === 'POST' && url.pathname === '/v1/literature/search') {
-    let operation = null;
     try {
       const input = await body(req);
-      // `run` 的 literature.search 分支入口（契约 §2.3）：同一张票据第二次投递在
-      // 这里就被认出来，所以第二次检索不会真的开始。同样**只有入口**——检索之后的
-      // 下载/落盘阶段不在这个号的范围里。
-      try { operation = chatOperationGuard(req, { kind: 'literature.search', request: { path: url.pathname, query: input.query, workspace: input.workspace, sources: input.sources } }); }
-      catch (error) { return send(res, Number(error?.status) || 400, { error: error.message, ...(error?.details || {}) }); }
-      if (operation?.decision.replayed) return operation.replayResponse(res);
       const root = path.resolve(input.workspace || config.workspaceRoot || ROOT);
       if (!allowedRoot(root)) return send(res, 403, { error: 'workspace is outside configured allowedRoots' });
       const query = String(input.query || '').trim().slice(0, 8000);
@@ -3976,30 +3805,16 @@ const server = http.createServer(async (req, res) => {
       literatureSearches.set(id, { manifest, root, expiresAt: Date.now() + 30 * 60 * 1000 });
       // 落盘供历史列表/重开；内存里的 30 分钟下载会话语义不变。
       persistRunRecord('searches', { id, query, sources: result.sources, manifest, root, createdAt: new Date().toISOString() });
-      const payload = { id, manifest, sources: result.sources };
-      operation?.finish(200, payload);
-      return send(res, 200, payload);
-    } catch (error) {
-      operation?.finish(Number(error?.status) || 502, { error: error.message });
-      return send(res, 502, { error: error.message });
-    }
+      return send(res, 200, { id, manifest, sources: result.sources });
+    } catch (error) { return send(res, 502, { error: error.message }); }
   }
   // --- 可恢复 Pipeline 运行记录 -------------------------------------------
   // The browser owns orchestration, but every checkpoint is persisted by the
   // Bridge. A resumed run therefore uses the exact PDFs captured by its parent
   // instead of scanning the shared downloaded-pdfs directory.
   if (req.method === 'POST' && url.pathname === '/v1/pipeline-runs') {
-    let operation = null;
     try {
       const input = await body(req);
-      // Pipeline 入口（契约 §2.3）：`run` 这条确认的真实派发在 launcher 的
-      // bridge-ui.js 里，多阶段的写入散落在各阶段，没法逐阶段带号。这里守住**入口**
-      // ——同一张票据第二次投递会在建记录之前被认出来（replayed / 409），所以第二次
-      // pipeline 不会启动。这**不是**对整条 pipeline 的执行端幂等：阶段内部的写入
-      // 不受它保护，`literature.queue` 那条分支更是完全盖不到（它走 postMessage）。
-      try { operation = chatOperationGuard(req, { kind: 'pipeline.entry', request: { path: url.pathname, title: input.title, workspace: input.workspace, parentRunId: input.parentRunId } }); }
-      catch (error) { return send(res, Number(error?.status) || 400, { error: error.message, ...(error?.details || {}) }); }
-      if (operation?.decision.replayed) return operation.replayResponse(res);
       const workspace = path.resolve(input.workspace || config.workspaceRoot || ROOT);
       if (!allowedRoot(workspace)) return send(res, 403, { error: 'workspace is outside configured allowedRoots' });
       if (!fs.existsSync(workspace) || !fs.statSync(workspace).isDirectory()) return send(res, 400, { error: 'workspace root does not exist or is not a directory' });
@@ -4016,12 +3831,8 @@ const server = http.createServer(async (req, res) => {
       };
       activePipelineRuns.set(id, { lastCheckpointAt: Date.now() });
       persistRunRecord('pipelines', record);
-      operation?.finish(201, record);
       return send(res, 201, record);
-    } catch (error) {
-      operation?.finish(Number(error?.status) || 400, { error: error.message });
-      return send(res, Number(error?.status) || 400, { error: error.message });
-    }
+    } catch (error) { return send(res, 400, { error: error.message }); }
   }
   const pipelineRunMatch = url.pathname.match(/^\/v1\/pipeline-runs\/([\w-]+)$/);
   if (req.method === 'PATCH' && pipelineRunMatch) {
@@ -4322,14 +4133,8 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'POST' && /^\/v1\/drafts\/batch\/[\w-]+\/commit$/.test(url.pathname)) {
     const batch = draftBatches.get(url.pathname.split('/')[4]);
-    // 幂等键就是这一次 commit 的预览批次 id：同一次确认重复到达时不许再写一遍。
-    let operation = null;
-    try { operation = chatOperationGuard(req, { kind: 'drafts.commit', request: { path: url.pathname } }); }
-    catch (error) { return send(res, Number(error?.status) || 400, { error: error.message, ...(error?.details || {}) }); }
-    if (operation?.decision.replayed) return operation.replayResponse(res);
     const rejectCommit = (status, message) => {
       auditDraftsLane('commit-rejected', { batchId: url.pathname.split('/')[4], reason: message, sourceTaskId: batch?.sourceTaskId, provider: batch?.provider || untrustedProvider('draft batch unavailable') });
-      operation?.finish(status, { error: message });
       return send(res, status, { error: message });
     };
     if (!batch) return rejectCommit(404, 'draft batch not found or expired');
@@ -4364,14 +4169,11 @@ const server = http.createServer(async (req, res) => {
       for (const entry of written) { try { fs.rmSync(entry.target, { force: true }); } catch {} }
       for (const entry of resolved) { try { fs.rmSync(entry.temporary, { force: true }); } catch {} }
       auditDraftsLane('commit-rejected', { batchId: batch.id, reason: `write failed and was rolled back: ${error.message}`, sourceTaskId: batch.sourceTaskId, provider: batch.provider });
-      operation?.finish(500, { error: `batch write failed and was rolled back: ${error.message}` });
       return send(res, 500, { error: `batch write failed and was rolled back: ${error.message}` });
     }
     draftBatches.delete(batch.id);
     auditDraftsLane('commit-succeeded', { batchId: batch.id, paths: written.map((entry) => entry.path), sourceTaskId: batch.sourceTaskId, provider: batch.provider });
-    const payload = { ok: true, items: resolved.map((entry) => ({ path: entry.path })) };
-    operation?.finish(200, payload);
-    return send(res, 200, payload);
+    return send(res, 200, { ok: true, items: resolved.map((entry) => ({ path: entry.path })) });
   }
   // --- experiment.transition 的两阶段编辑通道 (2026-08-27, 发布冲刺) --------
   // Why this exists: tools/action-registry.js's `experiment.transition` entry
@@ -4608,15 +4410,8 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && /^\/v1\/edits\/[\w-]+\/commit$/.test(url.pathname)) {
     const id = url.pathname.split('/')[3];
     const preview = editPreviews.get(id);
-    // 这条通道同时服务 legacyNoteEdit 与 action（experiment.transition /
-    // provenance.invalidation）两阶段确认；幂等键是预览 id，也就是"这一次确认"。
-    let operation = null;
-    try { operation = chatOperationGuard(req, { kind: 'edits.commit', request: { path: url.pathname } }); }
-    catch (error) { return send(res, Number(error?.status) || 400, { error: error.message, ...(error?.details || {}) }); }
-    if (operation?.decision.replayed) return operation.replayResponse(res);
     const rejectCommit = (status, message) => {
       auditEditsLane('commit-rejected', { id, reason: message, experimentUid: preview?.experimentUid || preview?.input?.experiment_uid, sourceTaskId: preview?.sourceTaskId, provider: preview?.provider || untrustedProvider('edit preview unavailable') });
-      operation?.finish(status, { error: message });
       return send(res, status, { error: message });
     };
     if (!preview) return rejectCommit(404, 'edit preview not found or expired');
@@ -4701,9 +4496,7 @@ const server = http.createServer(async (req, res) => {
         to: manifest.result?.to || manifest.result?.to_status,
         sourceTaskId: preview.sourceTaskId, provider: preview.provider,
       });
-      const committed = { ok: true, result: manifest.result || manifest };
-      operation?.finish(200, committed);
-      return send(res, 200, committed);
+      return send(res, 200, { ok: true, result: manifest.result || manifest });
     } catch (error) { return rejectCommit(400, error.message); }
   }
   if (req.method === 'POST' && /^\/v1\/ideas\/[^/]+\/promote\/preview$/.test(url.pathname)) {
@@ -5127,18 +4920,11 @@ const server = http.createServer(async (req, res) => {
     return { ...item, outcome: { status: item.status, result: item.result, error: item.error } };
   }
   if (req.method === 'POST' && url.pathname === '/v1/scholarium/actions') {
-    let operation = null;
     try {
       const status = scholariumVaultStatus();
       if (!status.enabled) return send(res, 409, { error: 'Scholarium actions are disabled. Set scholarium.enabled=true in bridge.config.json after reviewing which actions you are allowing.' });
       if (!status.vaultRootExists) return send(res, 400, { error: 'scholarium.vaultRoot is not configured or does not exist; set it to the real Obsidian vault root in bridge.config.json' });
       const input = await body(req);
-      // 队列提交本身也是一次真实写入（main.js 会按队列条目去改 Vault），所以
-      // 这一条同样接受 operationId：同一次确认重复到达时只入队一次。请求身份要
-      // 含 action 与 input，同 ID 换载荷必须被认出来并拒绝。
-      try { operation = chatOperationGuard(req, { kind: 'scholarium.actions', request: { path: url.pathname, action: input.action, input: input.input } }); }
-      catch (error) { return send(res, Number(error?.status) || 400, { error: error.message, ...(error?.details || {}) }); }
-      if (operation?.decision.replayed) return operation.replayResponse(res);
       const action = String(input.action || '');
       const sourceTaskId = String(input.sourceTaskId || '').slice(0, 100) || undefined;
       const provider = providerForSourceTask(sourceTaskId);
@@ -5147,12 +4933,8 @@ const server = http.createServer(async (req, res) => {
       catch (error) { return send(res, 400, { error: 'action rejected input during pre-flight dry run: ' + error.message }); }
       const item = scholariumQueue.submit(status.vaultRoot, action, input.input || {}, { by: input.by || 'bridge', sourceTaskId, provider });
       auditActionsLane('queued', { id: item.id, action, sourceTaskId, provider });
-      operation?.finish(202, item);
       return send(res, 202, item);
-    } catch (error) {
-      operation?.finish(Number(error?.status) || 400, { error: error.message });
-      return send(res, Number(error?.status) || 400, { error: error.message });
-    }
+    } catch (error) { return send(res, 400, { error: error.message }); }
   }
   // List pending + recently settled items, for a caller polling for what it
   // itself queued (or auditing what has run recently).

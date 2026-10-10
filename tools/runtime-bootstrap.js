@@ -1,6 +1,6 @@
 "use strict";
 /**
- * runtime-bootstrap — Scholarium 内置运行时包的校验、原子安装与回滚。
+ * runtime-bootstrap — Scholarium 运行时包的下载、校验、原子安装与回滚。
  *
  * 对应策略文档 docs/out-of-box/runtime-pack-strategy.md：
  *  - manifest（schema scholarium-runtime-pack/1）先校验哈希，再逐包 sha256+size 校验；
@@ -14,7 +14,9 @@
  * 主要 API：
  *   defaultRuntimeRoot({ platform, env, homeDir })
  *   status(rootDir)                → { state, activeVersion, previousVersion, packs }
- *   install({ rootDir, manifest, manifestPath, resolvePackUrl, onProgress })
+ *   install({ rootDir, manifest, manifestPath, manifestUrl, manifestSha256,
+ *             resolvePackUrl, fetchImpl, onProgress })
+ *   installFromIncoming(rootDir)   → 离线兜底：安装 incoming/ 里的 .tar.gz
  *   rollback(rootDir)
  */
 const fs = require("node:fs");
@@ -51,7 +53,7 @@ function readCurrent(rootDir) {
  * Windows 上运行时根可以是 NTFS 目录联接（磁盘紧张时把运行时引到别的盘）。
  * 对联接路径直接 mkdirSync(staging) 会报 ENOENT——联接目标是另一个卷上的
  * 绝对路径，相对它的子路径创建必须先在真实目标上落点。所有公开入口
- * （install / status / rollback）先过这里。
+ * （install / installFromIncoming / status / rollback）先过这里。
  * 根不存在时原样返回（install 会创建）；存在则返回解析后的真实路径。
  */
 function resolveRoot(rootDir) {
@@ -142,7 +144,21 @@ function extractTar(tar, destDir) {
   }
 }
 
-/* -------------------------------------------------------- 本地包校验 ---- */
+/* -------------------------------------------------------- 下载与校验 ---- */
+
+async function fetchBuffer(url, fetchImpl, onProgress, expectedSize) {
+  const res = await (fetchImpl || fetch)(url);
+  if (!res.ok) throw new Error(`下载失败 HTTP ${res.status}: ${url}`);
+  const total = Number(res.headers.get("content-length")) || expectedSize || 0;
+  const chunks = [];
+  let received = 0;
+  for await (const chunk of res.body) {
+    chunks.push(chunk);
+    received += chunk.length;
+    if (onProgress) onProgress({ received, total });
+  }
+  return Buffer.concat(chunks);
+}
 
 /**
  * 校验失败必须响亮且可读（C3）：拒绝安装、说明现状未变、给出出路，
@@ -150,8 +166,8 @@ function extractTar(tar, destDir) {
  */
 function verifyBuffer(buf, { sha256, size }, label) {
   const guidance =
-    "已拒绝安装，现有运行时环境未被改动。内置运行时可能损坏或与插件版本不匹配。" +
-    "请重新安装完整的 Scholarium 插件包。";
+    "已拒绝安装，现有运行时环境未被改动。可能原因：下载损坏或文件被篡改。" +
+    "你可以重试下载；离线环境可把正确的包文件放入运行时目录的 incoming/ 文件夹后选择「从本地安装」。";
   if (typeof size === "number" && buf.length !== size) {
     throw new Error(`${label}完整性校验失败（文件大小不符）。${guidance}技术细节：期望 ${size} 字节，实际 ${buf.length} 字节。`);
   }
@@ -192,12 +208,20 @@ async function install({
   rootDir,
   manifest,
   manifestPath,
-  resolvePackUrl, // (pack, manifest) => 插件内置包的本地临时路径
+  manifestUrl,
+  manifestSha256,
+  resolvePackUrl, // (pack, manifest) => 可下载的 URL 或本地文件路径
+  fetchImpl,
   includeOptional = [],
   onProgress,
 }) {
   let m = manifest || (manifestPath ? loadManifest({ manifestPath }) : null);
-  if (!m) throw new Error("install 需要内置 manifest 或本地 manifestPath");
+  if (!m && manifestUrl) {
+    const buf = await fetchBuffer(manifestUrl, fetchImpl, null);
+    if (manifestSha256) verifyBuffer(buf, { sha256: manifestSha256 }, "运行时清单（manifest）");
+    m = loadManifest({ manifest: JSON.parse(buf.toString("utf8")) });
+  }
+  if (!m) throw new Error("install 需要 manifest / manifestPath / manifestUrl 之一");
 
   // C-P0-1：先建根再解析联接。运行时根可以是 NTFS 目录联接（磁盘紧张时
   // 引向其他盘）；对联接下的子路径直接 mkdir 会 ENOENT，必须落到真实目标。
@@ -213,10 +237,15 @@ async function install({
   const installedPacks = [];
   try {
     for (const pack of wanted) {
-      const source = resolvePackUrl ? resolvePackUrl(pack, m) : pack.file;
-      if (!source || /^https?:\/\//i.test(source)) throw new Error(`包 ${pack.name} 必须来自 Scholarium 插件内置的本地资源`);
-      const buf = fs.readFileSync(source);
-      if (onProgress) onProgress({ pack: pack.name, received: buf.length, total: pack.size || buf.length });
+      const url = resolvePackUrl ? resolvePackUrl(pack, m) : pack.url;
+      if (!url) throw new Error(`包 ${pack.name} 没有可用下载地址（发布流水线未填 url）`);
+      let buf;
+      if (/^https?:\/\//.test(url)) {
+        buf = await fetchBuffer(url, fetchImpl,
+          onProgress && ((p) => onProgress({ pack: pack.name, ...p })), pack.size);
+      } else {
+        buf = fs.readFileSync(url); // 本地文件路径（离线兜底与测试共用同一条校验路径）
+      }
       verifyBuffer(buf, pack, `运行时包「${pack.name}」`);
       const packDir = path.join(staging, pack.name);
       extractTar(zlib.gunzipSync(buf), packDir);
@@ -238,6 +267,22 @@ async function install({
     throw error;
   }
   return { version: m.version, packs: installedPacks };
+}
+
+/** 离线兜底：安装用户通过文件选择器放入 incoming/ 的包（走同一条校验路径）。 */
+async function installFromIncoming(rootDir, { manifestPath, manifest } = {}) {
+  rootDir = resolveRoot(rootDir); // C-P0-1：incoming 也必须在真实目标上读取
+  const incoming = path.join(rootDir, "incoming");
+  const m = loadManifest({ manifest, manifestPath: manifestPath || path.join(incoming, "manifest.json") });
+  return install({
+    rootDir,
+    manifest: m,
+    resolvePackUrl: (pack) => {
+      const candidate = path.join(incoming, pack.file || path.basename(pack.url || ""));
+      if (!fs.existsSync(candidate)) throw new Error(`incoming/ 中缺少包文件: ${path.basename(candidate)}`);
+      return candidate;
+    },
+  });
 }
 
 /** 回滚：指针退回上一版本。零数据移动；无 previous 时转为 absent。 */
@@ -266,6 +311,7 @@ module.exports = {
   defaultRuntimeRoot,
   status,
   install,
+  installFromIncoming,
   rollback,
   resolveRoot,
   extractTar, // 导出供测试

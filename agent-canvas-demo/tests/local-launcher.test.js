@@ -1,34 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const net = require('node:net');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-/* Both ports are OS-assigned and reported back by the launcher.
-   ------------------------------------------------------------------------
-   This test used to pick its own ports by calling a `freePort()` helper that
-   bound :0, read the port and closed the socket. That is a TOCTOU window: the
-   port is unowned from the moment the probe closes until the launcher binds
-   it, so anything else on the machine can take it in between — and when that
-   happened, all six tests in this file failed together with an EADDRINUSE the
-   harness could not explain.
-
-   It is also unnecessary. The launcher binds `AGENT_CANVAS_PORT` and
-   `AGENT_BRIDGE_PORT` itself, reads back `server.address().port` after the
-   bind, and reports both real ports over IPC (start-local.js:314 and :94,
-   forwarded from bridge/server.js:5308). So this test passes `0` for both and
-   takes the ports from that message. Nothing here pre-picks a port, so there
-   is no window to lose.
-
-   See docs/runtime-port-consistency-2026-09-17.md, and tests/helpers/
-   bridge-harness.js for the same pattern applied to the Bridge alone. */
 const root = path.resolve(__dirname, '..');
-// Same budget as tests/helpers/bridge-harness.js: generous enough for a cold
-// start (the first run also probes PATH for agent CLIs) and bounded, so a
-// launcher that never binds fails with its own output attached.
-const START_TIMEOUT_MS = 20000;
 let canvasPort;
 let bridgePort;
 // The real bridge.config.json on this machine points workspaceRoot at the
@@ -45,6 +24,20 @@ let launcher;
 let launcherOutput = '';
 let controlHeaders = {};
 let controlCookie = '';
+
+// PORT-HARNESS-EXEMPT: freePort remains only until the documented runtime
+// port-consistency work is implemented; see docs/runtime-port-consistency-2026-09-17.md
+// (25d4696). Do not copy this pattern into other tests.
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const port = probe.address().port;
+      probe.close((error) => error ? reject(error) : resolve(port));
+    });
+  });
+}
 
 function request(pathname, options = {}) {
   return new Promise((resolve, reject) => {
@@ -92,48 +85,16 @@ test.before(async () => {
   fs.mkdirSync(path.join(runtimeAssetsRoot, 'ketcher'), { recursive: true });
   fs.writeFileSync(path.join(runtimeAssetsRoot, 'ketcher', 'ketcher.js'), 'globalThis.__ketcherFixture = true;\n');
   fs.writeFileSync(path.join(runtimeAssetsRoot, 'ketcher', 'ketcher.css'), '.ketcher-fixture { color: green; }\n');
-  // Port 0 for both: the launcher binds, reads back the real port, and tells
-  // us over IPC. We never choose a port, so we can never choose one that is
-  // already in use or in a Windows excluded range.
-  launcher = spawn(process.execPath, ['start-local.js'], {
-    cwd: root,
-    env: { ...process.env, AGENT_CANVAS_PORT: '0', AGENT_BRIDGE_PORT: '0', AGENT_BRIDGE_CONFIG_PATH: configPath, AGENT_WEAVER_PIDFILE: pidfilePath, SCHOLARIUM_RUNTIME_ASSETS_ROOT: runtimeAssetsRoot },
-    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-    windowsHide: true,
-  });
+  canvasPort = await freePort();
+  while (canvasPort === 4173) canvasPort = await freePort();
+  bridgePort = await freePort();
+  while (bridgePort === canvasPort) bridgePort = await freePort();
+  launcherOutput = `ports ${canvasPort}/${bridgePort}\n`;
+  launcher = spawn(process.execPath, ['start-local.js'], { cwd: root, env: { ...process.env, AGENT_CANVAS_PORT: String(canvasPort), AGENT_BRIDGE_PORT: String(bridgePort), AGENT_BRIDGE_CONFIG_PATH: configPath, AGENT_WEAVER_PIDFILE: pidfilePath, SCHOLARIUM_RUNTIME_ASSETS_ROOT: runtimeAssetsRoot }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], windowsHide: true });
   launcher.stdout.on('data', (data) => { launcherOutput += String(data); });
   launcher.stderr.on('data', (data) => { launcherOutput += String(data); });
   launcher.on('error', (error) => { launcherOutput += `launcher error: ${error.message}\n`; });
   launcher.on('exit', (code, signal) => { launcherOutput += `launcher exit: ${code}/${signal}\n`; });
-
-  const detail = () => launcherOutput.trim() || '(the launcher printed nothing)';
-  const reported = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`the launcher did not report bound ports within ${START_TIMEOUT_MS}ms\n${detail()}`)), START_TIMEOUT_MS);
-    const fail = (message) => { clearTimeout(timer); reject(new Error(`${message}\n${detail()}`)); };
-    // The launcher sends exactly one 'listening' message, after BOTH servers
-    // are bound (it forwards the Bridge's own report, start-local.js:90-95).
-    launcher.once('message', (message) => {
-      if (message && message.type === 'listen-error') return fail(`the launcher could not bind: ${message.code} ${message.message}`);
-      if (!message || message.type !== 'listening') return fail(`unexpected launcher message: ${JSON.stringify(message)}`);
-      clearTimeout(timer);
-      resolve(message);
-    });
-    launcher.once('error', (error) => fail(`launcher failed to spawn: ${error.message}`));
-    launcher.once('exit', (code, signal) => fail(`launcher exited before reporting ports (code=${code} signal=${signal})`));
-  });
-
-  // These are the launcher's ports, not ours — assert the provenance before
-  // asserting the values, so a future change that reports a constant, reports
-  // zero, or reports the same port twice fails here with a clear message
-  // instead of as a connection error in an unrelated test.
-  assert.equal(reported.launcherPid, launcher.pid, 'the listening report must come from the launcher process this test spawned');
-  assert.ok(Number.isInteger(reported.canvasPort) && reported.canvasPort > 0, `the launcher must report the non-zero canvas port it actually bound, got ${JSON.stringify(reported.canvasPort)}`);
-  assert.ok(Number.isInteger(reported.bridgePort) && reported.bridgePort > 0, `the launcher must report the non-zero Bridge port it actually bound, got ${JSON.stringify(reported.bridgePort)}`);
-  assert.notEqual(reported.canvasPort, reported.bridgePort, 'the canvas and the Bridge must not be reported as sharing one port');
-  canvasPort = reported.canvasPort;
-  bridgePort = reported.bridgePort;
-  launcherOutput += `ports ${canvasPort}/${bridgePort}\n`;
-
   await waitForServer();
   controlHeaders = { 'x-agent-bridge-token': JSON.parse(fs.readFileSync(configPath, 'utf8')).token };
 });
@@ -148,12 +109,7 @@ test('Bridge CORS reflects only the actual canvas or Obsidian origin', async () 
   assert.equal(allowedObsidian.status, 200, allowedObsidian.body);
   assert.equal(allowedObsidian.headers['access-control-allow-origin'], 'app://obsidian.md');
 
-  // 4173 is the launcher's built-in default, which must not stay authorized
-  // once the launcher has bound something else. If the OS happened to hand the
-  // canvas that exact port then 4173 IS the live origin and is legitimately
-  // allowed, so the stale-default case only applies when it is a different one.
-  const staleDefault = canvasPort === 4173 ? [] : ['http://127.0.0.1:4173'];
-  for (const rejectedOrigin of [...staleDefault, `${actualCanvasOrigin}.evil.example`]) {
+  for (const rejectedOrigin of ['http://127.0.0.1:4173', `${actualCanvasOrigin}.evil.example`]) {
     const rejected = await requestBridge('/health', { headers: { origin: rejectedOrigin } });
     assert.equal(rejected.status, 200, rejected.body);
     assert.equal(rejected.headers['access-control-allow-origin'], undefined,

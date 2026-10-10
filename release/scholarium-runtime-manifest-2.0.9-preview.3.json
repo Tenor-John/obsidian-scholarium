@@ -1,0 +1,16 @@
+{
+  "schema": "scholarium-runtime-pack/1",
+  "version": "2.0.9-preview.3",
+  "platform": "win32-x64",
+  "createdAt": "2026-09-20T16:34:19.036Z",
+  "packs": [
+    {
+      "name": "core",
+      "file": "scholarium-runtime-core-2.0.9-preview.3-win32-x64.tar.gz",
+      "url": "https://github.com/Tenor-John/scholarium-research_weaver/releases/download/2.0.9/scholarium-runtime-core-2.0.9-preview.3-win32-x64.tar.gz",
+      "sha256": "aea4ab880608972dcddb6493d9078f7996ac10ef5679e44fef2b9606504a7cc6",
+      "size": 57145964,
+      "required": true
+    }
+  ]
+}

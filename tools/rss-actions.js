@@ -29,6 +29,37 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
+// P2 describe reads the persisted RSS board without creating a hidden browser
+// view or changing its selection.  It is deliberately L0: this is the same
+// data `RssFeedBoard.load()` receives from plugin data.json.
+function rssDataPath(vault) {
+  const candidates = [
+    path.join(vault, ".obsidian", "plugins", "obsidian-scholarium", "data.json"),
+    path.join(vault, ".obsidian", "plugins", "scholarium", "data.json"),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
+function listArticles(vault, input = {}) {
+  let data;
+  try { data = JSON.parse(fs.readFileSync(rssDataPath(vault), "utf8")); }
+  catch (_) { throw new Error("rss_board_unreadable: data.json not found or invalid"); }
+  const board = data && typeof data.rssBoard === "object" && data.rssBoard ? data.rssBoard : {};
+  const wanted = String(input.article_id || "").trim();
+  const articles = (Array.isArray(board.articles) ? board.articles : [])
+    .filter((article) => !wanted || String(article?.id || "") === wanted)
+    .slice(0, wanted ? 1 : 500)
+    .map((article) => ({
+      id: article.id, feedId: article.feedId, title: article.title, link: article.link,
+      published: article.published, author: article.author, read: !!article.read, starred: !!article.starred,
+      relevance: article.relevance && typeof article.relevance === "object" ? article.relevance : {},
+    }));
+  return {
+    articles,
+    feeds: (Array.isArray(board.feeds) ? board.feeds : []).map((feed) => ({ id: feed.id, title: feed.title, url: feed.url })),
+  };
+}
+
 function requireLive(live, dryRun) {
   if (live && live.board) return live;
   if (dryRun) return null; // dry-run without a live board: validate input only
@@ -368,4 +399,4 @@ async function markArticle(vault, input, options, live) {
   return { article_id: articleId, title: article.title || null, read: !!article.read, starred: !!article.starred };
 }
 
-module.exports = { refreshFeed, scoreFeed, clipHighScore, clipUrl, fetchPdf, setArticleScore, markArticle, sanitizePdfFilename, savePdfWithDedup };
+module.exports = { listArticles, refreshFeed, scoreFeed, clipHighScore, clipUrl, fetchPdf, setArticleScore, markArticle, sanitizePdfFilename, savePdfWithDedup };

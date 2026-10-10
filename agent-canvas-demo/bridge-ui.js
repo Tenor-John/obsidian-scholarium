@@ -448,11 +448,9 @@ function pipelineHistorySteps() {
   }));
 }
 
-// operationId：Pipeline 入口的幂等键（契约 §2.3）。只加在这一处入口，不加在每个
-// 阶段——同一张票据第二次投递会在建记录之前被 /v1/pipeline-runs 认出。
-async function beginPipelineHistory(title, workspace, parentRunId = null, operationId = '') {
+async function beginPipelineHistory(title, workspace, parentRunId = null) {
   const record = await bridgeFetch('/v1/pipeline-runs', {
-    method: 'POST', headers: { 'content-type': 'application/json', ...(operationId ? { 'x-scholarium-operation-id': operationId } : {}) },
+    method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ title, workspace, parentRunId }),
   });
   activePipelineHistoryId = record.id;
@@ -978,7 +976,6 @@ function confirmSearchTopic() {
 // OpenAlex supplies discovery metadata; a file is written only after an
 // explicit second confirmation and only when the response validates as a PDF.
 async function runLiteratureSearch(options = {}) {
-  // options.operationId：见 dispatchConversationOperation 的注释（只透传到入口）。
     if (!zhiyanBridge.online) await connectBridge();
     if (!zhiyanBridge.online) throw new Error('本机 Bridge 未连接。');
     const workspace = await loadWorkspace();
@@ -1016,9 +1013,7 @@ async function runLiteratureSearch(options = {}) {
     }
 
     const rowSearch = addStep('第 2 步 · 多源元数据检索（OpenAlex / PubMed / Semantic Scholar / Scopus，各源已按自身语法自动改写检索式）', '正在检索…');
-    // 入口写请求：带号之后，同一张票据第二次投递会在 /v1/literature/search 被
-    // 认出（replayed / 409），第二次检索不会真的开始（契约 §2.3，只守入口）。
-    const runSearch = (value) => bridgeFetch('/v1/literature/search', { method: 'POST', headers: { 'content-type': 'application/json', ...(options.operationId ? { 'x-scholarium-operation-id': options.operationId } : {}) }, body: JSON.stringify({ workspace: workspaceRoot, query: value }) });
+    const runSearch = (value) => bridgeFetch('/v1/literature/search', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: workspaceRoot, query: value }) });
     let search = await runSearch(query);
     let usedQuery = query;
     if (!(search.manifest.records || []).length) {
@@ -2374,7 +2369,7 @@ async function runResearchPipeline(options = {}) {
     ? `Pipeline ${options.restartMode ? '步骤重跑' : '断点续跑'} · 从「${stepsCore.stepById(options.startStepId)?.title || options.startStepId}」开始`
     : '一键运行科研文献 Pipeline';
   steps.innerHTML = ''; result.classList.add('hidden');
-  try { await beginPipelineHistory(question, workspaceRoot, options.parentRunId || null, options.operationId || ''); }
+  try { await beginPipelineHistory(question, workspaceRoot, options.parentRunId || null); }
   catch (error) { window.researchWeaver.toast(`Pipeline 历史记录未能建立：${error.message}；本次仍会继续，但不能断点恢复。`); }
   const historyId = activePipelineHistoryId;
   const skills = (await bridgeFetch('/v1/skills')).skills;
@@ -4264,7 +4259,7 @@ async function rerunPipelineFromConversation(request) {
     const topic = topicOverride || String(record.title || '').trim();
     if (!topic) throw new Error('旧记录没有状态包，也没有可恢复的原始主题；请在对话里明确主题后运行完整 Pipeline。');
     let completion;
-    try { completion = await runResearchPipeline({ topic, confirmedFromChat: true, parentRunId: record.id, operationId: request.operationId || '' }); }
+    try { completion = await runResearchPipeline({ topic, confirmedFromChat: true, parentRunId: record.id }); }
     catch (error) { error.conversationPipelineStarted = true; throw error; }
     return { ...(completion || {}), status: 'completed', runId: record.id, detail: '旧记录没有状态包，已按其原始主题从第 1 步重新运行。' };
   }
@@ -4285,7 +4280,6 @@ async function rerunPipelineFromConversation(request) {
       parentRunId: record.id,
       restartMode: true,
       confirmedFromChat: true,
-      operationId: request.operationId || '',
     });
   } catch (error) { error.conversationPipelineStarted = true; throw error; }
   return {
@@ -4305,20 +4299,6 @@ async function runConversationOperation(request) {
 
 async function dispatchConversationOperation(request) {
   const operation = String(request?.operation || '');
-  /* 契约 §2.3：`run` 这张确认的 operationId 由 shell 放进 request，这里只做透传。
-   *
-   * 边界必须说清楚（不要在别处宣称 run 有执行端幂等）：
-   *   - literature.search / pipeline.rerun：号会一路传到 runResearchPipeline →
-   *     beginPipelineHistory → POST /v1/pipeline-runs 的请求头里。**只有入口**幂等：
-   *     同一张票据第二次投递会在建记录之前被认出来（replayed / 409），所以第二次
-   *     pipeline 不会启动；阶段内部的写入不受它保护。
-   *   - literature.queue：**盖不到**。它没有任何 HTTP 调用，写是通过
-   *     postMessage 交给宿主 main.js 的（宿主按条目 id 做的合并只是基础去重，
-   *     不算端点幂等）。
-   *   - 因此 run 在 P0 的实际保护是 claimed 锁（会话文件里的 claimed 挡住双击，
-   *     服务端也会拒绝 claimed → claimed），不是执行端幂等。
-   * 完整的 host / 多阶段 Pipeline 幂等留给 P1。 */
-  const operationId = String(request?.operationId || '');
   if (operation === 'literature.queue') {
     const items = (Array.isArray(request?.items) ? request.items : []).slice(0, 100).map((item) => {
       const doi = normalizeDoiKey(item?.doi);
@@ -4338,10 +4318,10 @@ async function dispatchConversationOperation(request) {
     };
   }
   if (operation === 'literature.search') {
-    return runLiteratureSearch({ topic: request.topic, confirmedFromChat: true, operationId });
+    return runLiteratureSearch({ topic: request.topic, confirmedFromChat: true });
   }
   if (operation === 'pipeline.rerun') {
-    try { return await rerunPipelineFromConversation({ ...request, operationId }); }
+    try { return await rerunPipelineFromConversation(request); }
     catch (error) {
       // Pipeline 运行阶段抛出的安全停止也要照常写入 outcome/停止原因；纯预检
       // 错误发生在 active history 建立前，不需要走运行收口。

@@ -18,7 +18,24 @@ function auditCommits(commits) {
   return commits.filter((entry) => entry.touchesMain && !TRAILER.test(entry.message || ""));
 }
 
+function hasRevision(cwd, revision) {
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", `${revision}^{commit}`], {
+      cwd,
+      stdio: "ignore",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function readMainCommits({ cwd = process.cwd(), base = ADOPTION_BASE, head = "HEAD" } = {}) {
+  // Public source snapshots intentionally do not inherit the private host's
+  // history. In that checkout the adoption commit cannot be inspected, so
+  // leave historical trailer auditing to the canonical host instead of
+  // treating an absent private revision as a release failure.
+  if (!hasRevision(cwd, base)) return [];
   const hashes = execFileSync("git", ["rev-list", "--reverse", `${base}..${head}`, "--", "main.js"], {
     cwd, encoding: "utf8",
   }).trim().split(/\r?\n/).filter(Boolean);
@@ -48,4 +65,4 @@ function main(argv = process.argv.slice(2)) {
 
 if (require.main === module) main();
 
-module.exports = { ADOPTION_BASE, TRAILER, auditCommits, readMainCommits };
+module.exports = { ADOPTION_BASE, TRAILER, auditCommits, hasRevision, readMainCommits };

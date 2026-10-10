@@ -29,3 +29,4 @@ const result = spawnSync(process.execPath, ['--test', '--test-concurrency=1', ..
   stdio: 'inherit',
 });
 process.exit(result.status === null ? 1 : result.status);
+

@@ -3,11 +3,12 @@
  * runtime-bootstrap / runtime-pack-build 原型测试。
  *
  * 覆盖：确定性构建、安装回环、哈希拒绝、Zip Slip 防护、升级与回滚、
- * 插件内置本地包约束、平台路径。全部使用本地文件，无网络。
+ * 离线 incoming 兜底、平台路径。全部本地文件与本地 HTTP，无网络。
  */
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const http = require("http");
 const zlib = require("zlib");
 const { describe, it, assert } = require("./harness");
 
@@ -93,7 +94,7 @@ describe("runtime-bootstrap: 安装回环", () => {
     assert.eq(/SHA-256 不符/.test(threw.message), true, "指明哈希不符");
     assert.eq(/已拒绝安装/.test(threw.message), true, "明确拒绝而非降级");
     assert.eq(/未被改动/.test(threw.message), true, "告知现状未变");
-    assert.eq(/重新安装完整的 Scholarium 插件包/.test(threw.message), true, "给出完整插件重装出路");
+    assert.eq(/重试/.test(threw.message) && /incoming\//.test(threw.message), true, "给出重试与离线两条出路");
     assert.eq(bootstrap.status(root).state, "absent", "不应改变现状");
     assert.eq(fs.existsSync(path.join(root, "staging")), false, "staging 应清空");
     assert.eq(fs.existsSync(path.join(root, "versions", "1.0.0")), false, "不应产生版本目录");
@@ -152,24 +153,47 @@ describe("runtime-bootstrap: 升级与回滚", () => {
   });
 });
 
-describe("runtime-bootstrap: self-contained local contract", () => {
-  it("rejects remote runtime sources before any network request", async () => {
-    const manifest = {
-      schema: "scholarium-runtime-pack/1",
-      version: "4.0.0",
-      platform: "win32-x64",
-      packs: [{ name: "core", file: "core.tar.gz", sha256: "0".repeat(64), size: 1, required: true }],
-    };
-    let error = null;
+describe("runtime-bootstrap: 离线 incoming 兜底", () => {
+  it("用户手动放入包文件后走同一条校验安装路径", async () => {
+    const src = makeSource({ "readme.txt": "offline" });
+    const out = tmpdir("out");
+    buildPack({ name: "core", version: "3.0.0", platform: "win32-x64", from: src, out });
+    const root = tmpdir("root");
+    const incoming = path.join(root, "incoming");
+    fs.mkdirSync(incoming, { recursive: true });
+    for (const f of fs.readdirSync(out)) fs.copyFileSync(path.join(out, f), path.join(incoming, f));
+    fs.renameSync(path.join(incoming, "scholarium-runtime-manifest-3.0.0.json"), path.join(incoming, "manifest.json"));
+
+    const r = await bootstrap.installFromIncoming(root);
+    assert.eq(r.version, "3.0.0");
+    assert.eq(bootstrap.status(root).state, "ready");
+  });
+});
+
+describe("runtime-bootstrap: HTTP 下载路径", () => {
+  it("经本地 HTTP 服务下载并逐包校验", async () => {
+    const src = makeSource({ "served.txt": "over-http" });
+    const out = tmpdir("out");
+    buildPack({ name: "core", version: "4.0.0", platform: "win32-x64", from: src, out });
+    const server = http.createServer((req, res) => {
+      const f = path.join(out, decodeURIComponent(req.url.slice(1)));
+      if (!f.startsWith(out) || !fs.existsSync(f)) { res.statusCode = 404; res.end(); return; }
+      res.end(fs.readFileSync(f));
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     try {
-      await bootstrap.install({
-        rootDir: tmpdir("root"),
-        manifest,
-        resolvePackUrl: () => "https://example.invalid/core.tar.gz",
+      const base = `http://127.0.0.1:${server.address().port}`;
+      const root = tmpdir("root");
+      const r = await bootstrap.install({
+        rootDir: root,
+        manifestUrl: `${base}/scholarium-runtime-manifest-4.0.0.json`,
+        resolvePackUrl: (pack) => `${base}/${pack.file}`,
       });
-    } catch (caught) { error = caught; }
-    assert.ok(error);
-    assert.match(error.message, /插件内置的本地资源/);
+      assert.eq(r.version, "4.0.0");
+      assert.eq(fs.readFileSync(path.join(root, "versions", "4.0.0", "core", "served.txt"), "utf8"), "over-http");
+    } finally {
+      server.close();
+    }
   });
 });
 

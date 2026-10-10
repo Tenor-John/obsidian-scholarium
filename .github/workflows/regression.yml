@@ -26,8 +26,13 @@ concurrency:
 jobs:
   regression:
     name: Bundle regression
-    runs-on: ubuntu-latest
+    # The release candidate bundles a Windows native runtime and exercises
+    # Windows command discovery. Run this gate on the supported platform.
+    runs-on: windows-latest
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Check out
