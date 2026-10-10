@@ -60,7 +60,7 @@ jobs:
               .filter(Boolean);
             const bad = tracked.filter((f) =>
               (text.has(f) || extensions.has(require("path").extname(f).toLowerCase())) &&
-              cp.execFileSync("git", ["show", ":" + f], { maxBuffer: 8 * 1024 * 1024 }).includes("\r\n"),
+              cp.execFileSync("git", ["show", ":" + f], { maxBuffer: 64 * 1024 * 1024 }).includes("\r\n"),
             );
             if (bad.length) {
               console.error(
