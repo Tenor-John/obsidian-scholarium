@@ -11,8 +11,11 @@ test('buildBuilderPrompt embeds topic and, on revision, the critique', () => {
   const first = Core.buildBuilderPrompt({ topic: 'SMSI 与 CO2 还原', cycle: 1 });
   assert.match(first, /研究主题：SMSI 与 CO2 还原/);
   assert.match(first, /第 1 轮/);
-  assert.match(first, /只保留 2 个真正必需的概念块/);
+  assert.match(first, /只保留 2–3 个真正必需的概念块/);
   assert.match(first, /不得加入 DOI、已知论文标题或 NOT/);
+  assert.match(first, /多个替代反应、应用或路线必须放在同一个 OR 概念块/);
+  assert.match(first, /尚未知的材料、机制或第三组分/);
+  assert.match(first, /不使用通配符 \*、\?/);
   assert.ok(!first.includes('上一轮质疑者'));
 
   const revised = Core.buildBuilderPrompt({
@@ -34,6 +37,35 @@ test('parseBuilderReply accepts fenced JSON and rejects missing query', () => {
   assert.equal(Core.parseBuilderReply('not json').ok, false);
   assert.equal(Core.parseBuilderReply('{"rationale":"x"}').ok, false);
   assert.equal(Core.parseBuilderReply('{"query":"ab"}').ok, false, 'query < 3 chars rejected');
+});
+
+test('builder repair is bounded and preserves task-level diagnostics', async () => {
+  const replies = [
+    { text: 'Query: gold AND titania', taskId: 'builder-original' },
+    { text: '{"query":"gold AND titania","rationale":"原式格式化"}', taskId: 'builder-repair' },
+  ];
+  const repaired = await Core.reviewBuilderWithRepair({
+    invoke: async () => replies.shift(),
+    agentId: 'any-provider',
+    prompt: 'build',
+  });
+  assert.equal(repaired.ok, true);
+  assert.equal(repaired.query, 'gold AND titania');
+  assert.equal(repaired.protocol.status, 'repaired');
+  assert.deepEqual(repaired.protocol.attempts.map((item) => item.task_id), ['builder-original', 'builder-repair']);
+  assert.match(Core.buildBuilderRepairPrompt({ rawReply: 'x', parseError: 'bad' }), /只修复输出格式，不重新设计主题/);
+});
+
+test('builder repair fails explicitly after one retry instead of inventing a query', async () => {
+  let calls = 0;
+  const failed = await Core.reviewBuilderWithRepair({
+    invoke: async () => { calls++; return calls === 1 ? 'plain prose' : '{"rationale":"still no query"}'; },
+    agentId: 'any-provider',
+    prompt: 'build',
+  });
+  assert.equal(calls, 2);
+  assert.equal(failed.ok, false);
+  assert.equal(failed.protocol.status, 'degraded-no-query');
 });
 
 /* -------------------------------------------------------------- critic -- */
@@ -64,6 +96,55 @@ test('parseCriticReply sums bounded components plus deterministic simplicity', (
 
   assert.equal(Core.parseCriticReply('{"score":90}').ok, false, 'opaque total without breakdown rejected');
   assert.equal(Core.parseCriticReply('garbage').ok, false);
+});
+
+test('critic repair prompt documents the actual parser schema and maps common provider aliases', () => {
+  const prompt = Core.buildCriticRepairPrompt({
+    rawReply: '{"score_breakdown":{"topic_relevance":30,"precision":20}}',
+    parseError: 'missing fields',
+  });
+  assert.match(prompt, /只修复输出格式，不重新检索/);
+  assert.match(prompt, /relevance、recall、executability/);
+  assert.match(prompt, /topic_relevance、precision、coverage、portability/);
+  assert.doesNotMatch(prompt, /"simplicity":/);
+});
+
+test('reviewCriticWithRepair retries format once without hiding diagnostics', async () => {
+  const replies = [
+    { text: '{"score_breakdown":{"topic_relevance":35}}', taskId: 'task-original' },
+    { text: '{"score_breakdown":{"relevance":35,"recall":21,"executability":14},"problems":[]}', taskId: 'task-repair' },
+  ];
+  let repairNotice = null;
+  const judged = await Core.reviewCriticWithRepair({
+    invoke: async () => replies.shift(),
+    agentId: 'portable-agent',
+    prompt: 'original rubric',
+    query: 'gold AND photocatalysis',
+    cycle: 1,
+    onRepair: (detail) => { repairNotice = detail; },
+  });
+  assert.equal(judged.ok, true);
+  assert.equal(judged.protocol.status, 'repaired');
+  assert.equal(judged.protocol.repair_attempted, true);
+  assert.deepEqual(judged.protocol.attempts.map((item) => item.task_id), ['task-original', 'task-repair']);
+  assert.match(judged.protocol.attempts[0].parse_error, /score_breakdown/);
+  assert.match(judged.protocol.attempts[0].reply_fingerprint, /^fnv1a32:/);
+  assert.equal(repairNotice.taskId, 'task-original');
+});
+
+test('reviewCriticWithRepair returns an explicit degraded contract after exactly two malformed replies', async () => {
+  let calls = 0;
+  const judged = await Core.reviewCriticWithRepair({
+    invoke: async () => { calls++; return { text: calls === 1 ? 'not json' : '{"score":88}', taskId: `t${calls}` }; },
+    agentId: 'same-agent',
+    prompt: 'rubric',
+    query: 'a AND b',
+  });
+  assert.equal(calls, 2);
+  assert.equal(judged.ok, false);
+  assert.equal(judged.protocol.status, 'degraded-unscored');
+  assert.deepEqual(judged.protocol.attempts.map((item) => item.task_id), ['t1', 't2']);
+  assert.match(judged.error, /格式修复后仍不合格/);
 });
 
 test('simplicity score penalizes query bloat, early NOT and DOI stuffing', () => {

@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "kind": "scholarium-migration-preflight",
+  "generated_at": "2026-08-10T10:00:00.000Z",
+  "declared_counts": {
+    "scanned": 4,
+    "migrate": 1,
+    "candidate": 1,
+    "exclude": 1,
+    "retained_settings": 1
+  },
+  "sources": [
+    {
+      "source_path": "Experiments/WebClips/2026-08-10-example/2026-08-10-example.md",
+      "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "disposition": "migrate",
+      "target": {
+        "type": "paper",
+        "target_path": "Research/Papers/PAPER-001.md",
+        "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "source_path": "Experiments/legacy-note.md",
+      "source_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "disposition": "candidate",
+      "classification": "experiment_or_paper_requires_user_review"
+    },
+    {
+      "source_path": ".WebClips-backup-20260808/duplicate.md",
+      "source_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "disposition": "exclude",
+      "reason": "backup_directory"
+    },
+    {
+      "source_path": ".obsidian/plugins/obsidian-scholarium/data.json",
+      "source_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "disposition": "retained_settings",
+      "reason": "contains local plugin settings and credentials",
+      "allowed_extractions": [
+        "rssBoard.articles[].radarScores"
+      ]
+    }
+  ]
+}

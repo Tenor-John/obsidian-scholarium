@@ -12,7 +12,8 @@
 
   function selectedReadAgent() {
     // 只读候选发现/内容分析必须钉死在朴素只读适配器（claude/codex）上，不能
-    // 落到 claude-research（带 Bash/Write，边界更宽）或任何 -full 适配器。
+    // 落到联网研究车道或任何 -full 适配器；种子准入的候选读取刻意保持
+    // 在最窄的本地只读路径，联网发现由独立步骤负责。
     // `installed` 只说明命令路径存在，不能说明该 CLI 当前的登录/模型配置
     // 可用。此机的 Claude CLI 可能被第三方模型环境变量接管而在真正派发时
     // 失败；Codex 是同样受限的只读适配器，且与 Bridge 的 JSON 输出契约已
@@ -397,7 +398,11 @@
     dialog.querySelector('[data-action="back"]').onclick = () => renderReviewPackage(dialog, state);
     dialog.querySelector('[data-action="commit"]').onclick = async () => {
       try {
-        const preview = await bridgeFetch('/v1/drafts/batch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ base: 'scholarium-vault', sourceTaskId: state.contentTaskId || state.discoveryTaskId, items: built.items }) });
+        const preview = await bridgeFetch('/v1/drafts/batch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+          base: 'scholarium-vault', serverManagedMetadata: true,
+          projectDisplayId: state.project.project.display_id,
+          sourceTaskId: state.contentTaskId || state.discoveryTaskId, items: built.items,
+        }) });
         if (!confirm(`将原子写入 ${built.items.length} 个新文件，确认吗？`)) return;
         await bridgeFetch(`/v1/drafts/batch/${preview.id}/commit`, { method: 'POST' });
         state.run = await bridgeFetch(`/v1/seed-reconstruction/${state.run.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ draft_batch_id: preview.id, status: 'admitted' }) });

@@ -47,7 +47,7 @@ preview → confirm → dispatch 绑定；`claude-full` 只负责检索并报告
 
 ### 1.1 实时验收入口与重跑门槛
 
-真实探测不进入 `npm test`：它需要真实模型和网络，会有延迟与费用，且 `claude-research` 的越界探测预期会**真的写出**临时哨兵文件。人工显式运行 `npm run verify:live`，它依序运行联网研究车道、research 路径边界、`claude-full` 工具/边界探针，并向 `bridge/audit/acceptance-YYYY-MM-DD.jsonl` 追加一条摘要。
+真实探测不进入 `npm test`：它需要真实模型和网络，会有延迟与费用。人工显式运行 `npm run verify:live`，它依序运行联网研究车道、research 直接写能力不可达探针、`claude-full` 工具/边界探针，并向 `bridge/audit/acceptance-YYYY-MM-DD.jsonl` 追加一条摘要。
 
 以下任一变更后，必须在启用或派发受影响车道前重跑该验收（不能把既有成功记录视为仍然有效）：
 
@@ -56,7 +56,7 @@ preview → confirm → dispatch 绑定；`claude-full` 只负责检索并报告
 - 修改 `researchLaneEnabled`、`workspaceRoot`、`allowedRoots`，或更换 CLI 模型、认证或中继路由；
 - 距离上一次验收超过 30 天。
 
-`claude-research` 路径探测的“越界文件被真实写出”是**预期通过证据**，不是把越界当成安全事故：它准确证明 Claude CLI 的 Write/Edit 没有预防式路径沙箱。探测全程只在系统临时目录创建哨兵且结束即清理；它的意义是防止后来的人误把 research 车道用于 Vault 写入。`claude-full` 同属检测式执法，依靠写前快照和写后 diff 发现越界，不能承诺在写入发生前阻止它。
+2026-09-10 的三类受控探针已经确证：同一用户进程没有 cwd 写入边界。因此 `claude-research` 不再拥有 Write/Edit/Bash/PowerShell；当前真实探测的通过条件是这些直接写能力不可达且哨兵不存在。这个 capability contract 仍不等于 OS 沙箱。`claude-full` 继续属于检测式执法，依靠写前快照和写后 diff 发现越界，不能承诺在写入发生前阻止它。
 
 ## 2. 权限模型：从"一刀切开关"改为"按操作类别声明"
 

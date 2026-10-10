@@ -1,62 +1,48 @@
 ---
 name: experiment-record
-description: Validate and index the researcher's experiment notes under Experiments/, turning hand-written frontmatter into a machine-readable state file that later steps (project-status, plotting, analysis) can consume. Reports schema violations; never rewrites the notes.
+description: Validate and index canonical schema-v1 Experiment objects under Research/Experiments. Reports legacy Experiments/ notes separately without treating their old frontmatter as schema errors; never rewrites notes.
 ---
 # Experiment Record
 
 ```bash
-python scripts/validate_experiments.py <workspace>
+node scripts/validate_experiments.js <workspace>
 ```
 
 ## 它在闭环里的位置
 
-`deep-research` 的 `next_actions` 完全从文献推导，做完实验也不会变。这个 skill 是那条
-**反向箭头**的第一段：把 `Experiments/**/experiment.md` 里人写的 frontmatter 读成结构化
-状态，写到 `Research/experiment-index.json`，供 `project-status` 与假设、文献证据对齐。
+这个 skill 把 `Research/Experiments/*.md` 的 schema-v1 frontmatter 读成结构化状态，
+写到可重建的 `Research/experiment-index.json`，供课题状态、绘图和分析入口使用。
 
 完整字段定义见仓库根目录的 `EXPERIMENT_SCHEMA.md`。
 
 ## 只报错，不修改
 
-frontmatter 是双向契约：Agent 可以做**字段级**写入，研究者可以手改，正文完全归研究者。
-校验器因此只输出错误，不自动修正——擅自改写会破坏「正文和字段都归你」这个前提，
-而实验记录里最有价值的往往正是那些非结构化的过程观察。
+frontmatter 是双向契约；正文模板只用于让新记录的阅读结构一致，不是合法性条件。
+旧正文或研究者自由修改过的正文只产生兼容性提示，不产生 schema 错误。
 
 同理，任何更新实验记录的 Agent 都**不允许**用「重新生成整个笔记」的方式写入。
 
 ## 校验规则
 
-**错误**（`valid: false`）：
-
-- 缺 `type` / `id` / `title` / `status` / `created_at` / `updated_at`
-- `id` 不符合 `EXP-\d{3}`，或与目录名前缀不一致
-- `status` / `outcome` 不在枚举内
-- `status: done` 但 `outcome` 仍是 `pending`，或 `conclusion` 为空
-- `status: abandoned` 但没写放弃原因
-
-最后两条是这个 schema 存在的主要理由：一个「已完成」却没有裁决的实验，
-在看板上像是有进展，实际对它要检验的假设没有任何贡献。
+错误完全复用 `tools/schema-objects.js` 的 schema-v1 校验，包括 UUIDv7、
+`display_id`、时间、课题/假设引用、生命周期和数据来源门禁；不再维护第二份字段枚举。
 
 **警告**（不阻断）：
 
-- 闭环字段（`hypothesis_id` / `hypothesis` / `predicts` / `falsified_if` / `outcome`）为空
-  —— 这条实验无法参与 `project-status` 的对齐
-- `data_raw` / `data_processed` / `figures` 里的路径不存在
-- 非 `planned` 状态却没声明自变量 —— 严谨性检查退化为只看 `outcome`
+- 正文未带当前 `scholarium-experiment-template` 版本标记。记录仍然可读，且不会因为
+  标题或小节不同而报错；只有今后的新建记录会统一模板。
 
 ## 输出
 
 ```json
 {
   "count": 3, "valid": true, "error_count": 0,
-  "by_status":  {"done": 1, "planned": 2},
-  "by_outcome": {"inconclusive": 1, "pending": 2},
+  "by_status":  {"concluded": 1, "designed": 2},
+  "by_data_origin": {"measured": 1, "unknown": 2},
   "experiments": [{
-    "id": "EXP-001", "status": "done", "hypothesis_id": "H1",
-    "outcome": "inconclusive", "conclusion": "...",
-    "data_processed": [...], "figures": [...],
-    "linked_evidence": [...], "linked_records": [...],
-    "next_actions": [...], "blocked_by": [...],
+    "display_id": "EXP-001", "status": "concluded",
+    "tests_hypotheses": [...], "data_origin": "measured",
+    "produced_evidence": [...], "raw_data_refs": [...],
     "errors": [], "warnings": []
   }]
 }
@@ -64,9 +50,8 @@ frontmatter 是双向契约：Agent 可以做**字段级**写入，研究者可�
 
 同时落盘到 `Research/experiment-index.json`。
 
-## 边界
+## `Experiments/` 的边界
 
-- 不解析正文，不读数据文件内容，不画图。
-- 不创建实验目录（那是 `experiment-planner` 的事，尚未实现）。
-- YAML 解析器是为本 schema 的扁平结构手写的（标量、行内 `{}` / `[]`、`- ` 列表、
-  `>` 块标量）。项目不依赖 PyYAML；读不了的结构会报成校验错误而不是崩溃。
+根目录 `Experiments/` 是旧的日期式/图片识别笔记区。它会以 `legacy.files` 列出，
+但不会进入 schema-v1 项目状态，也不会因旧字段不同制造红色错误。迁移必须另做预览与
+人工确认；本 skill 不自动搬运或改写任何旧笔记。

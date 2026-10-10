@@ -44,3 +44,30 @@ test('every real failure surface (chat send, draft commit, experiment.transition
   // plus at least four call sites.
   assert.ok(callSites.length >= 5, `expected the definition plus >=4 call sites, found ${callSites.length} occurrences`);
 });
+
+test('chat protocol failures are audited, false success is visible, and pending cards survive reload', () => {
+  assert.match(source, /\/v1\/chat-turns\/audit/);
+  assert.match(source, /protocolBlocks\.action\?\.parsed/);
+  assert.match(source, /实际什么都没有写入/);
+  assert.match(source, /role: 'error'/);
+  assert.match(source, /待确认请求 \$\{count\}/);
+  assert.match(source, /data-confirmation-state="pending"/);
+  assert.match(source, /scrollIntoView\(\{ block: 'center' \}\)/);
+  assert.match(source, /暂不执行/);
+  assert.match(source, /'abandoned'/);
+  assert.match(source, /concealMalformedProtocolBlocks/);
+  assert.match(source, /protocolFailureCard/);
+  assert.match(source, /不可执行的格式错误卡/);
+  assert.match(source, /displayMessageForChat/);
+  assert.match(source, /without mutating the stored transcript/);
+  assert.match(source, /existingFailures/);
+  assert.match(source, /findIndex\(\(candidate\) => candidate\?\.protocol === failure\?\.protocol/);
+  assert.match(source, /旧草稿请求已安全跳过/);
+  assert.match(source, /wv-protocol-compatibility-card/);
+});
+
+test('chat draft confirmation enables server-managed metadata with the bound project id', () => {
+  assert.match(source, /serverManagedMetadata: true/);
+  assert.match(source, /projectDisplayId: message\.projectDisplayId/);
+  assert.match(source, /projectDisplayId: projectId/);
+});

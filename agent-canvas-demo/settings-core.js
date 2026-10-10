@@ -10,6 +10,16 @@
    * fallback：未配置时的降级说明，让用户清楚损失了什么能力。 */
   const CREDENTIAL_REGISTRY = [
     {
+      envVar: 'HF_TOKEN',
+      label: 'Hugging Face',
+      purpose: '云端多语种 Embedding，用于论文向量化、语义检索和混合 RAG',
+      cost: 'free-quota',
+      applyUrl: 'https://huggingface.co/settings/tokens',
+      fallback: '未配置或云端不可用时明确降级为本地 BM25；不会把未生成的向量标记为成功。',
+      legacyConfigField: 'huggingFaceToken',
+      validate: (v) => /^hf_[A-Za-z0-9]{20,}$/.test(v) || '应为 hf_ 开头的 Hugging Face Token，请核对是否复制完整',
+    },
+    {
       envVar: 'MINERU_API_KEY',
       label: 'MinerU',
       purpose: '高精度 PDF 解析（表格、公式、版面），用于文献精读与证据卡',
@@ -26,7 +36,14 @@
       cost: 'free',
       applyUrl: 'https://www.semanticscholar.org/product/api#api-key',
       fallback: '未配置时使用公共限额，高频检索时可能被限速。',
-      validate: (v) => /^[A-Za-z0-9]{20,}$/.test(v) || '应为 20 位以上字母数字，请核对',
+      /* 原来是 /^[A-Za-z0-9]{20,}$/ —— 不允许连字符。而 Semantic Scholar 现行
+       * 的 key 形如 s2k-XXXXXXXX…，带横线，于是合法的 key 被判为非法、根本存
+       * 不进去，用户看到的是"填了没反应"。
+       *
+       * 密钥格式是服务方说了算、且会变的东西，这里的校验只该拦住明显的手滑
+       * （空值、粘贴不全、误贴了别的东西），不该替服务方定义什么叫合法。所以
+       * 放宽到"20 位以上，且只含密钥常见字符"。 */
+      validate: (v) => /^[A-Za-z0-9_-]{20,}$/.test(v) || '应为 20 位以上字母数字（可含 - 或 _），请核对是否复制完整',
     },
     {
       envVar: 'SCOPUS_API_KEY',

@@ -9,53 +9,25 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const root = path.resolve(__dirname, '..');
 const FIXTURE = path.join(__dirname, 'fixtures', 'fake-full-agent.js');
-const bridgePort = 47200 + (process.pid % 300);
-const TOKEN = 'test-token-' + process.pid;
+const { startBridge } = require('./helpers/bridge-harness.js');
 const PDF_BYTES = Buffer.concat([Buffer.from('%PDF-1.4 fake fixture\n'), Buffer.alloc(600, 65)]);
 
-let bridge;
+let harness;
 let pdfServer;
 let pdfBaseUrl;
 let workspace;
 let auditDir;
 let runtimeDir;
-let configPath;
 let promptCapturePath;
 let argvCapturePath;
-
-function request(pathname, options = {}) {
-  return new Promise((resolve, reject) => {
-    const headers = options.body ? { 'content-type': 'application/json' } : {};
-    if (!options.noAuth) headers['x-agent-bridge-token'] = TOKEN;
-    const req = http.request({
-      host: '127.0.0.1', port: bridgePort, path: pathname, method: options.method || 'GET', headers,
-    }, (res) => {
-      let raw = '';
-      res.on('data', (chunk) => { raw += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: raw }));
-    });
-    req.on('error', reject);
-    if (options.body) req.write(options.body);
-    req.end();
-  });
-}
-
-async function waitForBridge() {
-  let lastError;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try { const res = await request('/health', { noAuth: true }); if (res.status === 200) return; }
-    catch (error) { lastError = error; }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw lastError || new Error('bridge did not start');
-}
+const request = (pathname, options = {}) => harness.request(pathname, {
+  method: options.method, body: options.body, auth: options.noAuth ? false : undefined,
+}).then((res) => ({ ...res, body: res.text }));
 
 async function waitForRun(id) {
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -106,16 +78,12 @@ test.before(async () => {
   pdfBaseUrl = `http://127.0.0.1:${pdfServer.address().port}`;
 
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'full-lane-workspace-'));
-  auditDir = fs.mkdtempSync(path.join(os.tmpdir(), 'full-lane-audit-'));
-  runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'full-lane-runtime-'));
-  configPath = path.join(os.tmpdir(), `full-lane-${process.pid}.config.json`);
-  promptCapturePath = path.join(os.tmpdir(), `full-lane-prompt-${process.pid}.txt`);
-  argvCapturePath = path.join(os.tmpdir(), `full-lane-argv-${process.pid}.json`);
-  fs.writeFileSync(configPath, JSON.stringify({
-    token: TOKEN,
-    allowExecution: true,
-    workspaceRoot: workspace,
-    allowedRoots: [workspace],
+  harness = await startBridge({
+    config: (scratch) => {
+      auditDir = path.join(scratch, 'audit');
+      runtimeDir = path.join(scratch, 'runtime');
+      return {
+    allowExecution: true, workspaceRoot: workspace, allowedRoots: [workspace],
     adapters: {
       // detection-only adapter (stands in for claude-full), {{tools}} placeholder
       // mirrors the real claude-full args so the per-category override is exercised
@@ -128,8 +96,7 @@ test.before(async () => {
       // Write silently denied (the 2026-08-18 read-only-lane failure mode)
       'claude-full-deny': { command: process.execPath, args: [FIXTURE, '--deny-write', '{{prompt}}'], permission: 'full', sandbox: 'none' },
     },
-    fullTaskAuditDir: auditDir,
-    fullTaskRuntimeDir: runtimeDir,
+    fullTaskAuditDir: auditDir, fullTaskRuntimeDir: runtimeDir,
     // write_scholarium_record 已从默认表撤出（设计文档 §7：知识管理新建走
     // /v1/drafts/batch 预防式通道）。本测试显式声明它，覆盖的是"§7 例外条款
     // 被启用时" newFilesOnly 检测机制本身仍然工作。
@@ -145,21 +112,20 @@ test.before(async () => {
         newFilesOnly: true, timeoutMs: 600000,
       },
     },
-  }, null, 2), 'utf8');
-
-  bridge = spawn(process.execPath, [path.join(root, 'bridge', 'server.js')], {
-    cwd: root,
-    env: { ...process.env, AGENT_BRIDGE_PORT: String(bridgePort), AGENT_BRIDGE_CONFIG_PATH: configPath, FAKE_PROMPT_CAPTURE: promptCapturePath, FAKE_ARGV_CAPTURE: argvCapturePath },
-    stdio: 'ignore', windowsHide: true,
+    };
+    },
+    env: (scratch) => {
+      promptCapturePath = path.join(scratch, 'prompt.txt');
+      argvCapturePath = path.join(scratch, 'argv.json');
+      return { FAKE_PROMPT_CAPTURE: promptCapturePath, FAKE_ARGV_CAPTURE: argvCapturePath };
+    },
   });
-  await waitForBridge();
 });
 
 test.after(() => {
-  if (bridge && !bridge.killed) bridge.kill();
+  if (harness) harness.stop();
   if (pdfServer) pdfServer.close();
-  for (const p of [configPath, promptCapturePath, argvCapturePath]) { try { if (p && fs.existsSync(p)) fs.rmSync(p); } catch { /* cleanup */ } }
-  for (const dir of [workspace, auditDir, runtimeDir]) { try { if (dir && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true }); } catch { /* cleanup */ } }
+  for (const dir of [workspace]) { try { if (dir && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true }); } catch { /* cleanup */ } }
 });
 
 test('§1: dispatch is refused until the adapter passes a capability probe; preview survives the refusal', async () => {
@@ -305,11 +271,11 @@ test('§1: a silent Write denial fails the probe (the read-only-lane failure mod
 });
 
 test('§1: editing the adapter config after a passing probe invalidates it (hot reload + hash gate)', async () => {
-  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  const config = JSON.parse(fs.readFileSync(harness.configPath, 'utf8'));
   config.adapters['claude-full'].args = [FIXTURE, '--allowedTools', '{{tools}}', '--v2', '{{prompt}}'];
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+  fs.writeFileSync(harness.configPath, JSON.stringify(config, null, 2), 'utf8');
   const future = new Date(Date.now() + 2000); // make sure the mtime actually moves
-  fs.utimesSync(configPath, future, future);
+  fs.utimesSync(harness.configPath, future, future);
 
   const { dispatch } = await previewThenDispatch(WITH_URL());
   assert.equal(dispatch.status, 503);

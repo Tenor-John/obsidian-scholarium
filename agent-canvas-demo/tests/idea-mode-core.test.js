@@ -4,6 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const Core = require('../idea-mode-core.js');
+const PROJECT_UID = '01927d3f-8a41-7c62-b5e0-9f3a2c1d4e5b';
 
 const RECORDS = [
   { title: 'Strong metal-support interaction in single-atom photocatalysts', doi: '10.1000/a', publication_year: 2024, is_oa: true },
@@ -116,15 +117,16 @@ test('buildIdeaNotes renders schema-v1 notes with ai/pending markers and safe pa
     summary: '总结正文。',
     questions: [{ statement: '问题一？', note: '为什么' }],
     hypotheses: [{ statement: '假设一：含/非法:字符', note: '理由 [1]' }],
-    existingIds: ['QUE-002', 'HYP-001'],
+    existingIds: ['Q-002', 'HYP-001'],
     records: RECORDS,
     at: '2026-08-17T00:00:00.000Z',
     uidFn: (() => { let n = 0; return () => `uid-${++n}`; })(),
+    projectUid: PROJECT_UID,
   });
   assert.equal(items.length, 2);
 
   const [que, hyp] = items;
-  assert.match(que.path, /^Research\/Questions\/QUE-003 .+\.md$/);
+  assert.match(que.path, /^Research\/Questions\/Q-003 .+\.md$/);
   assert.match(hyp.path, /^Research\/Hypotheses\/HYP-002 .+\.md$/);
   assert.ok(!/[\\/:*?"<>|#^[\]]/.test(hyp.path.split('/').pop().replace(/\.md$/, '')), 'file name carries no illegal chars');
 
@@ -150,6 +152,7 @@ test('buildIdeaNotes renders schema-v1 notes with ai/pending markers and safe pa
 test('buildIdeaNotes skips the source section when there are no records', () => {
   const items = Core.buildIdeaNotes({
     topic: 't', summary: 's', questions: [{ statement: 'q' }], hypotheses: [], existingIds: [], records: [],
+    projectUid: PROJECT_UID,
   });
   assert.equal(items.length, 1);
   assert.ok(!items[0].content.includes('## 检索线索'));

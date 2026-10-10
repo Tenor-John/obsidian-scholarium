@@ -1,0 +1,22 @@
+--- /mnt/user-data/outputs/round2/server.js.before-agent-bridge-20260814.bak	2026-08-14 08:47:21.856443615 +0000
++++ agent-canvas-demo/bridge/server.js	2026-08-14 08:43:42.823854722 +0000
+@@ -211,7 +211,18 @@
+   // The local runner is intentionally dry-run only: it creates a validated
+   // merge plan, never Vault objects.  A researcher must explicitly run the
+   // Node tool with --apply to create timestamped, rebuildable view artifacts.
+-  'research-weaver': { script: path.join('..', 'skills', 'research-weaver', 'scripts', 'merge_and_build_graph.js'), argsShape: ['root'], timeoutMs: 120000 }
++  'research-weaver': { script: path.join('..', 'skills', 'research-weaver', 'scripts', 'merge_and_build_graph.js'), argsShape: ['root'], timeoutMs: 120000 },
++  // rss-refresh-and-score — added 2026-08-14. Unlike every other entry above,
++  // this is REAL execution: it drives the Scholarium Obsidian plugin (via a
++  // file-queue the plugin itself polls; see main.js's schPollAgentRequests)
++  // to refresh every RSS/Atom/Crossref feed and spend real AI-scoring API
++  // calls against the new articles. It still passes through the same
++  // allowExecution + execute:true gate as everything else here — this entry
++  // only makes the skill callable, it does not itself turn execution on.
++  // 15 minutes covers a full multi-feed refresh+score pass; the script's own
++  // internal timeout (14 min) fires first so a genuine timeout is reported
++  // with a clear message instead of the Bridge hard-killing the process.
++  'rss-refresh-and-score': { script: path.join('..', 'skills', 'rss-refresh-and-score', 'scripts', 'request_and_wait.js'), argsShape: ['root'], timeoutMs: 900000, async: true }
+ };
+ function scanSkillDirectory(directory, depth = 0, entries = []) {
+   if (depth > 5 || !fs.existsSync(directory)) return entries;

@@ -17,10 +17,14 @@ node .\bridge\server.js
 
 首次启动会生成 `bridge.config.json`。该文件含本机 token，不要上传、提交或分享。
 
-当前演示配置允许真实执行，但有三层不可绕过的限制：
+真实执行仍有三层不可绕过的限制：
 
 - 只允许配置中登记的 Agent；网页不能提交任意 shell 命令。
 - 只允许 `permission: "read"` 的任务；不能写入笔记或代码。
 - 只允许 `allowedRoots` 中的本地目录；子进程以 `shell: false` 启动。
 
-已验证的适配器是 Codex。Windows 上它通过 Node 直接调用全局 npm 的 `@openai/codex` 入口，避免 npm 的 `.cmd` 包装和 Windows Store 可执行文件限制。Claude Code、OpenCode、Hermes、OpenClaw 仍需分别核对各自的非交互命令和权限模型后再启用。
+Bridge 会探测 Claude Code、Codex、OpenCode、Hermes 和 OpenClaw；只有真实通过 `--version` 探针的路径才会写入配置。Claude/Codex 的只读与研究车道使用仓库内固定的能力档案，探测过程不会自行删减工具参数。
+
+## 云端向量 RAG
+
+在设置中心的 API 钥匙串中配置 `HF_TOKEN` 后，`rag-ingest` 会调用 Hugging Face Inference Providers 生成归一化多语种 Embedding，并在本地保存带模型、维度、内容哈希和来源定位的索引。查询默认融合向量召回与 BM25；Token 缺失或云端故障会在结果中明确标记降级。`POST /v1/rag/graph` 可从同一份 RAG chunks 生成只含可追溯 `MENTIONS` 边的知识图谱。

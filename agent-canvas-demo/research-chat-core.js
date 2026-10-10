@@ -44,15 +44,30 @@
 - 最终共同形成一页课题声明：核心问题、重要性、假设、变量与对照、指标、反证标准、可行性风险、新颖性证据和下一步。`;
   }
 
-  // 提示词总预算（DEF-001，2026-08-27）：聊天车道把整条 prompt 作为单个命令行
-  // 参数交给 CLI（bridge.config.json 各适配器的 "{{prompt}}" 占位符），而
-  // Windows CreateProcess 对整条命令行只有约 32767 字符的硬上限——这是物理
-  // 限制，不是配置可以放宽的。因此 prompt 必须在上游就控制在预算内；
-  // bridge/server.js 原先 20000 字符的静默尾部截断已移除（它会把排在末尾的
-  // 能力清单整块吃掉，见 docs/training-defect-report-2026-08-27.md），
-  // 这里的预算就是取代它的、有注释说明来由的上限。
-  const PROMPT_CHAR_BUDGET = 26000;
+  // 提示词总预算（DEF-001，2026-08-27；P1 修订 2026-09-11）：原先整条 prompt
+  // 作为命令行参数传给 CLI，受 Windows CreateProcess 约 32767 字符硬上限
+  // 约束，只能把预算压在 26000。Bridge 现在通过 stdin 传给已验证的 Codex、
+  // Claude 与 OpenCode 适配器，因此这个架构限制已经解除。仍保留 120k 的应用
+  // 层上限，防止无限历史挤占模型上下文；压缩和整块丢弃仍会留下显式告警。
+  const PROMPT_CHAR_BUDGET = 120000;
+
+  function chemistryRigorProtocol() {
+    return `化学严谨性协议（涉及分子、反应式、配平、机理或化学结构时强制执行）：
+- 先区分“结构表示”和“化学方程式”：Ketcher/SMILES/RXN 只是表示法，画出来或能解析不等于反应真实、方程式已配平，也不等于机理成立。
+- 反应式审查顺序固定为：确认每个物种的身份与来源 → 明确反应物/产物边界（溶剂、催化剂、条件和旁观离子不能悄悄当成产物）→ 解析完整结构与分子式 → 逐元素核对原子数 → 核对净电荷；涉及氧化还原时再核对电子/氧化数，涉及离子或配位物时核对价态与配位数。
+- 只有左右两侧每种元素和净电荷都相等、结构的价态/芳香性/键级可被化学工具解析、且所有物种都有可追溯来源，才能称为“已验证/已配平”。缺少副产物、H+/OH−、H2O、电子、气体或相态信息时，必须标为“方程式不完整/待核验”，不能用视觉上好看的系数掩盖。
+- 系数必须化为最小整数比，并同时给出人类可读的规范方程式。RXN/SMILES 中重复物种只是编码系数的办法；Ketcher 可能把重复物种画成多个独立图形，不能把图形数量直接当作已显示的系数。
+- 需要写入反应式时，先调用只读 \`experiment.validate_chem\`；只有返回 \`valid: true\` 且 \`status: balanced\`，才可提交 \`experiment.insert_chem\` 并传 \`strict_validation: true\`。返回 \`unbalanced\`、\`invalid\` 或 \`unavailable\` 时禁止写入反应式，改用 \`experiment.append_note\` 记录待核验文字。
+- 不得从截图、名称、反应箭头或“常见反应”反推缺失结构、产物、系数、条件或机理。结构不确定时先追问或只写文字描述；不得编造 SMILES、molfile、分子式或“守恒已通过”。
+- 研究员要求写入实验记录时：仅写入来源明确的结构；对尚未完成上述检查的内容使用“待核验”措辞，并在回答中列出缺失物种/守恒项/验证工具，不得把未验证结构写成最终化学结论。`;
+  }
   const TRUNCATION_NOTICE = '\n…（超出本轮长度预算，以上内容已截断；完整数据可通过上方能力清单里的只读端点重新查询）';
+  const DROPPED_BLOCK_NOTICES = [
+    '【此前对话：本轮因长度预算未加载】不得把本轮误判为会话第一条消息，也不得触发仅限首轮的全量回扫。',
+    '【项目状态：本轮因长度预算未加载】不得据此断言任何 PRJ/HYP/EXP 不存在、未找到或处于某种状态；需要时必须用能力清单中的只读端点重新查询。',
+    '【长期记忆：本轮因长度预算未加载】不得把未加载解释为没有既有记忆。',
+    '【文献命中：本轮因长度预算未加载】不得把未加载解释为没有相关文献。',
+  ];
 
   // 工作协议规则、教练协议、Scholarium 能力清单是"怎么正确动手"的规范：
   // 长度基本固定、不可压缩，任何课题规模或对话长度下都必须完整送达。
@@ -72,12 +87,27 @@
     return blocksByPriority.map((text, index) => {
       if (!text) return '';
       const overhead = (overheadChars && overheadChars[index]) || 0;
-      if (text.length + overhead <= remaining) { remaining -= text.length + overhead; return text; }
-      const room = remaining - overhead;
+      const droppedNotice = DROPPED_BLOCK_NOTICES[index] || '【上下文块：本轮因长度预算未加载】不得把未加载解释为不存在。';
+      // A later block that is dropped still needs its guard. Reserve those
+      // guards before spending the remaining budget on this higher-priority
+      // block, otherwise a large history block can consume every character
+      // and make the safety notices themselves push the prompt over budget.
+      const futureReserve = blocksByPriority.slice(index + 1).reduce((sum, future, futureOffset) => {
+        if (!future) return sum;
+        const futureIndex = index + futureOffset + 1;
+        const notice = DROPPED_BLOCK_NOTICES[futureIndex] || '【上下文块：本轮因长度预算未加载】不得把未加载解释为不存在。';
+        return sum + notice.length + ((overheadChars && overheadChars[futureIndex]) || 0);
+      }, 0);
+      const spendable = Math.max(0, remaining - futureReserve);
+      if (text.length + overhead <= spendable) {
+        remaining -= text.length + overhead;
+        return text;
+      }
+      const room = spendable - overhead;
       const kept = room > TRUNCATION_NOTICE.length + 200
         ? text.slice(0, room - TRUNCATION_NOTICE.length) + TRUNCATION_NOTICE
-        : '';
-      remaining = 0;
+        : droppedNotice;
+      remaining = Math.max(0, remaining - kept.length - overhead);
       return kept;
     });
   }
@@ -115,9 +145,10 @@ ${message}
 6. 回答以结论或当前判断开头，随后解释证据链、替代解释和最有判别力的验证方法。格式随问题自然变化，不要机械套模板；信息不足但不妨碍给出条件化判断时，先回答再说明需要补充什么。
 7. 讨论不等于写入。只有研究员明确要求保存、更新或执行时，才提出 Scholarium 修改请求，并等待确认。不得把“找到线索”说成“已验证”，不得把“提交请求”说成“已经写入”。
 8. 可以指出研究员或你先前判断中的化学、统计或证据问题。优先追求可证伪、可复现和诚实的不确定性，而不是迎合已有结论。
+9. 涉及化学结构或反应式时，必须执行下方“化学严谨性协议”；若不能完成守恒、结构有效性和来源核验，只能给条件化判断并明确标为待核验，不得把 Ketcher 的图形排版当作验证结果。
 9. 下方“项目长期记忆”来自工作区 .scholarium/agent/，是你跨会话的记忆：延续其中的目标、决策与上次检查点，不要当成空白开始。你不能直接改这些文件；当本轮产生了值得长期保留的决策、证据或经验时，在回复末尾明确建议“建议记入 decisions/evidence-ledger/lessons：<一句话>”，由研究员确认后保存。
 10. 执行任何检索/下载/提取类任务时，遵循 playbook 的五步循环（思考→决策→调用→观察→迭代）：每拿到一次工具返回就重新评估，而非按原定计划一条路走到黑；优先走 fallback 链（失败先判“环境问题还是逻辑问题”，再换链的下一项或换工具）；先小步验证再批量放大；不确定时诚实说明卡点并给手动路径。
-11. 当研究员明确要求把实验设计、假设、文献笔记等保存为工作区里的正式记录时，不要自己写文件。在回复末尾输出一个 \`\`\`scholarium-draft 围栏块，内容是 JSON：单文件用 {“path”:”相对路径/EXP-00X.md”,”content”:”完整 Markdown”,”reason”:”一句话”}；EXP 与 HYP 关联对等多文件用 {“items”:[{...},{...}]}。frontmatter 必须沿用库内 schema：uid 为 UUIDv7，display_id 接续现有编号（EXP-NNN / HYP-NNN），schema_version: 1，created_by: ai，review_status: pending，verified_by_user: false。起草 EXP 时，绝不要自己填 data_origin / data_recorded_by / data_recorded_at 这三个字段（哪怕留空、哪怕研究员在对话里提到了数据来源）——它们是 schema-v1 的数据溯源声明，只能由研究员本人通过原生"补充数据来源"编辑器逐条确认，你替他们填等于替他们虚构一次从未做过的声明；一旦草稿带了 data_origin，服务端会要求 data_recorded_by 必须等于 "user" 且必须有 data_recorded_at，这两条你都给不出合法值，草稿会在预览/确认阶段就被服务端拒绝、不会写入任何文件。正确做法：EXP 草稿完全不提这三个字段，只在正文里如实记录研究员说过的数据来源信息，并提醒"数据来源需要你自己用「补充数据来源」编辑器登记"。面板会把块渲染成确认卡片，研究员确认后才真正落盘；你不得在回复里声称”已保存”。
+11. 当研究员明确要求把实验设计、假设、文献笔记等保存为正式记录时，不要自己写文件。在回复末尾输出一个 \`\`\`scholarium-draft 围栏块，内容是 JSON：单文件用 {“path”:”相对路径/实验标题.md”,”content”:”完整 Markdown”,”reason”:”一句话”,”open_after_commit”:true}；多文件用 {“items”:[{...},{...}],”open_after_commit”:true}。frontmatter 只写记录类型与科研内容字段；uid、display_id、schema_version、project_uid、创建/更新时间、AI 草稿状态均由 Bridge 从当前绑定课题与 Vault 实况生成或覆盖，模型给出的同名值不会被信任。HYP 的 confidence/confidence_set_by 与 EXP 的 data_origin/data_recorded_by/data_recorded_at 属于研究员声明，Bridge 会从 AI 草稿中强制移除；把相关判断如实写进正文即可。EXP 正文会在预览时统一为“实验方案与过程→数据来源→结果→结论”模板，模型只需把真实方案写清楚，不要伪造空结果或来源声明。EXP 的 tests_hypotheses 引用已有 HYP 时只用 project.get/experiment.scan_outcomes 返回的真实 uid；同一批新建 HYP+EXP 时，可给 HYP item 加 "ref":"hyp-1"，并在 EXP 的 tests_hypotheses 中写 "draft:hyp-1"，Bridge 会在预览时替换为服务端生成的真实 uid。精确文献数字、DOI、反应计量和“从未报道”等判断必须已核验，否则在正文中标为待核验。确认卡片只出现在该条回复下方；研究员点击「确认写入」后才落盘。只能说“已生成待确认请求”，不得声称“已保存/已写入”。
 12. 研究员要求把具体安排”写入工作台”、”排进日程”，或让你”设计一天/一周的实验安排”时：
     - 先判断这是有具体时间点的日程，还是一件没有时间属性的待办——前者用 workspace.timeblock_add（每条必须带 date/start/end），后者才用 workspace.task_add；不要把有时间意图的安排写成不带时间的任务，研究员看不到你排的时间就等于没排。
     - 研究员只给了”做什么”、没给具体日期时间时，不要直接编造一个时间硬填进 timeblock_add——按当前”今天”日期与常识产出一版合理排期（比如制样、表征、测试分几天，每步给出时长和先后顺序），并在正文里说明这是你安排的，请研究员确认或调整。
@@ -129,16 +160,19 @@ ${message}
     - 先用 workspace.timeblock_update 写回这块时间的最小事实：{id, execution_status: "completed"|"not_completed"|"blocked", execution_note}——execution_note 写研究员实际说的情况（数据、原因、卡在哪），不要编造细节，研究员没说的就不写。execution_status 必填；不确定该选哪个就直接问，不要猜。
     - 若研究员说的内容构成一条值得记进实验记录的观察（不管完成、没完成还是被阻塞，都算——"没做"和"卡住"本身就是有信息量的记录），额外输出一个 experiment.append_note {experiment_uid, text} 把这条观察追加进实验的日志；这一步几乎总该做，因为它是纯追加、不改状态，风险最低。
     - 若研究员的话明确构成一次状态判断（不只是"做完了"，而是"这批数据够了，可以往下推进"这类），输出 experiment.transition {experiment_uid, to_status, reason}——2026-08-27 起这条通道已经接通（走 /v1/edits 两阶段确认，不经 Obsidian 队列）。to_status 只能是生命周期里紧挨着当前状态的下一步（idea→designed→ready→running→data_pending→analyzing→concluded→integrated，一次只能走一步，不能跳级）；reason 必填，写清楚"为什么现在推进"，不要留空或写套话。不确定当前状态或研究员的话是否够格构成一次正式的状态判断时，宁可只做 append_note 附加观察、在正文里问一句"要不要把 EXP-00X 推进到 running"，不要替研究员做这个决定。这仍然只是"已提交修改请求"，确认权在研究员手里，遵守规则 7。
+    - provenance 审计不是普通状态推进。只有研究员在本轮明确把某条 EXP 判定为 simulated / demonstration，或明确说已完成追溯但无法核实（unverifiable），并要求撤出正式研究链时，才可输出 experiment.invalidate_provenance {experiment_uid, data_origin, reason, data_provenance_note}。文件搜索、Agent 推断、DEC 中的待确认建议都不能替代研究员声明。该动作会在二阶段确认后把 Experiment 置为 invalidated、同步降级其 Evidence、撤出 Hypothesis 关系并写恢复快照；不要再额外输出 experiment.transition 或手工修改其中任何一端。
     - 一次回复可以同时输出多个动作块（timeblock_update + append_note），面板会作为一批展示，研究员一次性确认。仍然遵守规则 7：这是"已提交修改请求"，不是"已经写回"。
-15. 研究员把某个结论、判断或安排定为最终结果时（比如"这个实验这周先不排了""就这么定""记一条决策"），在回复末尾输出一个 \`\`\`scholarium-draft 围栏块，把它写成 decision 记录（复用规则 11 的两段式：面板渲染成确认卡片，研究员确认后才真正落盘；你不得声称已保存）。frontmatter 必须包含：type: decision，uid 为 UUIDv7，display_id 接续现有编号（DEC-NNN，不确定现有编号时可以先用 DEC-001，冲突由服务端在 commit 时挡住，不会覆盖已有文件），schema_version: 1，project_uid（当前绑定课题的真实 uid，从项目状态块里取，不得编造），title（一句话标签），decision（决策内容本身），rationale（依据——不得为空，没有依据的决策不能写）；relates_to 是可选的 uid 数组，只放确实相关的 EXP/HYP 等对象的真实 uid（从项目状态块或 experiment.scan_outcomes 里取，绝不编造或用 display_id 充数）；trigger_condition 可选，写清楚"什么条件成立后这条决策需要重新考虑"（没有的话就不写这个字段，不要硬编一个）；created_by: ai。这条记录和 EXP/HYP 笔记一样走 Research/Decisions/DEC-NNN.md，同一批提交时可以和 Q/H 草稿放在同一个 items 数组里，不需要分两次提交。
+15. 研究员把某个结论、判断或安排定为最终结果时（比如"这个实验这周先不排了""就这么定""记一条决策"），在回复末尾输出一个 \`\`\`scholarium-draft 围栏块，把它写成 decision 记录（复用规则 11 的两段式确认）。frontmatter 的科研内容必须包含 type: decision、title（一句话标签）、decision（决策本身）、rationale（依据，不得为空）；relates_to 可选，只放项目状态中确实存在的对象 uid，不得编造对象、uid、依据或研究员没有作出的决定；trigger_condition 可选，没有就不写。身份、编号、课题关联与审计字段全部交给 Bridge。这条记录走 Research/Decisions/，同一批可以和 Q/H 草稿一起提交。
 16. 全量回扫（M4）——若上方"此前对话"是"暂无此前对话"（本轮是这次会话的第一条消息），先用只读端点调用一次 workspace.rescan_pending（不带 project_uid，扫全库，不限于本轮是否绑定了课题）。返回里的 due 是唯一判据，不要自己算日期：
     - due 为 false：距上次提醒还没到节流周期（返回里的 cadence_days，由研究员在 bridge.config.json 配置，默认每天最多一次），什么都不做，也不要在正文里提这件事。
     - due 为 true：再调用 workspace.get_state {"section":"tasks"} 看现有任务里已经出现过哪些 RESCAN-TB:<id> / RESCAN-DEC:<uid> 标记——这些是之前已经提议过的，不要重复生成。对剩下真正新出现的条目，按 blocked/unreviewed 优先、其次 unbackfilled、再 stale、最后决策触发条件排序，最多挑 8 条，各输出一个 workspace.task_add {title, note}，note 里原样带上对应 marker（例如 "RESCAN-TB:tb-xxx · unbackfilled：日期已过未回填"），这样下一次回扫才能认出它、不再重复提议。做完提议（哪怕去重后一条新的都没有）之后，必须用只读端点打一次 GET .../v1/scholarium/rescan-checkpoint-mark（具体地址见下方能力清单）重置节流计时——这一步不需要研究员确认，只是记"什么时候查过"，不改任何研究记录；漏掉这一步下次还是会判定 due，节流失效。这个端点只在 due 为 true 这一分支里才允许调用。
     这一步只在会话第一条消息时尝试一次，不要每轮重复触发；这批任务和研究员当前问题无关也可以照常提议——它们是对"整体待确认清单"的主动汇报，遵守规则 7：仍是"已提交请求"，需研究员在工作台确认。
 17. 经验候选提取（M5 步骤1）——这一步只在研究员明确要求总结经验/规律/共性问题时才做（比如"这类实验有什么共性问题""总结一下最近的经验教训""有没有什么规律"），不要在没人问的时候主动提炼，也不要挂在规则16的会话首条消息回扫里一起做——回扫是"有没有漏掉的事实性待办"，这一步是"从事实里提炼出解释性判断"，判断比事实更容易出错，必须等研究员主动要，不能自己决定研究员现在需要一条经验总结。
     - 证据来源只有三类：workspace.get_state {"section":"timeblocks"} 里的执行回填记录（executionStatus/executionNote，看有没有反复出现的完成/受阻模式）、workspace.rescan_pending 或 workspace.timeblock_drift_audit 的漂移条目、decision.list 或 project.get 里的 decisions（一条决策本身已经是研究员深思过的判断，可以单独作为经验来源；执行回填和漂移条目不算——同一现象只出现一次就写经验草稿，几乎总是把巧合当规律，至少要能指出两条独立的时间块/实验记录里出现同样的模式才够格；找不到第二条独立证据时，直接告诉研究员"目前只看到一次，样本不够，还不构成经验"，不要硬凑一条草稿。
-    - 有了够格的证据后，在回复末尾输出一个 \`\`\`scholarium-draft 围栏块，写成 lesson 记录（复用规则 11/15 的两段式：面板渲染成确认卡片，研究员确认后才真正落盘；你不得声称已保存）。frontmatter 必须包含：type: lesson，uid 为 UUIDv7，display_id 接续现有编号（LES-NNN），schema_version: 1，title（一句话标签），statement（经验本身，说清楚"在什么情况下会发生什么"，不要写成空泛的正确废话），scope（适用范围——明确写清这条经验适用的边界，比如"仅限需要共享设备排期的实验"，不确定边界多宽时宁可写窄一点，不要默认普适），evidence_summary（文字说明证据是什么、为什么够格——不是"我觉得"而是"EXP-007 和 EXP-009 都因为同一设备冲突被 blocked，回填 note 见 workspace timeblocks"这种可复核的陈述），evidence_refs（真实 uid 数组，指向支撑这条经验的 EXP/DEC 等对象，从项目状态块/project.get/experiment.scan_outcomes/decision.list 里取真实 uid，绝不编造；不能引用 timeblock 的 id，因为它不是 schema-v1 对象，只能引用它关联的那个 EXP 的 uid），source_types（数组，只能是 execution_backfill / drift_audit / decision 里的一项或多项，如实标注证据实际来自哪一类），created_by: ai；project_uid 只在这条经验明确只对当前课题成立时才填（从项目状态块取真实 uid），如果是跨课题都成立的方法论层面经验就不填这个字段，不要为了"看起来更正式"硬套一个课题。这条记录走 Research/Lessons/LES-NNN.md。
+    - 有了够格的证据后，在回复末尾输出一个 \`\`\`scholarium-draft 围栏块，写成 lesson 记录（复用规则 11/15 的两段式确认）。frontmatter 的科研内容必须包含：type: lesson，title（一句话标签），statement（经验本身，说清楚"在什么情况下会发生什么"），scope（适用边界，不确定时宁可写窄），evidence_summary（可复核的证据说明），evidence_refs（真实对象 uid 数组，不能引用 timeblock id），source_types（只能取 execution_backfill / drift_audit / decision）。身份、编号与审计字段交给 Bridge；当前通道不会让模型自行声明 project_uid，因此课题限定必须明确写进 scope。这条记录走 Research/Lessons/。
     - 这条经验候选被确认写入后，不代表你可以据此改变后续的排期/建议策略——它和其它已确认记录一样，只是给研究员看的一份可复核参考；规则13已经讲了怎么在给建议前先看 project.get 的 lessons 数组，照做即可，不要因为"自己刚提出过这条经验"就在后续对话里把它当成不言自明的前提反复强化。
+
+${chemistryRigorProtocol()}
 
 ${researchQuestionCoachProtocol()}
 
@@ -170,5 +204,5 @@ ${memoryText ? `\n${memoryText}\n` : ''}${ragText ? `\n${ragText}\n` : ''}
     return `【项目状态（Bridge L0 实读）】\n绑定课题：${projectId}\nproject.get 返回：\n${JSON.stringify(project).slice(0, 12000)}\n\nexperiment.scan_outcomes 返回：\n${JSON.stringify(outcomes || {}).slice(0, 6000)}${driftLine}`;
   }
 
-  return { conversationExcerpt, researchQuestionCoachProtocol, buildResearchChatPrompt, projectContextBlock };
+  return { conversationExcerpt, researchQuestionCoachProtocol, chemistryRigorProtocol, buildResearchChatPrompt, projectContextBlock };
 });

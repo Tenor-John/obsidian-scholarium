@@ -1,0 +1,3168 @@
+/*
+ * 织研者 — the native research workbench, in the Nocturne look.
+ *
+ * Visual reference: the "Research Weaver Panel" design (Nocturne system):
+ * a deep indigo ground with a soft accent bloom, blurple accent, hairline
+ * rules that fade out at both ends, small letter-spaced section labels, a
+ * centred 760 px reading column, and a raised card for the composer. Only the
+ * look is taken from it — every control on this page is one with a real,
+ * tested execution path (plan §1.3).
+ *
+ * Scoping. Every page rule is under `.scholarium-v2dev`, the class the item
+ * view puts on its own container, optionally preceded by Obsidian's own
+ * `.theme-dark` / `.theme-light` body class. This package is installed beside
+ * the deployed Scholarium plugin and Obsidian loads every enabled plugin's
+ * stylesheet into one document; the page's class names are the same ones the
+ * deployed shell uses, so an unscoped rule would restyle a page it does not
+ * own. The settings dialog is drawn into `document.body`, outside that
+ * container, so its rules are scoped by its own `scholarium-weaver-modal` root.
+ *
+ * Themes. In a dark Obsidian theme the page takes the Nocturne palette; in a
+ * light theme it follows Obsidian's own variables with the same structure, so
+ * it stays readable either way. No remote font, icon set, image or framework
+ * is loaded: the font stack prefers Inter when it is installed locally.
+ *
+ * Layout. A product bar, a notice strip, then three columns. Only the message
+ * list scrolls in the centre; the side columns scroll on their own. Every grid
+ * child has `min-height: 0` / `min-width: 0`, which is what stops a long
+ * conversation from stretching the page instead of scrolling inside it.
+ */
+
+/* ---------------------------------------------------------------- root --- */
+
+.scholarium-v2dev.view-content {
+  padding: 0;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Inside Scholarium: the page fills the 织研者 tab body under Scholarium's own
+ * tab row, and does not repeat the brand that row already carries. */
+.scholarium-v2dev.scholarium-weaver-embed {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-self: stretch;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver-embed__page {
+  /* The Scholarium tab host is itself a flex item. A percentage height here
+   * can resolve against its intrinsic content height, leaving the lower part
+   * of the tab blank. Pin the mount to its positioned host instead. */
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver-embed__page > .scholarium-weaver {
+  flex: 1 1 0;
+  align-self: stretch;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+}
+
+.scholarium-v2dev.scholarium-weaver-embed .scholarium-weaver__brand {
+  display: none;
+}
+
+/* Scholarium already supplies the product bar. The embedded inner bar is only
+ * the compact runtime control strip; the agent picker lives over the centre
+ * conversation, rather than competing with the host navigation. */
+.scholarium-v2dev.scholarium-weaver-embed .scholarium-weaver__topbar {
+  display: none;
+}
+
+.scholarium-v2dev .scholarium-weaver {
+  /* Light / default: Obsidian's own variables. */
+  --sw-bg: var(--background-primary, #ffffff);
+  --sw-surface: var(--background-secondary, #f4f4f7);
+  --sw-surface-2: var(--background-primary-alt, #fafafa);
+  --sw-text: var(--text-normal, #222222);
+  --sw-muted: var(--text-muted, #6b6b76);
+  --sw-faint: var(--text-faint, #9a9aa5);
+  --sw-accent: var(--interactive-accent, #7a6cc0);
+  --sw-accent-strong: var(--text-accent, #6a5cb3);
+  --sw-accent-soft: rgba(var(--interactive-accent-rgb, 122, 108, 192), 0.12);
+  --sw-accent-softer: rgba(var(--interactive-accent-rgb, 122, 108, 192), 0.06);
+  --sw-accent-ring: rgba(var(--interactive-accent-rgb, 122, 108, 192), 0.45);
+  --sw-divider: var(--background-modifier-border, rgba(0, 0, 0, 0.12));
+  --sw-hover: var(--background-modifier-hover, rgba(0, 0, 0, 0.05));
+  --sw-shadow-sm: 0 0 0 1px var(--sw-divider);
+  --sw-shadow-md: 0 0 0 1px var(--sw-divider), 0 6px 18px rgba(0, 0, 0, 0.08);
+  --sw-bloom: transparent;
+  --sw-success: var(--color-green, #3a9a63);
+  --sw-warning: var(--color-yellow, #b98a1f);
+  --sw-error: var(--color-red, #d24a45);
+  --sw-radius-sm: 4px;
+  --sw-radius: 8px;
+  --sw-radius-lg: 14px;
+  --sw-font: "Inter", var(--font-interface, system-ui), "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --sw-left: minmax(260px, 300px);
+  --sw-right: minmax(340px, 400px);
+  --sw-reading: 760px;
+
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: radial-gradient(1200px 500px at 30% -10%, var(--sw-bloom), transparent 70%), var(--sw-bg);
+  color: var(--sw-text);
+  font-family: var(--sw-font);
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Dark: the Nocturne palette. */
+.theme-dark .scholarium-v2dev .scholarium-weaver {
+  --sw-bg: #161826;
+  --sw-surface: #232532;
+  --sw-surface-2: #1c1e2c;
+  --sw-text: #e9e9ed;
+  --sw-muted: #9397ab;
+  --sw-faint: #75798c;
+  --sw-accent: #9184d9;
+  --sw-accent-strong: #d2cefd;
+  --sw-accent-soft: #2b2741;
+  --sw-accent-softer: rgba(145, 132, 217, 0.08);
+  --sw-accent-ring: #5d5294;
+  --sw-divider: rgba(233, 233, 237, 0.16);
+  --sw-hover: rgba(233, 233, 237, 0.06);
+  --sw-shadow-sm: 0 0 0 1px #3f424d;
+  --sw-shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgba(0, 0, 0, 0.55);
+  --sw-bloom: #2b2741;
+  --sw-success: #7fc79d;
+  --sw-warning: #e2bd6a;
+  --sw-error: #ef8a86;
+}
+
+/* Controls inherit the page's type, and follow the Nocturne button shape. */
+.scholarium-v2dev .scholarium-weaver button,
+.scholarium-v2dev .scholarium-weaver select,
+.scholarium-v2dev .scholarium-weaver input,
+.scholarium-v2dev .scholarium-weaver textarea {
+  font-family: inherit;
+}
+
+.scholarium-v2dev .scholarium-weaver button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+  background: transparent;
+  box-shadow: none;
+  color: var(--sw-text);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scholarium-v2dev .scholarium-weaver button:hover:not(:disabled) {
+  background: var(--sw-hover);
+}
+
+.scholarium-v2dev .scholarium-weaver button.mod-cta {
+  border-color: var(--sw-accent);
+  color: var(--sw-accent-strong);
+  background: transparent;
+}
+
+.scholarium-v2dev .scholarium-weaver button.mod-cta:hover:not(:disabled) {
+  background: var(--sw-accent-soft);
+}
+
+.scholarium-v2dev .scholarium-weaver button:disabled,
+.scholarium-v2dev .scholarium-weaver select:disabled,
+.scholarium-v2dev .scholarium-weaver textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.scholarium-v2dev .scholarium-weaver input[type="search"] {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  color: var(--sw-text);
+  font-size: 12px;
+}
+
+.scholarium-v2dev .scholarium-weaver button:focus-visible,
+.scholarium-v2dev .scholarium-weaver select:focus-visible,
+.scholarium-v2dev .scholarium-weaver input:focus-visible,
+.scholarium-v2dev .scholarium-weaver textarea:focus-visible {
+  outline: 2px solid var(--sw-accent);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+
+.scholarium-v2dev .scholarium-weaver [hidden] {
+  display: none !important;
+}
+
+/* A rule that fades out at both ends — the Nocturne signature. */
+.scholarium-v2dev .scholarium-weaver__topbar::after,
+.scholarium-v2dev .scholarium-weaver__runtime-footer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--sw-divider) 48px, var(--sw-divider) calc(100% - 48px), transparent);
+  pointer-events: none;
+}
+
+.scholarium-v2dev .scholarium-weaver__topbar::after {
+  bottom: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__runtime-footer::before {
+  top: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__kicker,
+.scholarium-v2dev .scholarium-weaver__section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--sw-divider);
+  color: var(--sw-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  flex: none;
+}
+
+.scholarium-v2dev .scholarium-weaver__tag.is-accent {
+  border-color: var(--sw-accent-ring);
+  background: var(--sw-accent-soft);
+  color: var(--sw-accent-strong);
+}
+
+.scholarium-v2dev .scholarium-weaver__tag.is-warning {
+  border-color: var(--sw-warning);
+  color: var(--sw-warning);
+}
+
+.scholarium-v2dev .scholarium-weaver__empty {
+  color: var(--sw-muted);
+  font-size: 12px;
+  line-height: 1.65;
+  padding: 6px 0;
+}
+
+/* -------------------------------------------------------------- topbar --- */
+
+.scholarium-v2dev .scholarium-weaver__topbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 52px;
+  padding: 8px 18px;
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__brand {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.scholarium-v2dev .scholarium-weaver__brand-product {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__brand-sep {
+  color: var(--sw-faint);
+}
+
+.scholarium-v2dev .scholarium-weaver__brand-feature {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--sw-text);
+}
+
+.scholarium-v2dev .scholarium-weaver__brand-kicker {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--sw-faint);
+}
+
+.scholarium-v2dev .scholarium-weaver__context-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+}
+
+.scholarium-v2dev .scholarium-weaver__context-kind {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__context-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.scholarium-v2dev .scholarium-weaver__spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+/* The agent picker as the design's pill: a status dot, "Agent ·", the name. */
+.scholarium-v2dev .scholarium-weaver__agent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+}
+
+.scholarium-v2dev .scholarium-weaver__agent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sw-faint);
+  flex: none;
+}
+
+.scholarium-v2dev .scholarium-weaver__agent-dot.is-ready {
+  background: var(--sw-accent);
+  box-shadow: 0 0 8px var(--sw-accent);
+}
+
+.scholarium-v2dev .scholarium-weaver__agent-label {
+  color: var(--sw-muted);
+  font-size: 12px;
+}
+
+.scholarium-v2dev .scholarium-weaver__agent-select {
+  max-width: 200px;
+  min-width: 90px;
+  height: 26px;
+  border: none;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--sw-text);
+  font-size: 12px;
+}
+
+.scholarium-v2dev .scholarium-weaver__runtime-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.scholarium-v2dev .scholarium-weaver__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--sw-divider);
+  border-radius: 999px;
+  color: var(--sw-muted);
+  white-space: nowrap;
+  font-size: 11.5px;
+}
+
+/* The dot is decoration; the word next to it is the status. */
+.scholarium-v2dev .scholarium-weaver__badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.scholarium-v2dev .scholarium-weaver__badge[data-status="online"] {
+  border-color: var(--sw-accent-ring);
+  color: var(--sw-accent-strong);
+}
+
+.scholarium-v2dev .scholarium-weaver__badge[data-status="online"]::before {
+  background: var(--sw-accent);
+  box-shadow: 0 0 8px var(--sw-accent);
+}
+
+.scholarium-v2dev .scholarium-weaver__badge[data-status="connecting"] {
+  color: var(--sw-accent-strong);
+}
+
+.scholarium-v2dev .scholarium-weaver__badge[data-status="connecting"]::before {
+  animation: scholarium-v2dev-pulse 1.4s infinite;
+}
+
+.scholarium-v2dev .scholarium-weaver__badge[data-status="degraded"] {
+  border-color: var(--sw-warning);
+  color: var(--sw-warning);
+}
+
+.scholarium-v2dev .scholarium-weaver__connect.is-connected {
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__mobile-toggle {
+  display: none !important;
+  flex: 0 0 auto;
+}
+
+@keyframes scholarium-v2dev-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* ------------------------------------------------------------- notices --- */
+
+/* Notices float over the page's lower-right corner: an error never pushes
+ * the conversation down, and it stays until closed. */
+.scholarium-v2dev .scholarium-weaver__notice {
+  position: absolute;
+  right: 18px;
+  bottom: 110px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  width: min(420px, calc(100% - 36px));
+  pointer-events: none;
+}
+
+.scholarium-v2dev .scholarium-weaver__notice[hidden],
+.scholarium-v2dev .scholarium-weaver__notice:empty {
+  display: none;
+}
+
+.scholarium-v2dev .scholarium-weaver__notice > .scholarium-weaver__notice-row {
+  pointer-events: auto;
+  align-items: flex-start;
+  padding: 10px 8px 10px 14px;
+  background: var(--sw-bg);
+  border: 1px solid var(--sw-divider);
+  border-left: 3px solid var(--sw-accent);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  color: var(--sw-text);
+  font-size: 12.5px;
+  line-height: 1.5;
+  animation: scholarium-v2dev-toast-in 160ms ease-out;
+}
+
+.scholarium-v2dev .scholarium-weaver__notice > .scholarium-weaver__notice-row.is-error {
+  border-left-color: var(--sw-error);
+}
+
+.scholarium-v2dev .scholarium-weaver__notice > .scholarium-weaver__notice-row.is-unsaved {
+  border-left-color: var(--sw-warning);
+}
+
+.scholarium-v2dev .scholarium-weaver__notice-dismiss {
+  flex: 0 0 auto;
+  width: 24px;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--sw-faint);
+  font-size: 15px;
+  line-height: 1;
+}
+
+@keyframes scholarium-v2dev-toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.scholarium-v2dev .scholarium-weaver__notice-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  border-radius: var(--sw-radius);
+  padding: 4px 6px 4px 12px;
+  background: var(--sw-surface);
+  box-shadow: var(--sw-shadow-sm);
+  color: var(--sw-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-weaver__notice-row > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__notice-row button {
+  height: 24px;
+  font-size: 11.5px;
+}
+
+.scholarium-v2dev .scholarium-weaver__notice-row.is-error {
+  color: var(--sw-error);
+}
+
+.scholarium-v2dev .scholarium-weaver__notice-row.is-unsaved {
+  color: var(--sw-warning);
+}
+
+.scholarium-v2dev .scholarium-weaver__notice-row.is-offline {
+  background: transparent;
+  box-shadow: none;
+  padding-left: 0;
+  font-size: 11.5px;
+  color: var(--sw-faint);
+}
+
+/* ----------------------------------------------------------- workspace --- */
+
+.scholarium-v2dev .scholarium-weaver__workspace {
+  /* Always the stretching last row. The topbar and notice above it are
+   * display:none when embedded or idle; without an explicit row the
+   * workspace fell into the first (auto) row, sized to its content, and the
+   * composer floated mid-page over an empty band. */
+  grid-row: 3;
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--sw-left) minmax(0, 1fr) var(--sw-right);
+  height: 100%;
+  align-self: stretch;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.scholarium-v2dev .scholarium-weaver__left,
+.scholarium-v2dev .scholarium-weaver__center,
+.scholarium-v2dev .scholarium-weaver__right {
+  min-width: 0;
+  min-height: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__scrim {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- left --- */
+
+.scholarium-v2dev .scholarium-weaver__left {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The column's right edge: a vertical rule that fades at both ends. */
+.scholarium-v2dev .scholarium-weaver__left::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--sw-divider) 48px, var(--sw-divider) calc(100% - 48px), transparent);
+}
+
+.scholarium-v2dev .scholarium-weaver__left-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 12px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.scholarium-v2dev .scholarium-weaver__left-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__scope-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 11px 12px;
+  border-radius: var(--sw-radius);
+  background: linear-gradient(160deg, var(--sw-accent-soft), var(--sw-surface) 70%);
+  box-shadow: 0 0 0 1px var(--sw-accent-ring);
+}
+
+.scholarium-v2dev .scholarium-weaver__scope-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.scholarium-v2dev .scholarium-weaver__scope-id {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--sw-accent-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scholarium-v2dev .scholarium-weaver__scope-kind {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__scope-title {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--sw-text);
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-weaver__scope-flow {
+  font-size: 11.5px;
+  color: var(--sw-muted);
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-weaver__scope-meta {
+  font-size: 11px;
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__path-chip {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  box-shadow: var(--sw-shadow-sm);
+  font-size: 12px;
+  color: var(--sw-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__new-session {
+  width: 100%;
+  height: 32px !important;
+  border-color: var(--sw-accent) !important;
+  color: var(--sw-accent-strong) !important;
+}
+
+.scholarium-v2dev .scholarium-weaver__new-session:hover:not(:disabled) {
+  background: var(--sw-accent-soft) !important;
+}
+
+.scholarium-v2dev .scholarium-weaver__sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__session-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scholarium-v2dev .scholarium-weaver__session-group > .scholarium-weaver__section-title {
+  margin-bottom: 4px;
+}
+
+.scholarium-v2dev .scholarium-weaver__session-count {
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--sw-faint);
+}
+
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__group-toggle {
+  width: 100%;
+  height: 24px;
+  padding: 0;
+  border: none;
+  justify-content: space-between;
+  color: var(--sw-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.scholarium-v2dev .scholarium-weaver__session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scholarium-v2dev .scholarium-weaver__session {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title action"
+    "meta  action";
+  align-items: center;
+  column-gap: 6px;
+  border-radius: var(--sw-radius);
+  padding: 7px 8px 7px 10px;
+}
+
+.scholarium-v2dev .scholarium-weaver__session:hover {
+  background: var(--sw-hover);
+}
+
+.scholarium-v2dev .scholarium-weaver__session.is-open {
+  background: var(--sw-accent-soft);
+  box-shadow: inset 2px 0 0 var(--sw-accent);
+}
+
+.scholarium-v2dev .scholarium-weaver__session.is-draft {
+  display: block;
+  color: var(--sw-muted);
+  font-size: 12px;
+}
+
+.scholarium-v2dev .scholarium-weaver__session.is-archived .scholarium-weaver__session-title {
+  color: var(--sw-muted);
+}
+
+/* The title is a button, because that is what makes every conversation in the
+ * list reachable from the keyboard. It still has to read as a title, not as a
+ * control sitting in a row. */
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__session-title {
+  grid-area: title;
+  display: block;
+  height: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 400;
+  color: inherit;
+  text-align: start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__session-title:hover {
+  background: none;
+}
+
+.scholarium-v2dev .scholarium-weaver__session.is-open button.scholarium-weaver__session-title {
+  font-weight: 500;
+}
+
+.scholarium-v2dev .scholarium-weaver__session-meta {
+  grid-area: meta;
+  color: var(--sw-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__session-actions {
+  grid-area: action;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+  color: var(--sw-muted);
+  border-color: transparent;
+  opacity: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__session:hover button.scholarium-weaver__session-actions,
+.scholarium-v2dev .scholarium-weaver__session.is-open button.scholarium-weaver__session-actions,
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__session-actions:focus-visible {
+  opacity: 1;
+  border-color: var(--sw-divider);
+}
+
+.scholarium-v2dev .scholarium-weaver__storage {
+  font-size: 11px;
+  color: var(--sw-faint);
+}
+
+.scholarium-v2dev .scholarium-weaver__runtime-footer {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 12px 18px;
+}
+
+.scholarium-v2dev .scholarium-weaver__runtime-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sw-faint);
+  flex: none;
+}
+
+.scholarium-v2dev .scholarium-weaver__runtime-footer.is-online .scholarium-weaver__runtime-dot {
+  background: var(--sw-accent);
+  box-shadow: 0 0 10px var(--sw-accent);
+}
+
+.scholarium-v2dev .scholarium-weaver__runtime-footer.is-connecting .scholarium-weaver__runtime-dot {
+  background: var(--sw-accent);
+  animation: scholarium-v2dev-pulse 1.4s infinite;
+}
+
+.scholarium-v2dev .scholarium-weaver__runtime-footer.is-degraded .scholarium-weaver__runtime-dot {
+  background: var(--sw-warning);
+}
+
+.scholarium-v2dev .scholarium-weaver__runtime-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__runtime-title {
+  font-size: 12.5px;
+}
+
+.scholarium-v2dev .scholarium-weaver__runtime-sub {
+  font-size: 11px;
+  color: var(--sw-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------- centre --- */
+
+.scholarium-v2dev .scholarium-weaver__center {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.scholarium-v2dev .scholarium-weaver__conversation-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 12px 22px;
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__conversation-heading {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scholarium-v2dev .scholarium-weaver__crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__crumb {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scholarium-v2dev .scholarium-weaver__crumb.is-root {
+  flex: none;
+  color: var(--sw-accent-strong);
+}
+
+.scholarium-v2dev .scholarium-weaver__crumb.is-current {
+  color: var(--sw-text);
+  font-weight: 500;
+}
+
+.scholarium-v2dev .scholarium-weaver__crumb-sep {
+  flex: none;
+  font-size: 11px;
+  color: var(--sw-faint);
+}
+
+.scholarium-v2dev .scholarium-weaver__conversation-meta {
+  font-size: 11px;
+  color: var(--sw-faint);
+}
+
+.scholarium-v2dev .scholarium-weaver__conversation-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__conversation-agent {
+  flex: 0 1 auto;
+}
+
+.scholarium-v2dev .scholarium-weaver__conversation-agent-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__conversation-runtime {
+  gap: 6px;
+}
+
+.scholarium-v2dev .scholarium-weaver__conversation-tools button {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+
+.scholarium-v2dev .scholarium-weaver__search {
+  width: 180px;
+  min-width: 0;
+  flex: 0 1 180px;
+}
+
+.scholarium-v2dev .scholarium-weaver__history {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__earlier {
+  align-self: center;
+  height: 24px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--sw-muted);
+}
+
+/* The reading column: 760 px wide and centred, by padding rather than a
+ * wrapper, so the scroll bar stays at the column's edge. */
+.scholarium-v2dev .scholarium-weaver__messages {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: 22px max(22px, calc((100% - var(--sw-reading)) / 2)) 26px;
+}
+
+.scholarium-v2dev .scholarium-weaver__empty.is-conversation {
+  margin: auto 0;
+  padding: 18px;
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  box-shadow: var(--sw-shadow-sm);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* A draft conversation has no transcript yet. Keep the explanation in the
+ * visual centre of the usable transcript area; the composer remains pinned at
+ * the bottom by the centre grid, so the two do not get visually conflated. */
+.scholarium-v2dev .scholarium-weaver__empty.is-conversation.is-new-session {
+  margin: auto 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__search-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--sw-radius);
+  background: var(--sw-accent-softer);
+  box-shadow: 0 0 0 1px var(--sw-accent-ring);
+  color: var(--sw-muted);
+  font-size: 12px;
+}
+
+.scholarium-v2dev .scholarium-weaver__search-summary button {
+  height: 24px;
+  font-size: 11.5px;
+}
+
+/* ------------------------------------------------------------ messages --- */
+
+/* Agent, system and error turns read as text beside a small tile; the
+ * researcher's own turns are a bubble on the right. Role first and text
+ * second in the DOM, placed by grid areas. */
+.scholarium-v2dev .scholarium-weaver__message {
+  display: grid;
+  grid-template-columns: 28px auto minmax(0, 1fr);
+  grid-template-areas:
+    "avatar role  time"
+    "avatar text  text"
+    "avatar claim claim";
+  column-gap: 12px;
+  row-gap: 4px;
+  align-self: stretch;
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__message::before {
+  grid-area: avatar;
+  content: "织";
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  box-shadow: var(--sw-shadow-sm);
+  font-size: 12px;
+  color: var(--sw-accent-strong);
+}
+
+.scholarium-v2dev .scholarium-weaver__message.is-system::before {
+  content: "i";
+  color: var(--sw-muted);
+  font-style: italic;
+}
+
+.scholarium-v2dev .scholarium-weaver__message.is-error::before {
+  content: "!";
+  color: var(--sw-error);
+}
+
+.scholarium-v2dev .scholarium-weaver__message.is-user {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "time role"
+    "text text"
+    "claim claim";
+  justify-self: end;
+  align-self: flex-end;
+  max-width: 78%;
+  padding: 10px 14px;
+  border-radius: var(--sw-radius-lg);
+  background: var(--sw-accent-soft);
+  box-shadow: 0 0 0 1px var(--sw-accent-ring);
+}
+
+.scholarium-v2dev .scholarium-weaver__message.is-user::before {
+  display: none;
+}
+
+.scholarium-v2dev .scholarium-weaver__message.is-user .scholarium-weaver__role {
+  justify-self: end;
+}
+
+.scholarium-v2dev .scholarium-weaver__role {
+  grid-area: role;
+  padding-top: 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__time {
+  grid-area: time;
+  padding-top: 4px;
+  font-size: 11px;
+  color: var(--sw-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.scholarium-v2dev .scholarium-weaver__text {
+  grid-area: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--sw-text);
+  user-select: text;
+}
+
+.scholarium-v2dev .scholarium-weaver__message-body {
+  grid-area: text;
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__message-body.is-collapsed {
+  position: relative;
+}
+
+.scholarium-v2dev .scholarium-weaver__message-toggle {
+  height: 26px;
+  margin-top: 8px;
+  padding: 0 10px;
+  border-color: var(--sw-accent-ring);
+  color: var(--sw-accent-strong);
+  font-size: 11.5px;
+}
+
+/* Rendered Markdown replies (built as DOM nodes, never as HTML). */
+.scholarium-v2dev .scholarium-weaver__text.is-markdown {
+  white-space: normal;
+}
+
+.scholarium-v2dev .scholarium-weaver__md > :first-child {
+  margin-top: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__md > :last-child {
+  margin-bottom: 0;
+}
+
+/* Obsidian themes colour bold/italic through --bold-color / --italic-color,
+ * which can be dark on this page's dark surface (the text became invisible).
+ * Inline emphasis inherits the reply colour; bold is only heavier. */
+.scholarium-v2dev .scholarium-weaver__md strong,
+.scholarium-v2dev .scholarium-weaver__md b {
+  color: var(--sw-text);
+  font-weight: 700;
+}
+
+.scholarium-v2dev .scholarium-weaver__md em,
+.scholarium-v2dev .scholarium-weaver__md i,
+.scholarium-v2dev .scholarium-weaver__md del,
+.scholarium-v2dev .scholarium-weaver__md li,
+.scholarium-v2dev .scholarium-weaver__md td,
+.scholarium-v2dev .scholarium-weaver__md th {
+  color: var(--sw-text);
+}
+
+.scholarium-v2dev .scholarium-weaver__md del {
+  opacity: 0.7;
+}
+
+.scholarium-v2dev .scholarium-weaver__md-code {
+  color: var(--sw-text);
+}
+
+.scholarium-v2dev .scholarium-weaver__md ::selection {
+  background: var(--sw-accent-soft);
+  color: var(--sw-text);
+}
+
+.scholarium-v2dev .scholarium-weaver__md-p {
+  margin: 0 0 10px;
+}
+
+.scholarium-v2dev .scholarium-weaver__md-h {
+  margin: 16px 0 8px;
+  font-weight: 650;
+  line-height: 1.4;
+  color: var(--sw-text);
+}
+
+.scholarium-v2dev h2.scholarium-weaver__md-h { font-size: 17px; }
+.scholarium-v2dev h3.scholarium-weaver__md-h { font-size: 15.5px; }
+.scholarium-v2dev h4.scholarium-weaver__md-h,
+.scholarium-v2dev h5.scholarium-weaver__md-h,
+.scholarium-v2dev h6.scholarium-weaver__md-h { font-size: 14px; }
+
+.scholarium-v2dev .scholarium-weaver__md-list {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.scholarium-v2dev .scholarium-weaver__md-list li {
+  margin: 2px 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__md-code {
+  padding: 1px 5px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface);
+  font-family: var(--font-monospace, ui-monospace, monospace);
+  font-size: 12.5px;
+}
+
+.scholarium-v2dev .scholarium-weaver__md-pre {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  overflow-x: auto;
+  font-family: var(--font-monospace, ui-monospace, monospace);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.scholarium-v2dev .scholarium-weaver__md-quote {
+  margin: 0 0 10px;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--sw-divider);
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__md-hr {
+  border: 0;
+  border-top: 1px solid var(--sw-divider);
+  margin: 14px 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__md-link {
+  color: var(--sw-accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.scholarium-v2dev .scholarium-weaver__md-table-wrap {
+  margin: 0 0 12px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.scholarium-v2dev .scholarium-weaver__md-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.scholarium-v2dev .scholarium-weaver__md-table th,
+.scholarium-v2dev .scholarium-weaver__md-table td {
+  padding: 6px 10px;
+  border: 1px solid var(--sw-divider);
+  text-align: left;
+  vertical-align: top;
+}
+
+.scholarium-v2dev .scholarium-weaver__md-table th {
+  background: var(--sw-surface);
+  font-weight: 600;
+}
+
+/* File change cards: one row per operation, with a tick box and a diff. */
+.scholarium-v2dev .scholarium-weaver__fileops {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.scholarium-v2dev .scholarium-weaver__fileop {
+  padding: 6px 8px;
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-surface-2);
+  color: var(--sw-text);
+  font-size: 12.5px;
+}
+
+.scholarium-v2dev .scholarium-weaver__fileop.is-blocked {
+  opacity: 0.75;
+}
+
+.scholarium-v2dev .scholarium-weaver__fileop-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.scholarium-v2dev .scholarium-weaver__fileop-kind {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-accent-soft);
+  color: var(--sw-text);
+  font-size: 11.5px;
+}
+
+.scholarium-v2dev .scholarium-weaver__fileop-kind.is-trash {
+  background: rgba(210, 74, 69, 0.18);
+}
+
+.scholarium-v2dev .scholarium-weaver__fileop-kind.is-declaration {
+  background: rgba(214, 160, 50, 0.22);
+  font-weight: 600;
+}
+
+.scholarium-v2dev .scholarium-weaver__fileop-declaration {
+  margin: 4px 0 0 26px;
+  color: var(--sw-text-muted, var(--sw-text));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.scholarium-v2dev .scholarium-weaver__fileop-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-monospace, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+.scholarium-v2dev .scholarium-weaver__fileop-problem {
+  margin-top: 3px;
+  color: var(--sw-error);
+}
+
+.scholarium-v2dev .scholarium-weaver__fileop-warning {
+  margin-top: 3px;
+  color: var(--sw-warning);
+}
+
+.scholarium-v2dev .scholarium-weaver__fileop-diff {
+  margin-top: 4px;
+}
+
+.scholarium-v2dev .scholarium-weaver__fileop-diff summary {
+  cursor: pointer;
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__diff-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-monospace, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--sw-text);
+}
+
+.scholarium-v2dev .scholarium-weaver__diff-line.is-add {
+  background: rgba(58, 154, 99, 0.16);
+}
+
+.scholarium-v2dev .scholarium-weaver__diff-line.is-del {
+  background: rgba(210, 74, 69, 0.16);
+}
+
+.scholarium-v2dev .scholarium-weaver__diff-line.is-gap {
+  color: var(--sw-faint);
+}
+
+.scholarium-v2dev .scholarium-weaver__fileop-content {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 11.5px;
+  color: var(--sw-text);
+}
+
+/* The live "thinking" bubble: replaced by the answer when it arrives. */
+.scholarium-v2dev .scholarium-weaver__message.is-thinking .scholarium-weaver__thinking-body {
+  grid-area: text;
+  color: var(--sw-muted);
+  font-size: 13px;
+}
+
+.scholarium-v2dev .scholarium-weaver__thinking-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sw-text);
+}
+
+.scholarium-v2dev .scholarium-weaver__thinking-dots {
+  width: 22px;
+  height: 6px;
+  background:
+    radial-gradient(circle, var(--sw-accent) 2.5px, transparent 3px) 0 0 / 8px 6px repeat-x;
+  animation: scholarium-v2dev-thinking 1.2s ease-in-out infinite;
+}
+
+@keyframes scholarium-v2dev-thinking {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+.scholarium-v2dev .scholarium-weaver__thinking-steps {
+  margin-top: 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--sw-divider);
+}
+
+.scholarium-v2dev .scholarium-weaver__thinking-step,
+.scholarium-v2dev .scholarium-weaver__thinking-more {
+  margin: 2px 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-weaver__thinking-step.is-current {
+  color: var(--sw-text);
+}
+
+.scholarium-v2dev .scholarium-weaver__thinking-more {
+  color: var(--sw-faint);
+}
+
+.scholarium-v2dev .scholarium-weaver__message.is-error .scholarium-weaver__text {
+  color: var(--sw-error);
+}
+
+.scholarium-v2dev .scholarium-weaver__claim {
+  grid-area: claim;
+  color: var(--sw-warning);
+  font-size: 11.5px;
+}
+
+/* --------------------------------------------------------------- cards --- */
+
+.scholarium-v2dev .scholarium-weaver__card {
+  margin-left: 40px;
+  padding: 12px 14px;
+  border-radius: var(--sw-radius);
+  background: linear-gradient(160deg, var(--sw-accent-softer), var(--sw-surface) 70%);
+  box-shadow: 0 0 0 1px var(--sw-accent-ring);
+}
+
+.scholarium-v2dev .scholarium-weaver__card.is-claimed {
+  box-shadow: 0 0 0 1px var(--sw-warning);
+  background: var(--sw-surface);
+}
+
+.scholarium-v2dev .scholarium-weaver__card.is-confirmed {
+  box-shadow: 0 0 0 1px var(--sw-success);
+  background: var(--sw-surface);
+}
+
+.scholarium-v2dev .scholarium-weaver__card.is-failed {
+  box-shadow: 0 0 0 1px var(--sw-error);
+  background: var(--sw-surface);
+}
+
+.scholarium-v2dev .scholarium-weaver__card.is-abandoned {
+  box-shadow: var(--sw-shadow-sm);
+  background: var(--sw-surface);
+  opacity: 0.8;
+}
+
+.scholarium-v2dev .scholarium-weaver__card.is-compact {
+  padding-block: 9px;
+}
+
+.scholarium-v2dev .scholarium-weaver__card.is-compact .scholarium-weaver__card-body {
+  max-height: 2.8em;
+  overflow: hidden;
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.scholarium-v2dev .scholarium-weaver__card-head-controls {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__card-close {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sw-muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__card-close:hover {
+  background: var(--sw-accent-soft);
+  color: var(--sw-text);
+}
+
+.scholarium-v2dev .scholarium-weaver__card-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.scholarium-v2dev .scholarium-weaver__card-state {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 10.5px;
+  color: var(--sw-accent-strong);
+}
+
+.scholarium-v2dev .scholarium-weaver__card-state.is-claimed { color: var(--sw-warning); }
+.scholarium-v2dev .scholarium-weaver__card-state.is-confirmed { color: var(--sw-success); }
+.scholarium-v2dev .scholarium-weaver__card-state.is-failed { color: var(--sw-error); }
+.scholarium-v2dev .scholarium-weaver__card-state.is-abandoned { color: var(--sw-muted); }
+
+.scholarium-v2dev .scholarium-weaver__card-body {
+  font-family: var(--font-monospace, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--sw-text);
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-weaver__card-status,
+.scholarium-v2dev .scholarium-weaver__card-result {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--sw-muted);
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-weaver__card-status.is-claimed { color: var(--sw-warning); }
+.scholarium-v2dev .scholarium-weaver__card-status.is-failed { color: var(--sw-error); }
+.scholarium-v2dev .scholarium-weaver__card-status.is-unmigrated { font-style: italic; }
+
+.scholarium-v2dev .scholarium-weaver__card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* ------------------------------------------------------------ composer --- */
+
+.scholarium-v2dev .scholarium-weaver__composer {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px max(22px, calc((100% - var(--sw-reading)) / 2)) 18px;
+  background: linear-gradient(180deg, transparent, var(--sw-bg) 12px);
+}
+
+.scholarium-v2dev .scholarium-weaver__composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 9px 9px 9px 14px;
+  border-radius: var(--sw-radius-lg);
+  background: var(--sw-surface);
+  box-shadow: var(--sw-shadow-md);
+}
+
+.scholarium-v2dev .scholarium-weaver__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 48px;
+  max-height: 40vh;
+  resize: none;
+  border: 0 !important;
+  outline: 0;
+  box-shadow: none !important;
+  background: transparent !important;
+  padding: 4px 0;
+  color: var(--sw-text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__send {
+  flex: 0 0 auto;
+  height: 34px;
+  min-width: 64px;
+  border-radius: var(--sw-radius);
+}
+
+.scholarium-v2dev .scholarium-weaver__composer-hint {
+  font-size: 11px;
+  color: var(--sw-faint);
+}
+
+.scholarium-v2dev .scholarium-weaver__enable-execution {
+  height: 26px;
+  padding: 0 9px;
+  white-space: nowrap;
+}
+
+.scholarium-v2dev .scholarium-weaver__enable-execution[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- right --- */
+
+.scholarium-v2dev .scholarium-weaver__right {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 18px 0;
+  overflow: hidden;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-dock-title {
+  font-size: 11px;
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-dock .scholarium-weaver__tool-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-dock .scholarium-weaver__tool-launch {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: var(--sw-radius);
+}
+
+.scholarium-v2dev .scholarium-weaver__right[data-tool-open="true"] > .scholarium-weaver__rail-tabs,
+.scholarium-v2dev .scholarium-weaver__right[data-tool-open="true"] > .scholarium-weaver__rail-panel {
+  display: none;
+}
+
+.scholarium-v2dev .scholarium-weaver__right::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--sw-divider) 48px, var(--sw-divider) calc(100% - 48px), transparent);
+}
+
+.scholarium-v2dev .scholarium-weaver__rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.scholarium-v2dev .scholarium-weaver__rail-title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* The design's segmented control. */
+.scholarium-v2dev .scholarium-weaver__rail-tabs {
+  /* Five built-in tabs plus the migrated tools': wrap into rows rather than
+   * squeezing ten labels into one. */
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
+  flex: 0 0 auto;
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+  overflow: hidden;
+}
+
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__rail-tab {
+  height: 30px;
+  border: none;
+  border-radius: 0;
+  color: var(--sw-muted);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__rail-tab + .scholarium-weaver__rail-tab {
+  border-left: 1px solid var(--sw-divider);
+}
+
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__rail-tab.is-active {
+  background: var(--sw-accent-soft);
+  color: var(--sw-accent-strong);
+  box-shadow: inset 0 -1px 0 var(--sw-accent);
+}
+
+.scholarium-v2dev .scholarium-weaver__rail-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.scholarium-v2dev .scholarium-weaver__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scholarium-v2dev .scholarium-weaver__progress-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--sw-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.scholarium-v2dev .scholarium-weaver__progress-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--sw-divider);
+  overflow: hidden;
+}
+
+.scholarium-v2dev .scholarium-weaver__progress-fill {
+  height: 100%;
+  background: var(--sw-accent);
+  box-shadow: 0 0 8px var(--sw-accent);
+}
+
+.scholarium-v2dev .scholarium-weaver__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.scholarium-v2dev .scholarium-weaver__metric {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  box-shadow: var(--sw-shadow-sm);
+}
+
+.scholarium-v2dev .scholarium-weaver__metric-value {
+  font-size: 17px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.scholarium-v2dev .scholarium-weaver__metric-label {
+  font-size: 11px;
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__metric.is-pending .scholarium-weaver__metric-value { color: var(--sw-accent-strong); }
+.scholarium-v2dev .scholarium-weaver__metric.is-claimed .scholarium-weaver__metric-value { color: var(--sw-warning); }
+.scholarium-v2dev .scholarium-weaver__metric.is-confirmed .scholarium-weaver__metric-value { color: var(--sw-success); }
+.scholarium-v2dev .scholarium-weaver__metric.is-failed .scholarium-weaver__metric-value { color: var(--sw-error); }
+
+.scholarium-v2dev .scholarium-weaver__trace-task {
+  padding: 10px 12px;
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  box-shadow: var(--sw-shadow-sm);
+  font-size: 11.5px;
+  color: var(--sw-muted);
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-weaver__trace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scholarium-v2dev .scholarium-weaver__trace-row {
+  display: grid;
+  gap: 2px;
+  padding: 8px 0 8px 12px;
+  box-shadow: inset 2px 0 0 var(--sw-accent);
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-weaver__trace-row.is-claimed { box-shadow: inset 2px 0 0 var(--sw-warning); }
+.scholarium-v2dev .scholarium-weaver__trace-row.is-confirmed { box-shadow: inset 2px 0 0 var(--sw-success); }
+.scholarium-v2dev .scholarium-weaver__trace-row.is-failed { box-shadow: inset 2px 0 0 var(--sw-error); }
+.scholarium-v2dev .scholarium-weaver__trace-row.is-abandoned { box-shadow: inset 2px 0 0 var(--sw-faint); }
+
+.scholarium-v2dev .scholarium-weaver__trace-title {
+  font-size: 12.5px;
+  color: var(--sw-text);
+}
+
+.scholarium-v2dev .scholarium-weaver__trace-path,
+.scholarium-v2dev .scholarium-weaver__trace-detail {
+  font-size: 11px;
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__trace-op {
+  font-family: var(--font-monospace, ui-monospace, monospace);
+  font-size: 10.5px;
+  color: var(--sw-faint);
+}
+
+.scholarium-v2dev .scholarium-weaver__project {
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--sw-muted);
+  overflow-wrap: anywhere;
+  background: linear-gradient(90deg, var(--sw-divider), var(--sw-divider) calc(100% - 48px), transparent) bottom / 100% 1px no-repeat;
+}
+
+.scholarium-v2dev .scholarium-weaver__projects > .scholarium-weaver__section-title {
+  margin-bottom: -6px;
+}
+
+/* ------------------------------------------------------------ workbench --- */
+
+/* Composer modes: 对话 / 检索开放文献. */
+.scholarium-v2dev .scholarium-weaver__modes {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__mode {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--sw-divider);
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--sw-muted);
+  font-size: 12px;
+}
+
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__mode.is-active {
+  border-color: var(--sw-accent-ring);
+  background: var(--sw-accent-soft);
+  color: var(--sw-accent-strong);
+}
+
+/* A persisted search result, under its message. */
+.scholarium-v2dev .scholarium-weaver__literature {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__literature-head,
+.scholarium-v2dev .scholarium-weaver__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.scholarium-v2dev .scholarium-weaver__paper {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 0;
+  border-top: 1px solid var(--sw-divider);
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__paper-title,
+.scholarium-v2dev .scholarium-weaver__registry-title,
+.scholarium-v2dev .scholarium-weaver__idea-title,
+.scholarium-v2dev .scholarium-weaver__run-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--sw-text);
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-weaver__paper-meta,
+.scholarium-v2dev .scholarium-weaver__registry-meta,
+.scholarium-v2dev .scholarium-weaver__registry-open,
+.scholarium-v2dev .scholarium-weaver__idea-summary,
+.scholarium-v2dev .scholarium-weaver__idea-meta,
+.scholarium-v2dev .scholarium-weaver__run-meta {
+  font-size: 11.5px;
+  color: var(--sw-muted);
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-weaver__paper-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+}
+
+.scholarium-v2dev .scholarium-weaver__paper-doi {
+  color: var(--sw-accent-strong);
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-weaver__paper-status.is-saved { color: var(--sw-success); }
+.scholarium-v2dev .scholarium-weaver__paper-status.is-failed { color: var(--sw-error); }
+.scholarium-v2dev .scholarium-weaver__paper-status.is-running { color: var(--sw-muted); }
+.scholarium-v2dev .scholarium-weaver__paper-status.is-ok { color: var(--sw-success); }
+.scholarium-v2dev .scholarium-weaver__paper-status.is-warn { color: var(--sw-warning); }
+.scholarium-v2dev .scholarium-weaver__paper-status.is-error { color: var(--sw-error); }
+.scholarium-v2dev .scholarium-weaver__paper-status.is-info { color: var(--sw-muted); }
+
+/* A full-lane status line sits under its record, with its cancel button. */
+.scholarium-v2dev .scholarium-weaver__paper > .scholarium-weaver__paper-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+/* Run cards carry a multi-line detail (topic, steps, DOIs). */
+.scholarium-v2dev .scholarium-weaver__card.is-run .scholarium-weaver__card-body {
+  white-space: pre-wrap;
+}
+
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__paper-download,
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__literature-all,
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__bind,
+.scholarium-v2dev .scholarium-weaver button.scholarium-weaver__refresh {
+  height: 24px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+
+/* Registry, ideas, memory and history rows in the rail. */
+.scholarium-v2dev .scholarium-weaver__registry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.scholarium-v2dev .scholarium-weaver__registry-row,
+.scholarium-v2dev .scholarium-weaver__idea,
+.scholarium-v2dev .scholarium-weaver__run,
+.scholarium-v2dev .scholarium-weaver__memory {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__registry-row.is-bound {
+  border-color: var(--sw-accent-ring);
+  background: var(--sw-accent-softer);
+}
+
+.scholarium-v2dev .scholarium-weaver__run[role="button"] {
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.scholarium-v2dev .scholarium-weaver__run[role="button"]:hover,
+.scholarium-v2dev .scholarium-weaver__run[role="button"]:focus-visible {
+  border-color: var(--sw-accent-ring);
+  background: var(--sw-accent-softer);
+  outline: none;
+}
+
+.scholarium-v2dev .scholarium-weaver__memory-name {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--sw-text);
+}
+
+.scholarium-v2dev .scholarium-weaver__memory-body {
+  margin: 6px 0 0;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 11.5px;
+  color: var(--sw-muted);
+}
+
+.scholarium-v2dev .scholarium-weaver__empty.is-error {
+  color: var(--sw-error);
+}
+
+/* ---------------------------------------------------- medium: 1000–1399 --- */
+
+@media (max-width: 1399px) {
+  .scholarium-v2dev .scholarium-weaver {
+    --sw-left: 230px;
+    --sw-right: 320px;
+  }
+
+  .scholarium-v2dev .scholarium-weaver__brand-product,
+  .scholarium-v2dev .scholarium-weaver__brand-sep,
+  .scholarium-v2dev .scholarium-weaver__brand-kicker,
+  .scholarium-v2dev .scholarium-weaver__agent-label,
+  .scholarium-v2dev .scholarium-weaver__context-kind {
+    display: none;
+  }
+
+  .scholarium-v2dev .scholarium-weaver__search {
+    width: 130px;
+    flex-basis: 130px;
+  }
+
+  .scholarium-v2dev .scholarium-weaver__message.is-user {
+    max-width: 88%;
+  }
+}
+
+/* ------------------------------------------------------- narrow: < 1000 --- */
+
+/* The centre stays; the side columns become drawers inside the page, opened
+ * from the product bar and closed by the scrim, Escape, or the same button.
+ * The drawer state is the root's `data-drawer`, so closing one destroys
+ * nothing. */
+@media (max-width: 999px) {
+  .scholarium-v2dev .scholarium-weaver__workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scholarium-v2dev .scholarium-weaver__mobile-toggle {
+    display: inline-flex !important;
+  }
+
+  .scholarium-v2dev .scholarium-weaver__context-summary,
+  .scholarium-v2dev .scholarium-weaver__agent,
+  .scholarium-v2dev .scholarium-weaver__badge {
+    display: none;
+  }
+
+  .scholarium-v2dev .scholarium-weaver__left,
+  .scholarium-v2dev .scholarium-weaver__right {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 3;
+    width: min(88vw, 360px);
+    max-width: min(88vw, 360px);
+    box-shadow: var(--sw-shadow-md);
+    background: var(--sw-bg);
+    transition: transform 160ms ease;
+  }
+
+  .scholarium-v2dev .scholarium-weaver__left {
+    left: 0;
+    transform: translateX(-105%);
+  }
+
+  .scholarium-v2dev .scholarium-weaver__right {
+    right: 0;
+    transform: translateX(105%);
+  }
+
+  .scholarium-v2dev .scholarium-weaver[data-drawer="left"] .scholarium-weaver__left,
+  .scholarium-v2dev .scholarium-weaver[data-drawer="right"] .scholarium-weaver__right {
+    transform: none;
+  }
+
+  .scholarium-v2dev .scholarium-weaver[data-drawer="left"] .scholarium-weaver__scrim,
+  .scholarium-v2dev .scholarium-weaver[data-drawer="right"] .scholarium-weaver__scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background: rgba(10, 11, 20, 0.45);
+  }
+
+  .scholarium-v2dev .scholarium-weaver__conversation-header {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .scholarium-v2dev .scholarium-weaver__messages {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .scholarium-v2dev .scholarium-weaver__composer {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .scholarium-v2dev .scholarium-weaver__message.is-user {
+    max-width: 94%;
+  }
+
+  .scholarium-v2dev .scholarium-weaver__card {
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scholarium-v2dev .scholarium-weaver *,
+  .scholarium-v2dev .scholarium-weaver *::before {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* -------------------------------------------------------- settings modal --- */
+
+.scholarium-weaver-modal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-modal, 50);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background-modifier-cover, rgba(10, 11, 20, 0.55));
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  padding: 20px 22px;
+  border-radius: 14px;
+  background: var(--background-primary, #ffffff);
+  color: var(--text-normal, inherit);
+  box-shadow: 0 0 0 1px var(--background-modifier-border, rgba(0, 0, 0, 0.15)), 0 16px 40px rgba(0, 0, 0, 0.35);
+}
+
+.theme-dark .scholarium-weaver-modal .scholarium-weaver-modal__panel {
+  background: #232532;
+  color: #e9e9ed;
+  box-shadow: 0 0 0 1px #595d6c, 0 16px 40px rgba(0, 0, 0, 0.65);
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__title {
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__section-title {
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--text-muted, #888);
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: center;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__hint {
+  grid-column: 2;
+  font-size: 11px;
+  color: var(--text-muted, #888);
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__scope,
+.scholarium-weaver-modal .scholarium-weaver-modal__note {
+  font-size: 12px;
+  color: var(--text-muted, #888);
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__error {
+  color: var(--text-error, #d9534f);
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--background-secondary, rgba(128, 128, 128, 0.06));
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__diagnostic-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+  overflow-wrap: anywhere;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__diagnostic-value {
+  font-family: var(--font-monospace, monospace);
+  font-size: 12px;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__memory {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__memory-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__memory-head .scholarium-weaver-modal__section-title {
+  margin-top: 0;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__memory-head button {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__memory-file {
+  padding: 7px 9px;
+  border: 1px solid var(--background-modifier-border, rgba(0, 0, 0, 0.15));
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__memory-file > summary {
+  cursor: pointer;
+  color: var(--text-normal, inherit);
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__memory-file > pre {
+  max-height: 220px;
+  margin: 8px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--text-muted, #888);
+  font: 11.5px/1.5 var(--font-monospace, monospace);
+}
+
+/* ------------------------------------------------------------- tools --- */
+/* Migrated tools (Pipeline, 打磨检索式, Idea 模式 …). Shared vocabulary: a
+ * tool module uses these classes and adds its own only when it must. */
+
+.scholarium-v2dev .scholarium-weaver__tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 0 6px;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-launch {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-launch[aria-pressed="true"] {
+  background: var(--sw-accent-soft, rgba(122, 108, 192, 0.18));
+  color: var(--sw-accent);
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-panel {
+  /* Action tools live in the right rail. Opening one never moves the
+   * conversation or its composer. */
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 0;
+  margin: 0 0 18px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  box-shadow: var(--sw-shadow-sm);
+  overflow: hidden;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-panel[hidden] {
+  display: none;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-panel input:not([type="checkbox"]):not([type="radio"]),
+.scholarium-v2dev .scholarium-weaver__tool-panel textarea,
+.scholarium-v2dev .scholarium-weaver__tool-panel select,
+.scholarium-v2dev .scholarium-weaver__tool-rail input:not([type="checkbox"]):not([type="radio"]),
+.scholarium-v2dev .scholarium-weaver__tool-rail textarea,
+.scholarium-v2dev .scholarium-weaver__tool-rail select {
+  background: var(--sw-bg);
+  color: var(--sw-text);
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-panel textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 8px 14px;
+  border-bottom: 1px solid var(--sw-divider);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-close {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--sw-faint);
+  font-size: 16px;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-body,
+.scholarium-v2dev .scholarium-weaver__tool-rail {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 14px 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-section-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sw-muted);
+  letter-spacing: 0.02em;
+}
+
+/* 设置中心：可折叠的分节（点标题展开 / 折叠）。 */
+.scholarium-v2dev details.scholarium-weaver__tool-fold {
+  display: block;
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+  padding: 0 10px;
+}
+
+.scholarium-v2dev details.scholarium-weaver__tool-fold > summary {
+  cursor: pointer;
+  padding: 8px 0;
+  font-size: 12.5px;
+  color: var(--sw-text);
+  list-style: none;
+  user-select: none;
+}
+
+.scholarium-v2dev details.scholarium-weaver__tool-fold > summary::-webkit-details-marker { display: none; }
+
+.scholarium-v2dev details.scholarium-weaver__tool-fold > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 1.1em;
+  color: var(--sw-muted);
+  transition: transform 0.15s ease;
+}
+
+.scholarium-v2dev details.scholarium-weaver__tool-fold[open] > summary::before { transform: rotate(90deg); }
+
+.scholarium-v2dev details.scholarium-weaver__tool-fold[open] {
+  padding-bottom: 10px;
+}
+
+.scholarium-v2dev details.scholarium-weaver__tool-fold[open] > summary {
+  border-bottom: 1px solid var(--sw-divider);
+  margin-bottom: 8px;
+}
+
+.scholarium-v2dev [data-role="image-settings"] select,
+.scholarium-v2dev [data-role="image-settings"] input {
+  width: 100%;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-field > input,
+.scholarium-v2dev .scholarium-weaver__tool-field > textarea,
+.scholarium-v2dev .scholarium-weaver__tool-field > select {
+  width: 100%;
+  font-size: 12.5px;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-btn {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-item {
+  padding: 8px 10px;
+  border-radius: var(--sw-radius);
+  background: var(--sw-bg);
+  border: 1px solid var(--sw-divider);
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-item.is-active {
+  border-color: var(--sw-accent);
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-muted {
+  color: var(--sw-faint);
+  font-size: 11.5px;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-error {
+  color: var(--sw-error);
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-ok {
+  color: var(--sw-success, #3fb67a);
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-pill {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
+  border-radius: 999px;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-pill[aria-pressed="true"] {
+  background: var(--sw-accent);
+  color: var(--text-on-accent, #fff);
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-pre {
+  white-space: pre-wrap;
+  font-family: var(--font-monospace, monospace);
+  font-size: 11.5px;
+  background: var(--sw-bg);
+  border-radius: var(--sw-radius);
+  padding: 8px;
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-step {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+  background: var(--sw-bg);
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-step > b {
+  display: block;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.scholarium-v2dev .scholarium-weaver__tool-step[data-state="running"] { color: var(--sw-accent); }
+.scholarium-v2dev .scholarium-weaver__tool-step[data-state="done"] { color: var(--sw-text); }
+.scholarium-v2dev .scholarium-weaver__tool-step[data-state="error"] { color: var(--sw-error); }
+.scholarium-v2dev .scholarium-weaver__tool-step[data-state="pending"] { color: var(--sw-faint); }
+
+.scholarium-v2dev .scholarium-weaver__tool-svg {
+  width: 100%;
+  min-height: 260px;
+  border-radius: var(--sw-radius);
+  background: var(--sw-bg);
+}
+
+/* ---- tool: Idea 模式 / Idea 库 (idea) --- */
+
+/* Idea 模式 / Idea 库 — only what the shared tool classes do not cover. */
+
+.scholarium-v2dev .idea-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.scholarium-v2dev .idea-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.scholarium-v2dev .idea-list-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scholarium-v2dev .idea-list-card-head,
+.scholarium-v2dev .idea-list-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.scholarium-v2dev .idea-list-card-foot > span:first-child {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .idea-list-card-papers {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .idea-status-badge {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--sw-divider);
+  color: var(--sw-faint);
+  white-space: nowrap;
+}
+
+.scholarium-v2dev .idea-status-exploring {
+  color: var(--sw-accent);
+  border-color: var(--sw-accent);
+}
+
+.scholarium-v2dev .idea-status-shelved {
+  opacity: 0.7;
+}
+
+.scholarium-v2dev .idea-chip-gap {
+  border-style: dashed;
+}
+
+/* ---- tool: 假设—实验 (tree) --- */
+
+/* 假设—实验 (hypothesis-tree rail tool). Colours come from the page theme. */
+.scholarium-v2dev .scholarium-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.scholarium-v2dev .scholarium-tree__toolbar .scholarium-weaver__tool-pill[style] {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.scholarium-v2dev .scholarium-tree__toolbar .scholarium-weaver__tool-pill[style]::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--scholarium-tree-dot);
+}
+.scholarium-v2dev .scholarium-tree__project {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.scholarium-v2dev .scholarium-tree__graph {
+  position: relative;
+  min-height: 360px;
+  height: 58vh;
+  max-height: 640px;
+}
+.scholarium-v2dev .scholarium-tree__svg {
+  display: block;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+.scholarium-v2dev .scholarium-tree__overlay {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 24px 16px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.scholarium-v2dev .scholarium-tree__overlay[hidden],
+.scholarium-v2dev .scholarium-tree__stats[hidden] {
+  display: none;
+}
+.scholarium-v2dev .scholarium-tree__stats {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  font-family: var(--font-monospace, monospace);
+  font-size: 11px;
+  pointer-events: none;
+}
+.scholarium-v2dev .scholarium-tree__hull {
+  fill-opacity: 0.07;
+  stroke-opacity: 0.25;
+  stroke-width: 1;
+  stroke-linejoin: round;
+  transition: fill-opacity 0.15s ease, stroke-opacity 0.15s ease;
+}
+.scholarium-v2dev .scholarium-tree__hull.is-hl {
+  fill-opacity: 0.16;
+  stroke-opacity: 0.6;
+}
+.scholarium-v2dev .scholarium-tree__hull-label {
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.scholarium-v2dev .scholarium-tree__link {
+  stroke: var(--sw-divider);
+  stroke-width: 1;
+}
+.scholarium-v2dev .scholarium-tree__link.is-hl {
+  stroke: var(--sw-accent);
+  stroke-width: 1.6;
+}
+.scholarium-v2dev .scholarium-tree__node {
+  cursor: pointer;
+  stroke: var(--sw-bg);
+  stroke-width: 1;
+}
+.scholarium-v2dev .scholarium-tree__node:focus-visible {
+  outline: none;
+  stroke: var(--sw-accent);
+  stroke-width: 2;
+}
+.scholarium-v2dev .scholarium-tree__node-label {
+  fill: var(--sw-muted);
+  font-size: 10px;
+  pointer-events: none;
+}
+.scholarium-v2dev .scholarium-tree__graph.is-dimmed .scholarium-tree__node:not(.is-hl),
+.scholarium-v2dev .scholarium-tree__graph.is-dimmed .scholarium-tree__node-label:not(.is-hl),
+.scholarium-v2dev .scholarium-tree__graph.is-dimmed .scholarium-tree__link:not(.is-hl) {
+  opacity: 0.2;
+}
+.scholarium-v2dev .scholarium-tree__node.is-hidden,
+.scholarium-v2dev .scholarium-tree__node-label.is-hidden,
+.scholarium-v2dev .scholarium-tree__link.is-hidden {
+  display: none;
+}
+.scholarium-v2dev .scholarium-tree__detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.scholarium-v2dev .scholarium-tree__detail-title {
+  margin: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.scholarium-v2dev .scholarium-tree__detail p,
+.scholarium-v2dev .scholarium-tree__rehearsal p {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---- tool: 知识图谱 (graph) --- */
+
+/* 知识图谱 rail tool: node dots in the inline SVG preview. */
+.scholarium-v2dev .scholarium-weaver__graph-node {
+  fill: var(--sw-accent);
+  stroke: var(--sw-surface);
+  stroke-width: 1;
+}
+
+.scholarium-v2dev .scholarium-weaver__graph-node.is-execution,
+.scholarium-v2dev .scholarium-weaver__graph-node.is-observation,
+.scholarium-v2dev .scholarium-weaver__graph-node.is-claim {
+  fill: var(--sw-faint);
+}
+
+.scholarium-v2dev [data-tool="graph"] [data-node] input[type="text"] {
+  width: 60%;
+  font-size: 12px;
+}
+
+.scholarium-v2dev [data-tool="graph"] [data-edge] input[type="number"] {
+  width: 64px;
+}
+
+/* ---- tool: 课题模式 / 种子重建 (seed) --- */
+
+/* 课题模式 / 种子重建 — only what the shared tool classes do not cover. */
+
+.scholarium-v2dev .scholarium-seed__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.scholarium-v2dev .scholarium-seed__row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.scholarium-v2dev .scholarium-seed__main {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-seed__mono {
+  font-family: var(--font-monospace, monospace);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-seed__bad {
+  color: var(--sw-danger, var(--text-error));
+}
+
+.scholarium-v2dev .scholarium-seed__card {
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+  padding: 8px 10px;
+  margin: 8px 0;
+}
+
+.scholarium-v2dev .scholarium-seed__title {
+  display: block;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.scholarium-v2dev .scholarium-seed__finding {
+  border-left: 2px solid var(--sw-divider);
+  padding-left: 8px;
+  margin: 8px 0;
+}
+
+.scholarium-v2dev .scholarium-project [hidden],
+.scholarium-v2dev .scholarium-seed [hidden] {
+  display: none;
+}
+
+/* ---- tool: 工作流画布 (canvas) --- */
+
+/* 工作流画布 (workflow-canvas tool). Shared tool classes do most of the work;
+ * these are only the canvas surface, nodes, ports and links. */
+
+.scholarium-v2dev .scholarium-canvas__flow-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.scholarium-v2dev .scholarium-canvas__layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.scholarium-v2dev .scholarium-canvas__main {
+  flex: 3 1 360px;
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-canvas__side {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-canvas__canvas {
+  position: relative;
+  height: 300px;
+  overflow: hidden;
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+  background:
+    radial-gradient(circle, var(--sw-divider) 1px, transparent 1px) 0 0 / 18px 18px,
+    var(--sw-surface);
+  cursor: grab;
+  touch-action: none;
+}
+
+.scholarium-v2dev .scholarium-canvas__stage {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 2400px;
+  height: 1600px;
+  transform-origin: 0 0;
+}
+
+.scholarium-v2dev .scholarium-canvas__links {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.scholarium-v2dev .scholarium-canvas__links path {
+  fill: none;
+  stroke: var(--sw-accent);
+  stroke-width: 2;
+  opacity: 0.75;
+}
+
+.scholarium-v2dev .scholarium-canvas__nodes {
+  position: absolute;
+  inset: 0;
+}
+
+.scholarium-v2dev .scholarium-canvas__node {
+  position: absolute;
+  width: 178px;
+  min-height: 66px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--sw-divider);
+  border-radius: var(--sw-radius);
+  background: var(--sw-surface);
+  box-shadow: var(--sw-shadow-sm);
+  cursor: grab;
+  user-select: none;
+}
+
+.scholarium-v2dev .scholarium-canvas__node[data-type="skill"] {
+  border-style: dashed;
+}
+
+.scholarium-v2dev .scholarium-canvas__node[data-selected="true"] {
+  border-color: var(--sw-accent);
+  box-shadow: 0 0 0 2px var(--sw-accent-soft, rgba(122, 108, 192, 0.18));
+}
+
+.scholarium-v2dev .scholarium-canvas__node-icon {
+  flex: none;
+  font-size: 16px;
+  color: var(--sw-accent);
+}
+
+.scholarium-v2dev .scholarium-canvas__node-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.scholarium-v2dev .scholarium-canvas__node-copy small {
+  color: var(--sw-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scholarium-v2dev .scholarium-canvas__port {
+  position: absolute;
+  top: 26px;
+  width: 14px;
+  height: 14px;
+  min-height: 0;
+  padding: 0;
+  border: 2px solid var(--sw-accent);
+  border-radius: 50%;
+  background: var(--sw-surface);
+  box-shadow: none;
+  cursor: crosshair;
+}
+
+.scholarium-v2dev .scholarium-canvas__port--in {
+  left: -8px;
+}
+
+.scholarium-v2dev .scholarium-canvas__port--out {
+  right: -8px;
+}
+
+.scholarium-v2dev .scholarium-canvas__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sw-faint);
+  pointer-events: none;
+}
+
+.scholarium-v2dev .scholarium-canvas__empty[hidden] {
+  display: none;
+}
+
+.scholarium-v2dev .scholarium-canvas__form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scholarium-v2dev .scholarium-canvas__task,
+.scholarium-v2dev .scholarium-canvas__export {
+  margin-bottom: 10px;
+}
+
+.scholarium-v2dev .scholarium-canvas__result pre {
+  max-height: 320px;
+}
+
+/* Scholarium addresses in replies: a chip that opens the place (Alt+click quotes it). */
+.scholarium-v2dev .scholarium-weaver__md-anchor {
+  display: inline-block;
+  padding: 0 6px;
+  margin: 0 1px;
+  border: 1px solid var(--sw-accent-soft);
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-accent-soft);
+  color: var(--sw-text);
+  font-size: 0.92em;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.scholarium-v2dev .scholarium-weaver__md-anchor:hover {
+  border-color: var(--sw-accent, currentColor);
+}
+
+/* 停止 in the thinking bubble. */
+.scholarium-v2dev .scholarium-weaver__thinking-stop {
+  margin-top: 8px;
+  padding: 2px 12px;
+  border: 1px solid rgba(210, 74, 69, 0.55);
+  border-radius: var(--sw-radius-sm);
+  background: rgba(210, 74, 69, 0.14);
+  color: var(--sw-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.scholarium-v2dev .scholarium-weaver__thinking-stop:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Settings pickers: project / flow creation, workspace folder chooser. */
+.scholarium-weaver-modal .scholarium-weaver-modal__inline {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__inline .scholarium-weaver-modal__input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__picker {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border, rgba(128, 128, 128, 0.3));
+  border-radius: 8px;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__picker-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__picker-item {
+  justify-content: flex-start;
+  text-align: left;
+  padding: 3px 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.scholarium-weaver-modal .scholarium-weaver-modal__picker-item:hover,
+.scholarium-weaver-modal .scholarium-weaver-modal__picker-item.is-selected {
+  background: var(--background-modifier-hover, rgba(128, 128, 128, 0.15));
+}
+
+.scholarium-weaver-modal [hidden] {
+  display: none !important;
+}
+
+/* Images in the conversation and figure cards. */
+.scholarium-v2dev .scholarium-weaver__md-image {
+  display: block;
+  max-width: min(100%, 560px);
+  max-height: 420px;
+  margin: 6px 0;
+  border-radius: var(--sw-radius-sm);
+  border: 1px solid var(--background-modifier-border, rgba(128, 128, 128, 0.3));
+  cursor: zoom-in;
+  object-fit: contain;
+  background: #fff;
+}
+
+.scholarium-v2dev .scholarium-weaver__figure-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__figure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border, rgba(128, 128, 128, 0.3));
+  border-radius: var(--sw-radius-sm);
+  min-width: 0;
+}
+
+.scholarium-v2dev .scholarium-weaver__figure.is-blocked {
+  opacity: 0.75;
+}
+
+.scholarium-v2dev .scholarium-weaver__figure-image {
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 4px;
+  cursor: zoom-in;
+}

@@ -1,34 +1,53 @@
-# vscode
-.vscode 
+# Obsidian local plugin state
+data.json
+# data.json holds API keys, and hand-made copies of it are not covered by the
+# bare name above or by *.bak — `data.json.bak-20260810-175409` matches neither
+# and sat untracked in the working tree, one `git add -A` away from publishing
+# those keys.
+data.json.bak*
+data.json.*.bak
+data.json.orig
 
-# Intellij
-*.iml
-.idea
-
-# npm
-node_modules
-
-# Don't include the compiled main.js file in the repo.
-# They should be uploaded to GitHub releases instead.
-main.js
-ketcher-runtime.cjs
-ketcher-runtime.js
-main.build.js
+# Local backups and generated bundles
+backup-*/
 *.bak
-
-# Exclude sourcemaps
+# Same footgun as the data.json case above, generalized: this repo
+# names backups <file>.bak-<timestamp>-<description>, which *.bak alone
+# does not match (no trailing ".bak"). Catch that shape too.
+*.bak-*
 *.map
 
-# obsidian
-data.json
-
-# local scratch / vault exports
-backup/
-build-out.txt
-output/
-promotion/
-src/__probe.txt
-囍樂-公开版/
-
-# Exclude macOS Finder (System Explorer) View States
+# Local/editor files
 .DS_Store
+.vscode/
+.idea/
+.agents/
+.playwright-cli/
+output/
+deduction-debug.log
+snapshot-source-build-*/
+*.bundle
+
+# A plugin checkout must never acquire a Vault-style Research tree. A prior
+# test run created this path under the plugin root; keeping the exact root
+# ignored prevents it from entering a release without hiding fixture folders
+# named Research elsewhere in the repository.
+/Research/
+agent-canvas-demo/node_modules/
+agent-canvas-demo/.git-history/
+**/__pycache__/
+*.py[cod]
+agent-canvas-demo/bridge/bridge.config.json
+agent-canvas-demo/bridge/.env
+agent-canvas-demo/bridge/*.log
+agent-canvas-demo/bridge/*.pid
+agent-canvas-demo/bridge/audit/
+agent-canvas-demo/bridge/runtime/
+
+# Local institutional-login cookies / private runtime state
+Scholarium/secrets/
+**/Scholarium/secrets/
+Scholarium/runtime/
+**/Scholarium/runtime/
+*.cookies.txt
+webvpn-cookies.txt

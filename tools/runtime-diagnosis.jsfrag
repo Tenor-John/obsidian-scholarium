@@ -1,0 +1,97 @@
+/** 本机运行时没就绪时，告诉用户“哪里坏了、怎么修”，而不是只说“请稍候”。 */
+function schRuntimeDiagnose() {
+  const fs = require("node:fs"), path = require("node:path");
+  const root = schRuntimeRoot();
+  const out = { root, link: "", problems: [], fixes: [] };
+  let stat = null;
+  try { stat = fs.lstatSync(root); } catch (_) { /* absent */ }
+  if (!stat) {
+    out.problems.push(`运行时目录不存在：${root}`);
+    out.fixes.push("在织研者点“连接运行时”，插件会自动下载并安装运行时（需要能访问 GitHub，国内网络请先开代理）。");
+    return out;
+  }
+  if (stat.isSymbolicLink()) {
+    try { out.link = fs.readlinkSync(root); } catch (_) { out.link = "（无法读取链接目标）"; }
+    if (!fs.existsSync(root)) {
+      out.problems.push(`运行时目录是一个链接，指向 ${out.link}，但这个位置已经不存在。`);
+      out.fixes.push(`恢复 ${out.link} 这个文件夹；或者删除链接 ${root}，再在织研者点“连接运行时”重新安装。`);
+      return out;
+    }
+  }
+  if (!fs.existsSync(path.join(root, "current.json"))) {
+    out.problems.push(`运行时目录里没有 current.json，说明安装没有完成${out.link ? `（该目录是指向 ${out.link} 的链接，可能指错了地方）` : ""}。`);
+    out.fixes.push(out.link ? `确认链接目标 ${out.link} 是完整的运行时目录（里面应有 current.json 和 versions\\）；不是的话删除链接后重新连接安装。` : "在织研者点“连接运行时”重新安装。");
+  }
+  let status = null;
+  try { status = schRuntimeBootstrap.status(root); } catch (error) { out.problems.push("读取运行时状态失败：" + (error && error.message || error)); }
+  if (status && status.state === "degraded") {
+    const missing = (status.packs || []).filter((pack) => !pack.present).map((pack) => pack.name);
+    out.problems.push("运行时文件不完整" + (missing.length ? "，缺少：" + missing.join("、") : "（版本目录缺失）") + "。");
+    out.fixes.push("在织研者点“连接运行时”会自动重新安装缺失部分；若反复失败，删除 " + root + " 后重新连接。");
+  }
+  if (status && status.state === "ready" && status.activeVersion !== SCH_RUNTIME_RELEASE.version) {
+    out.problems.push(`已安装的运行时版本是 ${status.activeVersion}，插件需要 ${SCH_RUNTIME_RELEASE.version}。`);
+    out.fixes.push("在织研者点“连接运行时”会安装新版本（需要访问 GitHub）。");
+  }
+  if (status && status.state === "ready" && status.activeVersion === SCH_RUNTIME_RELEASE.version) {
+    try { schRuntimeLaunchSpecUnchecked(); } catch (error) {
+      out.problems.push(String(error && error.message || error));
+      out.fixes.push("运行时文件被删改过：删除 " + root + "\\versions\\" + status.activeVersion + " 后重新连接安装。");
+    }
+  }
+  if (fs.existsSync(path.join(root, "incoming", "manifest.json"))) {
+    out.fixes.push("检测到 " + path.join(root, "incoming") + " 里有离线安装包，点“连接运行时”会优先用它安装。");
+  }
+  return out;
+}
+function schRuntimeLaunchSpecUnchecked() {
+  const fs = require("node:fs"), path = require("node:path");
+  const core = path.join(schRuntimeRoot(), "versions", SCH_RUNTIME_RELEASE.version, "core");
+  const required = [
+    path.join(core, "runtime", "node", process.platform === "win32" ? "node.exe" : "bin/node"),
+    path.join(core, "agent-canvas-demo", "start-local.js"),
+    path.join(core, "runtime", "python", process.platform === "win32" ? "python.exe" : "bin/python3"),
+  ];
+  const missing = required.filter((file) => !fs.existsSync(file));
+  if (missing.length) throw new Error("运行时缺少文件：" + missing.join("；"));
+}
+function schRuntimeExplain(error) {
+  const message = String(error && error.message || error || "");
+  let diagnosis;
+  try { diagnosis = schRuntimeDiagnose(); } catch (_) { diagnosis = { root: "", problems: [], fixes: [] }; }
+  if (/Failed to fetch|fetch failed|ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|network|getaddrinfo|socket hang up/i.test(message)) {
+    diagnosis.problems.push("从 GitHub 下载运行时失败（网络连不上 github.com）。");
+    diagnosis.fixes.push("打开代理/VPN 后再点“连接运行时”；或在能上网的电脑下载 2.0.9 版运行时安装包，放到 " + (diagnosis.root ? diagnosis.root + "\\incoming\\" : "运行时目录的 incoming 文件夹") + " 后重试。");
+  }
+  const lines = [message || "本机运行时没有就绪"];
+  if (diagnosis.problems.length) lines.push("问题：" + diagnosis.problems.join(" "));
+  if (diagnosis.fixes.length) lines.push("如何修复：" + diagnosis.fixes.map((fix, index) => `${index + 1}. ${fix}`).join(" "));
+  if (diagnosis.root) lines.push("运行时目录：" + diagnosis.root);
+  return lines.join("\n");
+}
+function schOpenRuntimeDiagnosis(app) {
+  const { Modal, Notice } = require("obsidian");
+  const diagnosis = schRuntimeDiagnose();
+  const modal = new Modal(app);
+  modal.titleEl.setText("本机运行时诊断");
+  const body = modal.contentEl;
+  body.createEl("p", { text: "运行时目录：" + diagnosis.root + (diagnosis.link ? "（链接 → " + diagnosis.link + "）" : "") }).setCssStyles({ wordBreak: "break-all" });
+  if (!diagnosis.problems.length) body.createEl("p", { text: "没有发现安装问题。若仍连不上，请在织研者点“连接运行时”，再看错误提示。" });
+  for (const problem of diagnosis.problems) body.createEl("p", { text: "问题：" + problem }).setCssStyles({ color: "var(--text-error)" });
+  if (diagnosis.fixes.length) {
+    body.createEl("b", { text: "如何修复" });
+    const list = body.createEl("ol");
+    for (const fix of diagnosis.fixes) list.createEl("li", { text: fix });
+  }
+  const row = body.createDiv();
+  row.setCssStyles({ display: "flex", gap: "8px", marginTop: "10px" });
+  row.createEl("button", { text: "打开运行时目录" }).onclick = () => {
+    try { require("electron").shell.openPath(require("node:fs").existsSync(diagnosis.root) ? diagnosis.root : require("node:path").dirname(diagnosis.root)); }
+    catch (_) { new Notice(diagnosis.root); }
+  };
+  row.createEl("button", { text: "复制诊断信息" }).onclick = () => {
+    navigator.clipboard.writeText([diagnosis.root, diagnosis.link, ...diagnosis.problems, ...diagnosis.fixes].filter(Boolean).join("\n"));
+    new Notice("已复制");
+  };
+  modal.open();
+}

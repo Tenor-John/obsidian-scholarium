@@ -1,0 +1,70 @@
+---
+name: paper-kg-llm-rag
+version: 0.1.0
+description: Generate scientific knowledge graphs from PDF papers (LLM+RAG design draft; NOT the same as the implemented agent-canvas-demo/skills/paper-knowledge-graph runner).
+---
+
+# PaperGraph Skill
+
+> 命名说明（2026-08-17）：本设计原名 paper-knowledge-graph，与
+> agent-canvas-demo/skills/paper-knowledge-graph（已实现、sidecar 驱动、
+> 只产出 MENTIONS 边）重名。为避免接入时互相覆盖，本设计稿更名为
+> paper-kg-llm-rag；它是完整 LLM+RAG 管线的目标形态，尚未实现。
+
+## Input
+Scientific PDF papers.
+
+## Pipeline
+
+1. Parse PDF with Docling/GROBID.
+2. Extract metadata.
+3. Use LLM structured output.
+4. Build entity relationship graph.
+5. Validate relations.
+6. Export graph.
+7. Visualize.
+
+## Required Nodes
+
+- Paper
+- Author
+- Institution
+- Keyword
+- KeywordCluster
+- Experiment
+- ExperimentalMethod
+- Material
+- TestMethod
+- ExperimentalData
+- Conclusion
+
+## Required Relations
+
+Paper - HAS_AUTHOR -> Author
+
+Author - AFFILIATED_WITH -> Institution
+
+Paper - HAS_KEYWORD -> Keyword
+
+Keyword - BELONGS_TO -> KeywordCluster
+
+Paper - HAS_EXPERIMENT -> Experiment
+
+Experiment - USES_METHOD -> ExperimentalMethod
+
+ExperimentalMethod - USES_MATERIAL -> Material
+
+ExperimentalMethod - VERIFIED_BY -> TestMethod
+
+Experiment - PRODUCES -> ExperimentalData
+
+ExperimentalData - SUPPORTS -> Conclusion
+
+## Evidence
+
+Every node and relation should keep:
+- paper_id
+- page
+- section
+- evidence_text
+- confidence

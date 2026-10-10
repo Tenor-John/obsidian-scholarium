@@ -1,0 +1,17 @@
+{
+  "repository": "scholarium-v2-source",
+  "commit": "818fe7b62667fed76d5f1c8db35d38709302da63",
+  "uncommittedSourceChanges": false,
+  "entry": "src/plugin/scholarium-embed.ts",
+  "globalName": "ScholariumNativeWeaver",
+  "files": {
+    "scholarium-weaver-native.js": {
+      "bytes": 1035147,
+      "sha256": "b3f0cf25293ee46553ebdd468ab62e84d1ed3f1529dc369603a216bd9c8b54a4"
+    },
+    "scholarium-weaver-native.css": {
+      "bytes": 80996,
+      "sha256": "761e5e045e40bf106530c66548cf13dd2c33292529c58940f834325397328c15"
+    }
+  }
+}

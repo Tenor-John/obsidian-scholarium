@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node start-local.js",
     "bridge": "node bridge/server.js",
-    "check": "node --check app.js && node --check bridge-ui.js && node --check shell-ui.js && node --check research-chat-core.js && node --check settings-core.js && node --check settings-ui.js && node --check knowledge-graph-core.js && node --check graph-projection-core.js && node --check graph-review-ui.js && node --check graph-list.js && node --check p7-rehearsal.js && node --check idea-mode-core.js && node --check idea-mode.js && node --check idea-list.js && node --check project-mode-core.js && node --check project-mode.js && node --check bridge/server.js && node --check bridge/provider-context.js && node --check bridge/verify-live.js && node --check start-local.js && node --check skills/scansci-institutional/scripts/scansci_download.js && node --check skills/paper-downloader/scripts/browser_downloader.js && node --check skills/paper-downloader/scripts/api_resolver.js && node --check skills/rss-refresh-and-score/scripts/request_and_wait.js",
+    "check": "node --check app.js && node --check concept-query-core.js && node --check pipeline-steps-core.js && node --check bridge-ui.js && node --check shell-ui.js && node --check research-chat-core.js && node --check settings-core.js && node --check settings-ui.js && node --check knowledge-graph-core.js && node --check graph-projection-core.js && node --check graph-review-ui.js && node --check graph-list.js && node --check p7-rehearsal.js && node --check idea-mode-core.js && node --check idea-mode.js && node --check idea-list.js && node --check project-mode-core.js && node --check project-mode.js && node --check bridge/server.js && node --check bridge/scholarium-mcp.js && node --check bridge/rag-core.js && node --check bridge/provider-context.js && node --check bridge/verify-live.js && node --check start-local.js && node --check skills/rag-ingest/scripts/rag.js && node --check skills/paper-knowledge-graph/scripts/build_paper_graph.js && node --check skills/scansci-institutional/scripts/scansci_download.js && node --check skills/paper-downloader/scripts/browser_downloader.js && node --check skills/paper-downloader/scripts/api_resolver.js && node --check skills/rss-refresh-and-score/scripts/request_and_wait.js",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
     "verify:live": "node bridge/verify-live.js",
     "verify": "npm run check && npm test"
@@ -16,5 +16,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@huggingface/inference": "^4.13.28"
   }
 }

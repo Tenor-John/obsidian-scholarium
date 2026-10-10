@@ -1,0 +1,583 @@
+    manualCapturePublisherKey(value) {
+      try { return new URL(String(value || "")).hostname.toLowerCase().replace(/^www\./, ""); }
+      catch (_) { return "unknown"; }
+    }
+    async manualCaptureAssessment(webview) {
+      const url = (typeof webview.getURL === "function" && webview.getURL()) || "";
+      let isPdf = /\.pdf([?#].*)?$/i.test(url);
+      if (!isPdf) {
+        try { isPdf = (await webview.executeJavaScript("document.contentType")) === "application/pdf"; }
+        catch (_) {}
+      }
+      if (isPdf) return { captureState: "verified", reason: "pdf_page", url };
+      await this.normalizeLazyImages(webview);
+      const captured = await this.captureSourceHtml(webview);
+      let assessment = this.sourceCaptureAssessment(captured.raw, this.buildCleanHtml(captured.raw, captured.finalUrl || url));
+      if (assessment.captureState !== "verified" && captured.domRaw && captured.domRaw !== captured.raw) {
+        const domAssessment = this.sourceCaptureAssessment(captured.domRaw, this.buildCleanHtml(captured.domRaw, captured.finalUrl || url));
+        if (domAssessment.captureState === "verified") assessment = domAssessment;
+      }
+      return { ...assessment, url: captured.finalUrl || url };
+    }
+    /** 只读探测：不发请求、不滚动、不改 DOM。登录页/验证页上只能用它轮询——
+     * 完整评估会 fetch(location.href)，在统一身份认证（CAS/IdP）上等于重新
+     * 打开登录页，服务端换发一次性 execution 令牌，用户正在填的表单随即作废，
+     * 提交后又回到登录页（“反复要求身份认证”的根因）。 */
+    async manualCaptureQuickCheck(webview) {
+      let info = null;
+      try {
+        info = JSON.parse(String(await webview.executeJavaScript(`(function(){var pw=[].slice.call(document.querySelectorAll('input[type=password]')).some(function(e){var r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden';});var b=document.body?document.body.innerText||'':'';return JSON.stringify({url:location.href,ready:document.readyState,ct:document.contentType||'',title:document.title||'',text:b.slice(0,3000),pw:pw});})()`)) || "{}");
+      } catch (_) {
+        return { kind: "loading", url: (typeof webview.getURL === "function" && webview.getURL()) || "" };
+      }
+      const url = String(info.url || "");
+      let host = "", pathname = "";
+      try { const parsed = new URL(url); host = parsed.hostname.toLowerCase(); pathname = parsed.pathname.toLowerCase(); } catch (_) {}
+      if (info.ct === "application/pdf" || /\.pdf([?#].*)?$/i.test(url)) return { kind: "page", url, host };
+      const loginHost = /(^|\.)(id|cas|sso|idp|login|passport|auth|signin|shibboleth|wayf|ds)\./.test(host) || /carsi/.test(host);
+      const loginPath = /\/(cas|idp|sso|login|signin|sign-in|shibboleth|saml2?|wayf|oauth2?\/authorize|profile\/saml2)(\/|$|\?)/.test(pathname);
+      if (loginHost || (loginPath && info.pw) || (info.pw && /统一身份认证|身份认证|single sign[- ]on|institutional login|log ?in to|sign in to/i.test(info.title + " " + info.text.slice(0, 600)))) {
+        return { kind: "login", url, host };
+      }
+      if (/Just a moment|Checking your browser|verify you are human|Client Challenge|captcha|人机验证|安全验证|滑动验证/i.test(info.title + " " + info.text.slice(0, 1500))) {
+        return { kind: "challenge", url, host };
+      }
+      if (info.ready !== "complete") return { kind: "loading", url, host };
+      return { kind: "page", url, host };
+    }
+    /** 只读收集当前页能指向“正文 PDF”的地址：出版社写在页面里的
+     * citation_pdf_url，Wiley/ACS 的固定 PDF 路由，以及页面上的 PDF 链接
+     * （排除补充材料）。老文章常常只有扫描 PDF（如 Wiley 的 ePDF 阅读器），
+     * 网页正文永远不会“完整加载”，就改走 PDF。 */
+    async manualCapturePdfCandidates(webview) {
+      try {
+        const list = JSON.parse(String(await webview.executeJavaScript(`(function(){var out=[];function add(u){try{u=new URL(u,location.href).href;if(/^https?:/i.test(u)&&!/suppl|supporting|\\bsi\\b|esi/i.test(u)&&out.indexOf(u)<0)out.push(u);}catch(e){}}
+          [].forEach.call(document.querySelectorAll('meta[name="citation_pdf_url"],meta[name="bepress_citation_pdf_url"],meta[name="eprints.document_url"]'),function(m){add(m.content);});
+          var h=location.href;
+          var w=h.match(/^(https?:\\/\\/[^\\/]*wiley\\.com)\\/doi\\/(?:(?:epdf|full|abs|pdf|pdfdirect|reader)\\/)?(10\\.[^?#]+)/i);
+          if(w){add(w[1]+'/doi/pdfdirect/'+w[2]+'?download=true');add(w[1]+'/doi/pdf/'+w[2]);}
+          var a=h.match(/^(https?:\\/\\/pubs\\.acs\\.org)\\/doi\\/(?:(?:abs|full|epdf)\\/)?(10\\.[^?#]+)/i);
+          if(a){add(a[1]+'/doi/pdf/'+a[2]);}
+          [].forEach.call(document.querySelectorAll('a[href]'),function(x){var u=x.getAttribute('href')||'';if(out.length<8&&/pdfdirect|\\/doi\\/pdf\\/|\\/articlepdf\\/|\\/content\\/pdf\\/|\\.pdf([?#]|$)/i.test(u))add(u);});
+          return JSON.stringify(out.slice(0,8));})()`)) || "[]");
+        return Array.isArray(list) ? list : [];
+      } catch (_) {
+        return [];
+      }
+    }
+    async notifyManualCaptureResult(article, kind, vaultPath) {
+      if (!article.manualQueueId) return null;
+      const dashboard = window.__scholariumDashboardView;
+      const queue = Array.isArray(dashboard?.__manualDownloadQueue)
+        ? dashboard.__manualDownloadQueue : this.manualDownloadQueue;
+      const item = (Array.isArray(queue) ? queue : []).find((entry) => entry.id === article.manualQueueId) || {};
+      const tools = schEvidenceTools(this.plugin);
+      const vaultBase = tools.path.resolve(tools.vault);
+      const workspace = tools.path.resolve(item.workspace || article.targetWorkspace || vaultBase);
+      const absolute = tools.path.resolve(vaultBase, String(vaultPath || ""));
+      const relative = tools.path.relative(workspace, absolute).replace(/\\/g, "/");
+      if (!relative || relative.startsWith("../") || tools.path.isAbsolute(relative)) {
+        throw new Error("抓取文件不在该 Pipeline 的工作区内，未标记完成：" + vaultPath);
+      }
+      const artifact = {
+        id: article.manualQueueId,
+        doi: article.doi || item.doi || "",
+        title: article.title || item.title || "",
+        pipelineRunId: item.pipelineRunId || "",
+        path: relative,
+        kind,
+      };
+      // 文件已经安全落盘：无论能否归入 Pipeline，这一条都算“已下载”，必须
+      // 从待处理里移除（否则重跑会再下一遍、页面也永远清不掉）。归入失败
+      // （旧 v2 运行没有 v3 快照、织研者未打开、运行中）只记下来，可稍后补归。
+      let claimError = "";
+      if (artifact.pipelineRunId) {
+        try {
+          if (typeof dashboard?.__notifyManualCapture !== "function") {
+            throw new Error("原生织研者尚未打开");
+          }
+          await dashboard.__notifyManualCapture(artifact);
+        } catch (error) {
+          claimError = error && error.message ? error.message : String(error);
+          const pending = Array.isArray(this.data.manualCapturePendingClaims) ? this.data.manualCapturePendingClaims : [];
+          pending.push({ ...artifact, workspace: item.workspace || article.targetWorkspace || "", error: claimError, savedAt: new Date().toISOString() });
+          this.data.manualCapturePendingClaims = pending.slice(-500);
+          new Ne.Notice("文件已保存，但未归入 Pipeline（" + claimError.slice(0, 60) + "）；已记录，可稍后补归", 6000);
+        }
+      }
+      this.__lastManualClaimError = claimError;
+      this.completeManualDownload(article.manualQueueId);
+      if (kind === "pdf") {
+        try { this.scheduleMineruOcr(absolute); } catch (error) { console.warn("[Scholarium] MinerU schedule failed", error); }
+      }
+      return claimError ? { ...artifact, claimError } : artifact;
+    }
+    async startManualCaptureBatch(items) {
+      if (this.__manualCaptureBatchRunning) {
+        new Ne.Notice("批量抓取正在运行");
+        return;
+      }
+      const queue = (Array.isArray(items) ? items : this.manualDownloadQueue).filter((item) => item && /^https?:\/\/\S+$/i.test(item.url || ""));
+      if (!queue.length) {
+        new Ne.Notice("没有可抓取的待处理文献");
+        return;
+      }
+      const pipelineItems = queue.filter((item) => item.pipelineRunId);
+      if (pipelineItems.length && typeof window.__scholariumDashboardView?.__notifyManualCapture !== "function") {
+        // 先确认能归档再抓：否则文件存下了却写不进 Pipeline，只能算失败。
+        new Ne.Notice("请先打开一次「织研者」标签（原生面板需要先挂载），再开始批量抓取", 8000);
+        return;
+      }
+      // 保存 PDF/网页全文要用本机运行时里的工具；运行时坏了就先说清楚怎么修，
+      // 不要跑完一整轮再报几十个相同的失败。
+      try {
+        schEvidenceTools(this.plugin);
+      } catch (error) {
+        new Ne.Notice("批量抓取暂时不能开始：本机运行时没有就绪，已打开诊断窗口，按提示修复后再试。", 10000);
+        try { schOpenRuntimeDiagnosis(this.app); } catch (_) { new Ne.Notice(String(error && error.message || error), 15000); }
+        return;
+      }
+      this.__manualCaptureBatchRunning = !0;
+      const report = { pdf: 0, webclip: 0, skipped: 0, failed: 0, remaining: 0, reasons: {}, total: queue.length, finishedAt: "", done: [] };
+      let lastReason = "";
+      const addReason = (reason) => { lastReason = reason; report.reasons[reason] = (report.reasons[reason] || 0) + 1; };
+      const publisherCounts = new Map(), challengeStreak = new Map(), blocked = new Set();
+      let stop = !1, skip = !1, lastStartedAt = 0;
+      const overlay = document.createElement("div");
+      overlay.setCssStyles({ position: "fixed", inset: "0", zIndex: "10000", background: "rgba(12,18,30,.78)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" });
+      const dialog = overlay.createDiv({ cls: "scholarium-manual-capture-batch" });
+      dialog.setCssStyles({ width: "min(1280px,97vw)", height: "min(920px,94vh)", background: "var(--background-primary)", borderRadius: "12px", padding: "12px", display: "flex", flexDirection: "column", gap: "8px" });
+      const bar = dialog.createDiv();
+      bar.setCssStyles({ display: "flex", alignItems: "center", gap: "8px" });
+      const status = bar.createEl("p", { text: "准备批量抓取…" });
+      status.setCssStyles({ flex: "1", margin: "0" });
+      const retry = bar.createEl("button", { text: "刷新本页" });
+      const skipButton = bar.createEl("button", { text: "跳过这篇" });
+      const stopButton = bar.createEl("button", { text: "结束本轮", cls: "mod-warning" });
+      const webview = document.createElement("webview");
+      webview.setAttribute("partition", "persist:scholarium-research-browser");
+      webview.setAttribute("src", "about:blank");
+      webview.setCssStyles({ width: "100%", flex: "1", minHeight: "0" });
+      dialog.appendChild(webview);
+      const footer = dialog.createEl("small", { text: "使用当前研究浏览器登录态；不会绕过验证码或自动登录。每篇至少间隔 10 秒，每家出版社每轮最多 20 篇。" });
+      footer.setCssStyles({ color: "var(--text-muted)" });
+      retry.onclick = () => { try { typeof webview.reloadIgnoringCache === "function" ? webview.reloadIgnoringCache() : webview.reload(); } catch (_) {} };
+      skipButton.onclick = () => { skip = !0; };
+      stopButton.onclick = () => { stop = !0; skip = !0; };
+      webview.addEventListener("new-window", (event) => {
+        const target = String(event.url || "");
+        if (/^https?:/i.test(target)) { event.preventDefault?.(); webview.loadURL(target); }
+      });
+      document.body.appendChild(overlay);
+      // webview 必须挂到 DOM 并触发 dom-ready 后才能 loadURL（否则第一篇直接报错）。
+      await new Promise((resolve) => {
+        const timer = window.setTimeout(resolve, 15000);
+        webview.addEventListener("dom-ready", () => { window.clearTimeout(timer); resolve(); }, { once: !0 });
+      });
+
+      const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+      const navigate = (url) => new Promise((resolve, reject) => {
+        let settled = !1;
+        const timer = window.setTimeout(() => finish(new Error("页面加载超过 90 秒")), 90000);
+        const cleanup = () => {
+          window.clearTimeout(timer);
+          webview.removeEventListener("did-finish-load", loaded);
+          webview.removeEventListener("did-fail-load", failed);
+        };
+        const finish = (error) => { if (settled) return; settled = !0; cleanup(); error ? reject(error) : resolve(); };
+        const loaded = () => finish();
+        const failed = (event) => {
+          if (Number(event.errorCode) === -3 || event.isMainFrame === !1) return;
+          finish(new Error(`页面加载失败 ${event.errorCode || ""} ${event.errorDescription || ""}`));
+        };
+        webview.addEventListener("did-finish-load", loaded);
+        webview.addEventListener("did-fail-load", failed);
+        // 用 src 属性导航：webview 尚未 dom-ready 时 loadURL 会直接抛错。
+        try { webview.setAttribute("src", url); } catch (error) { finish(error); }
+      });
+
+      try {
+        for (let index = 0; index < queue.length && !stop; index++) {
+          const counts = { failed: report.failed, skipped: report.skipped };
+          lastReason = "";
+          try {
+          const item = queue[index];
+          // doi.org 只是跳板：出版社按跳转后的真实域名计数/熔断。
+          const firstHost = this.manualCapturePublisherKey(item.url);
+          const viaResolver = /^(dx\.)?doi\.org$/.test(firstHost);
+          let publisher = firstHost;
+          if (!viaResolver) {
+            if (blocked.has(publisher)) { report.skipped++; addReason("出版社已熔断"); continue; }
+            if ((publisherCounts.get(publisher) || 0) >= 20) { report.skipped++; addReason("出版社本轮已达 20 篇上限"); continue; }
+          }
+          const delay = Math.max(0, 10000 - (Date.now() - lastStartedAt));
+          if (delay) {
+            status.setText(`限速等待 ${Math.ceil(delay / 1000)} 秒 · 下一篇 ${index + 1}/${queue.length}`);
+            for (let left = delay; left > 0 && !stop; left -= 500) await wait(Math.min(500, left));
+            if (stop) break;
+          }
+          lastStartedAt = Date.now();
+          skip = !1;
+          this.__lastManualClaimError = "";
+          status.setText(`正在打开 ${index + 1}/${queue.length} · ${item.title || item.doi || publisher}`);
+          try {
+            await navigate(item.url);
+            await wait(1600);
+            let assessment = null, gaveUp = "", counted = !1, publisherFixed = !viaResolver;
+            let interventionSince = 0, contentSince = Date.now(), lastFullAt = 0, lastFullUrl = "";
+            const fixPublisher = (host) => {
+              if (publisherFixed || !host) return !0;
+              publisherFixed = !0;
+              publisher = this.manualCapturePublisherKey("https://" + host + "/");
+              if (blocked.has(publisher)) { report.skipped++; addReason("出版社已熔断"); return !1; }
+              if ((publisherCounts.get(publisher) || 0) >= 20) { report.skipped++; addReason("出版社本轮已达 20 篇上限"); return !1; }
+              return !0;
+            };
+            let capped = !1, savedResult = null, pdfError = "";
+            const pdfTriedOn = new Set();
+            const article = {
+              id: "direct-" + Date.now(), title: item.title || item.doi || item.url,
+              link: item.url, doi: item.doi || "", manualQueueId: item.id,
+              targetWorkspace: item.workspace || "", author: "", affiliations: [], summary: "", contentHtml: "",
+            };
+            while (!stop && !skip) {
+              const quick = await this.manualCaptureQuickCheck(webview);
+              if (quick.kind === "login" || quick.kind === "challenge") {
+                // 只读等待：不刷新、不请求、不滚动，用户的登录/验证不会被打断。
+                if (!interventionSince) interventionSince = Date.now();
+                // 单点登录常常一闪而过（已登录时 IdP 自动跳回）；停留 8 秒以上才算“需要人工”。
+                if (!counted && Date.now() - interventionSince >= 8000) {
+                  counted = !0;
+                  const key = publisherFixed ? publisher : (quick.host || publisher);
+                  const streak = (challengeStreak.get(key) || 0) + 1;
+                  challengeStreak.set(key, streak);
+                  if (quick.kind === "challenge" && streak >= 3) {
+                    // 只对出版社人机验证熔断；机构登录是一次性的，登录后后续文献自动放行。
+                    blocked.add(key);
+                    publisher = key;
+                    report.skipped++;
+                    addReason("出版社连续 3 篇需要人机验证，已熔断");
+                    skip = !0;
+                    break;
+                  }
+                }
+                if (Date.now() - interventionSince >= 10 * 60000) { gaveUp = "等待人工验证/登录超过 10 分钟"; break; }
+                status.setText(`${index + 1}/${queue.length} · ` + (quick.kind === "login"
+                  ? "请在本窗口登录机构账号（只需一次，登录后本轮其余文献会自动沿用）；登录完成后自动继续"
+                  : "请在本窗口完成人机验证；通过后会自动继续"));
+                await wait(2500);
+                continue;
+              }
+              if (interventionSince) { interventionSince = 0; contentSince = Date.now(); }
+              if (quick.kind === "loading") {
+                if (Date.now() - contentSince >= 60000) { gaveUp = "页面 60 秒内没有加载完成"; break; }
+                await wait(1500);
+                continue;
+              }
+              if (!fixPublisher(quick.host)) { capped = !0; break; }
+              // 完整评估会重新请求当前页面：同一地址至少隔 12 秒才重评一次。
+              if (quick.url !== lastFullUrl || Date.now() - lastFullAt >= 12000) {
+                assessment = await this.manualCaptureAssessment(webview);
+                lastFullAt = Date.now();
+                lastFullUrl = quick.url;
+                if (assessment.captureState === "verified") break;
+                if (!pdfTriedOn.has(quick.url)) {
+                  pdfTriedOn.add(quick.url);
+                  const candidates = await this.manualCapturePdfCandidates(webview);
+                  if (candidates.length) {
+                    status.setText(`${index + 1}/${queue.length} · 网页没有完整正文，改为下载 PDF…`);
+                    try {
+                      const viaPdf = await this.clipAndSummarize(webview, article, Object.assign(document.createElement("button"), { innerHTML: "抓取" }), {
+                        throwOnError: !0, openResult: !1, quiet: !0, skipSummary: !0, forceNewCapture: !0, pdfCandidates: candidates,
+                      });
+                      if (viaPdf?.pdf) { savedResult = viaPdf; break; }
+                    } catch (error) {
+                      pdfError = error && error.message ? error.message : String(error);
+                    }
+                  }
+                }
+              }
+              const paywall = assessment && assessment.reason === "paywall_or_login";
+              const limit = paywall ? 10 * 60000 : 60000;
+              if (Date.now() - contentSince >= limit) {
+                gaveUp = (paywall ? "出版社页面仍要求登录/购买，等待超过 10 分钟" : "60 秒内未识别到完整正文") + (pdfError ? "；PDF 也未取到：" + pdfError.slice(0, 80) : "");
+                break;
+              }
+              status.setText(`${index + 1}/${queue.length} · ` + (paywall
+                ? "出版社显示需登录/订阅：请在本窗口点“机构登录/Access through your institution”；正文出现后自动继续"
+                : "正文尚未完整加载；正在等待，也可刷新或跳过"));
+              await wait(2500);
+            }
+            if (stop) break;
+            if (capped) continue;
+            publisherCounts.set(publisher, (publisherCounts.get(publisher) || 0) + 1);
+            if (gaveUp) { report.failed++; addReason(gaveUp); continue; }
+            if (skip) {
+              if (!blocked.has(publisher)) { report.skipped++; addReason("用户跳过"); }
+              continue;
+            }
+            challengeStreak.set(publisher, 0);
+            let saved = savedResult;
+            if (!saved) {
+              status.setText(`${index + 1}/${queue.length} · 已识别全文，正在保存…`);
+              const dummy = document.createElement("button");
+              dummy.innerHTML = "抓取";
+              saved = await this.clipAndSummarize(webview, article, dummy, {
+                throwOnError: !0, openResult: !1, quiet: !0, skipSummary: !0, forceNewCapture: !0,
+              });
+            }
+            if (saved?.pdf || saved?.clip) {
+              report.done.push({
+                title: item.title || item.doi || item.url, doi: item.doi || "",
+                kind: saved.pdf ? "pdf" : "webclip",
+                path: String((saved.pdf && saved.pdf.path) || (saved.clip && saved.clip.path) || ""),
+                note: this.__lastManualClaimError ? "已保存，但未归入 Pipeline（" + String(this.__lastManualClaimError).slice(0, 60) + "）" : "",
+              });
+            }
+            this.__lastManualClaimError = "";
+            if (saved?.pdf) report.pdf++;
+            else if (saved?.clip) report.webclip++;
+            else { report.failed++; addReason("抓取没有返回文件"); }
+          } catch (error) {
+            report.failed++;
+            addReason(error && error.message ? error.message : String(error));
+          }
+          } finally {
+            const entry = queue[index];
+            if (entry) {
+              if (report.failed > counts.failed) this.recordManualAttempt(entry.id, "failed", lastReason);
+              else if (report.skipped > counts.skipped) this.recordManualAttempt(entry.id, "skipped", lastReason);
+            }
+          }
+        }
+      } finally {
+        report.finishedAt = new Date().toISOString();
+        // 四项加未处理必须等于总数——结论数字与队列对得上。
+        report.remaining = Math.max(0, report.total - report.pdf - report.webclip - report.skipped - report.failed);
+        report.stopped = stop;
+        this.manualCaptureLastReport = report;
+        this.data.manualCaptureLastReport = report;
+        this.save();
+        this.__manualCaptureBatchRunning = !1;
+        try { overlay.remove(); } catch (_) {}
+        this.rerender();
+        const reasons = Object.entries(report.reasons).map(([reason, count]) => `${reason} ${count}`).join("；");
+        new Ne.Notice(`批量抓取结束：PDF ${report.pdf}，网页全文 ${report.webclip}，跳过 ${report.skipped}，失败 ${report.failed}${report.remaining ? "，未处理 " + report.remaining : ""}（共 ${report.total}）${reasons ? "。" + reasons : ""}`, 10000);
+      }
+    }
+    /* ---- MinerU 在线识别 ----------------------------------------------
+     * 下载到的 PDF（默认只处理没有文字层的扫描版）上传到 mineru.net 官方
+     * v4 接口解析，结果 full.md + 图片写到 PDF 旁边的 <name>.pdf.mineru/。
+     * Token 只存在 Vault 之外（%APPDATA%\Scholarium\secrets\mineru.json），
+     * 绝不进 data.json；请求走 Obsidian requestUrl（无 CORS 限制）。 */
+    /** Token 与模式存放在统一的密钥文件里（scholarium-secrets.json 的 mineru 段），
+     * 这里只读写插件设置；保存时由密钥文件机制写回该文件。 */
+    mineruConfig() {
+      const settings = (this.plugin && this.plugin.settings) || {};
+      const mode = ["off", "scanned", "all"].includes(settings.mineruOcrMode) ? settings.mineruOcrMode : "scanned";
+      return { token: String(settings.mineruApiKey || "").trim(), mode };
+    }
+    async saveMineruConfig(next) {
+      this.plugin.settings.mineruApiKey = String(next.token || "").trim();
+      this.plugin.settings.mineruOcrMode = next.mode;
+      await this.plugin.saveSettings();
+    }
+    openMineruSettings() {
+      const current = this.mineruConfig();
+      const modal = new Ne.Modal(this.app);
+      modal.titleEl.setText("MinerU 在线识别");
+      const box = modal.contentEl;
+      box.createEl("p", { text: "下载到的 PDF 会上传到 mineru.net 官方接口解析为 Markdown（含公式、表格、图片），结果保存在 PDF 旁边的 .mineru 文件夹，并自动用于证据卡。" });
+      const note = box.createEl("p", { text: "注意：论文会上传到第三方服务器；部分出版社的使用条款不允许这样做，请自行确认。Token 与其他密钥统一保存在 Vault 之外的：" + schSecretsFile.filePath() });
+      note.setCssStyles({ color: "var(--text-muted)", fontSize: "12px" });
+      const openSecrets = box.createEl("button", { text: "打开密钥与地址文件" });
+      openSecrets.onclick = () => schSecretsFile.openFile();
+      const tokenInput = box.createEl("input", { attr: { type: "password", placeholder: "粘贴 mineru.net 的 API Token" } });
+      tokenInput.setCssStyles({ width: "100%", margin: "6px 0" });
+      tokenInput.value = current.token;
+      const select = box.createEl("select");
+      for (const [value, label] of [["scanned", "只识别扫描版 PDF（没有文字层的）"], ["all", "所有下载的 PDF 都在线解析"], ["off", "关闭"]]) {
+        const option = select.createEl("option", { text: label, attr: { value } });
+        if ((current.token ? current.mode : "scanned") === value) option.selected = !0;
+      }
+      select.setCssStyles({ width: "100%", margin: "6px 0" });
+      const row = box.createDiv();
+      row.setCssStyles({ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "10px" });
+      const saveButton = row.createEl("button", { text: "保存", cls: "mod-cta" });
+      saveButton.onclick = async () => {
+        try {
+          await this.saveMineruConfig({ token: tokenInput.value, mode: select.value });
+          new Ne.Notice(tokenInput.value.trim() && select.value !== "off" ? "MinerU 在线识别已开启" : "MinerU 在线识别已关闭");
+          modal.close();
+          this.rerender();
+        } catch (error) {
+          new Ne.Notice("保存失败：" + (error && error.message ? error.message : error));
+        }
+      };
+      modal.open();
+    }
+    /** 粗判扫描版：PDF 里一个字体都没有（OCR 隐形文字层也会带字体）。 */
+    pdfLooksScanned(bytes) {
+      const text = Buffer.from(bytes).toString("latin1");
+      return !/\/Font\b/.test(text);
+    }
+    scheduleMineruOcr(absolutePdf) {
+      const config = this.mineruConfig();
+      if (!config.token || config.mode === "off") return;
+      const fs = require("node:fs");
+      let bytes;
+      try { bytes = fs.readFileSync(absolutePdf); } catch (_) { return; }
+      if (config.mode === "scanned" && !this.pdfLooksScanned(bytes)) return;
+      if (fs.existsSync(absolutePdf + ".mineru/full.md")) return;
+      const run = () => this.runMineruOcr(absolutePdf, bytes, config.token).then(
+        () => new Ne.Notice("MinerU 在线识别完成：" + require("node:path").basename(absolutePdf)),
+        (error) => {
+          new Ne.Notice("MinerU 在线识别失败：" + (error && error.message ? error.message : error), 8000);
+          const jobs = Array.isArray(this.data.mineruFailures) ? this.data.mineruFailures : [];
+          jobs.push({ pdf: absolutePdf, error: String(error && error.message || error).slice(0, 300), at: new Date().toISOString() });
+          this.data.mineruFailures = jobs.slice(-200);
+          this.save();
+        },
+      );
+      // 后台串行：不阻塞批量抓取，也不同时占满接口额度。
+      this.__mineruChain = (this.__mineruChain || Promise.resolve()).then(run, run);
+    }
+    async runMineruOcr(absolutePdf, bytes, token) {
+      const path = require("node:path"), fs = require("node:fs"), zlib = require("node:zlib");
+      const headers = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
+      const name = path.basename(absolutePdf);
+      const created = await Ne.requestUrl({
+        url: "https://mineru.net/api/v4/file-urls/batch", method: "POST", headers, throw: !1,
+        body: JSON.stringify({ files: [{ name, is_ocr: !0, data_id: "scholarium-" + Date.now() }], enable_formula: !0, enable_table: !0 }),
+      });
+      const createdBody = created.json || {};
+      if (created.status === 401 || created.status === 403) throw new Error("Token 无效或已过期，请在“MinerU 在线识别”里重新粘贴");
+      if (created.status >= 400 || createdBody.code !== 0) throw new Error("申请上传失败：" + (createdBody.msg || created.status));
+      const batchId = createdBody.data && createdBody.data.batch_id;
+      const uploadUrl = createdBody.data && createdBody.data.file_urls && createdBody.data.file_urls[0];
+      if (!batchId || !uploadUrl) throw new Error("接口没有返回上传地址");
+      const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      const put = await Ne.requestUrl({ url: uploadUrl, method: "PUT", body: buffer, throw: !1 });
+      if (put.status >= 400) throw new Error("上传 PDF 失败：HTTP " + put.status);
+      const deadline = Date.now() + 20 * 60000;
+      let result = null;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 5000));
+        const polled = await Ne.requestUrl({ url: "https://mineru.net/api/v4/extract-results/batch/" + encodeURIComponent(batchId), method: "GET", headers, throw: !1 });
+        const list = polled.json && polled.json.data && polled.json.data.extract_result;
+        const entry = Array.isArray(list) ? list[0] : null;
+        if (!entry) continue;
+        if (entry.state === "done") { result = entry; break; }
+        if (entry.state === "failed") throw new Error("解析失败：" + (entry.err_msg || "未知原因"));
+      }
+      if (!result || !result.full_zip_url) throw new Error("20 分钟内未完成解析");
+      const zip = await Ne.requestUrl({ url: result.full_zip_url, method: "GET", throw: !1 });
+      if (zip.status >= 400) throw new Error("下载解析结果失败：HTTP " + zip.status);
+      const files = this.unzipEntries(Buffer.from(zip.arrayBuffer), zlib);
+      const markdown = files.find((file) => /(^|\/)full\.md$/.test(file.name));
+      if (!markdown) throw new Error("解析结果里没有 full.md");
+      const outDir = absolutePdf + ".mineru";
+      fs.mkdirSync(path.join(outDir, "images"), { recursive: !0 });
+      for (const file of files) {
+        // 只写 full.md 和 images/ 下的图片；只取文件名，杜绝 Zip Slip。
+        if (!/(^|\/)images\/[^/]+$/.test(file.name)) continue;
+        const base = path.basename(file.name).replace(/[^\w.-]/g, "_");
+        if (!/\.(png|jpe?g|gif|webp|svg)$/i.test(base)) continue;
+        fs.writeFileSync(path.join(outDir, "images", base), file.data);
+      }
+      const md = markdown.data.toString("utf8").replace(/\]\((?:\.\/)?images\/([^)]+)\)/g, (_, file) => "](images/" + path.basename(file).replace(/[^\w.-]/g, "_") + ")");
+      fs.writeFileSync(path.join(outDir, "full.md"), "<!-- MinerU 在线解析：" + name + " · " + new Date().toISOString() + " -->\n\n" + md, "utf8");
+      return path.join(outDir, "full.md");
+    }
+    /** 最小 ZIP 读取（store/deflate），够解 MinerU 的结果包。 */
+    unzipEntries(buffer, zlib) {
+      let eocd = -1;
+      for (let i = buffer.length - 22; i >= Math.max(0, buffer.length - 66000); i--) {
+        if (buffer.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+      }
+      if (eocd < 0) throw new Error("结果包不是有效的 ZIP");
+      const count = buffer.readUInt16LE(eocd + 10);
+      let offset = buffer.readUInt32LE(eocd + 16);
+      const out = [];
+      for (let i = 0; i < count; i++) {
+        if (buffer.readUInt32LE(offset) !== 0x02014b50) break;
+        const method = buffer.readUInt16LE(offset + 10);
+        const compressedSize = buffer.readUInt32LE(offset + 20);
+        const nameLength = buffer.readUInt16LE(offset + 28);
+        const extraLength = buffer.readUInt16LE(offset + 30);
+        const commentLength = buffer.readUInt16LE(offset + 32);
+        const localOffset = buffer.readUInt32LE(offset + 42);
+        const name = buffer.slice(offset + 46, offset + 46 + nameLength).toString("utf8");
+        offset += 46 + nameLength + extraLength + commentLength;
+        if (name.endsWith("/")) continue;
+        const localName = buffer.readUInt16LE(localOffset + 26), localExtra = buffer.readUInt16LE(localOffset + 28);
+        const start = localOffset + 30 + localName + localExtra;
+        const raw = buffer.slice(start, start + compressedSize);
+        const data = method === 0 ? raw : method === 8 ? zlib.inflateRawSync(raw) : null;
+        if (data) out.push({ name, data });
+      }
+      return out;
+    }
+    /** 记下每篇最近一次抓取的结果，待处理列表里逐篇显示“为什么没成功、怎么办”。 */
+    recordManualAttempt(id, status, reason) {
+      const entry = (this.manualDownloadQueue || []).find((item) => item.id === id);
+      if (!entry) return;
+      entry.lastAttempt = { status, reason: String(reason || "").slice(0, 300), at: new Date().toISOString() };
+      this.data.manualDownloadQueue = this.manualDownloadQueue;
+      this.save();
+    }
+    manualCaptureFixHint(reason) {
+      const text = String(reason || "");
+      if (/runtime|运行时/i.test(text)) return "本机运行时没有就绪：按 Ctrl+P 运行“诊断本机运行时”，按提示修好后再点“批量抓取”重跑（已成功的不会重复）。";
+      if (/不是 PDF|text\/html|HTTP 40[13]/i.test(text)) return "出版社没有给 PDF 权限：先在批量窗口里登录机构账号（WebVPN / CARSI）再重跑；仍不行就点“打开并下载”手动处理。";
+      if (/Failed to fetch/i.test(text)) return "PDF 下载请求被出版社拦截或网络中断：检查代理/VPN 后重跑，或点“打开并下载”手动保存。";
+      if (/验证/.test(text) && !/登录/.test(text)) return "出版社要求人机验证：在批量窗口里完成验证即可自动继续。";
+      if (/登录|购买|订阅/.test(text)) return "需要机构登录或订阅：在批量窗口里点出版社的“机构登录 / Access through your institution”。";
+      if (/60 秒|90 秒|没有加载完成|未识别到完整正文/.test(text)) return "页面太慢或没有找到全文与 PDF 链接：点“打开并下载”手动看一下。";
+      if (/未归入 Pipeline|v3 运行快照/.test(text)) return "文件已经保存在目标目录，只是这条旧版（v2）Pipeline 不能自动归档，可直接使用。";
+      if (/WebView/i.test(text)) return "浏览器窗口初始化慢了一步：直接重跑即可。";
+      if (/跳过|上限|熔断/.test(text)) return "本轮按限速规则跳过，下一轮再处理即可。";
+      return "点“打开并下载”手动处理；若反复失败请把这条原因发给开发者。";
+    }
+    /** 一轮结束后的结果面板：成功了哪些、失败按原因分组 + 修复办法。 */
+    renderManualCaptureReport(container, report) {
+      const box = container.createDiv({ cls: "sch-manual-capture-report" });
+      box.setCssStyles({ border: "1px solid var(--background-modifier-border)", borderRadius: "8px", padding: "8px 10px", margin: "8px 0" });
+      const head = box.createDiv();
+      head.createEl("b", { text: `上次批量抓取：成功 ${(report.pdf || 0) + (report.webclip || 0)} 篇（PDF ${report.pdf || 0} / 网页全文 ${report.webclip || 0}） · 失败 ${report.failed || 0} · 跳过 ${report.skipped || 0}${report.remaining ? " · 未处理 " + report.remaining : ""} · 共 ${report.total || 0}` });
+      if (report.finishedAt) head.createEl("small", { text: "　" + new Date(report.finishedAt).toLocaleString() }).setCssStyles({ color: "var(--text-muted)" });
+      const done = Array.isArray(report.done) ? report.done : [];
+      if (done.length) {
+        const details = box.createEl("details");
+        details.createEl("summary", { text: `已完成的 ${done.length} 篇（已从待处理移除）` });
+        for (const item of done) {
+          const row = details.createDiv();
+          row.setCssStyles({ fontSize: "12px", padding: "2px 0" });
+          row.createSpan({ text: (item.kind === "pdf" ? "PDF · " : "网页全文 · ") + item.title });
+          if (item.path) {
+            const open = row.createEl("a", { text: "　打开", href: "#" });
+            open.onclick = (event) => { event.preventDefault(); this.app.workspace.openLinkText(item.path, "", !0); };
+          }
+          if (item.note) row.createSpan({ text: "　" + item.note }).setCssStyles({ color: "var(--color-orange)" });
+        }
+      }
+      const reasons = Object.entries(report.reasons || {}).filter(([reason]) => !/^已保存/.test(reason));
+      if (reasons.length) {
+        const groups = new Map();
+        for (const [reason, count] of reasons) {
+          const hint = this.manualCaptureFixHint(reason);
+          const group = groups.get(hint) || { count: 0, reasons: [] };
+          group.count += count;
+          group.reasons.push(reason);
+          groups.set(hint, group);
+        }
+        box.createEl("div", { text: "没成功的原因与处理办法：" }).setCssStyles({ marginTop: "6px", fontWeight: "600" });
+        const list = box.createEl("ul");
+        list.setCssStyles({ margin: "4px 0 0", paddingLeft: "18px" });
+        for (const [hint, group] of [...groups.entries()].sort((a, b) => b[1].count - a[1].count)) {
+          const li = list.createEl("li");
+          li.createSpan({ text: `${group.count} 篇 — ${hint}` });
+          li.createEl("div", { text: "原因：" + group.reasons.map((reason) => reason.slice(0, 80)).join("；") }).setCssStyles({ color: "var(--text-muted)", fontSize: "11px" });
+        }
+      }
+    }

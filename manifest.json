@@ -1,9 +1,9 @@
 {
-	"id": "scholarium",
+	"id": "obsidian-scholarium",
 	"name": "Scholarium",
-	"version": "2.0.7",
+	"version": "2.0.9",
 	"minAppVersion": "1.10.0",
 	"description": "An all-in-one scholarly workspace with AI-assisted writing, literature management, notes, and productivity tools.",
-	"author": "Scholarium Contributors",
-	"isDesktopOnly": false
+	"author": "Tao Jiang",
+	"isDesktopOnly": true
 }

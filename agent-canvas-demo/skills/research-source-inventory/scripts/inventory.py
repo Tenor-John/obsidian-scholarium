@@ -3,6 +3,17 @@
 import json, sys
 from pathlib import Path
 
+# Emit UTF-8 on stdout regardless of the console's own code page. Python on a
+# Chinese Windows install defaults stdout to GBK, so a single character outside
+# that code page anywhere in the output - a degree sign in a column name was
+# enough - raises UnicodeEncodeError after the work is already done and written
+# to disk. The run then reports failure for a result it actually produced.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
+
 EVIDENCE = {'.pdf', '.ris', '.bib', '.csv', '.tsv', '.xlsx', '.xls', '.ipynb'}
 NOTES = {'.md', '.txt'}
 EXCLUDE_DIRS = {'.git', 'node_modules', '.obsidian', 'agent-output'}

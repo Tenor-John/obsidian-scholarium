@@ -1,0 +1,14 @@
+{
+  "uid": "01927d40-1b25-7d14-8d94-555555555555",
+  "display_id": "EXP-001",
+  "schema_version": 1,
+  "type": "experiment",
+  "created_at": "2026-08-09T00:00:00Z",
+  "updated_at": "2026-08-09T00:00:00Z",
+  "project_uid": "01927d3f-8a41-7c62-b5e0-9f3a2c1d4e5b",
+  "tests_hypotheses": ["01927d40-1b22-7d11-9a61-111111111111"],
+  "status": "integrated",
+  "result": "An example result.",
+  "conclusion": "The result supports the hypothesis under the example conditions.",
+  "produced_evidence": ["01927d40-1b24-7d13-bc83-444444444444"]
+}

@@ -17,19 +17,44 @@ const scholariumActions = require('../../tools/action-registry.js');
 const pendingReviewScan = require('../../tools/pending-review-scan.js');
 const scholariumQueue = require('../../tools/bridge-action-queue.js');
 const scholariumSchema = require('../../tools/schema-objects.js');
+const scholariumExperiments = require('../../tools/experiment-store.js');
 const ideaProjectPromotion = require('../../tools/idea-project-promotion.js');
 const seedReconstructionCore = require('../seed-reconstruction-core.js');
 const scholariumResearchState = require('../../tools/research-state.js');
-const knownAgentsRegistry = require('../../tools/known-agents.js');
 const graphProjectionCore = require('../graph-projection-core.js');
 const { mergeSearchRecords } = require('./search-merge.js');
 const { adaptQueryForSource } = require('../query-adapt.js');
 const settingsCore = require('../settings-core.js');
 const { readCcSwitchProvider, untrusted: untrustedProvider } = require('./provider-context.js');
+const {
+  CLAUDE_RESEARCH_TOOLS,
+  CLAUDE_RESEARCH_ALLOWED_TOOLS,
+  assertMinimalResearchCapabilities,
+} = require('../../tools/agent-capabilities.js');
+const {
+  migrateKnownPromptTransports,
+  preparePromptTransport,
+} = require('../../tools/prompt-transport.js');
+const agentDetection = require('../../tools/agent-detect.js');
+const graphKeywordTool = require('../../tools/graph-keywords.js');
 
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.AGENT_BRIDGE_PORT || 4318);
+// Origins the browser side may call this Bridge from. The launcher passes the
+// canvas port it actually bound; 4173 is used only when that value is absent,
+// and the Obsidian webview origin is constant. A stale default port must not
+// remain authorized once the launcher has selected another port.
+const CANVAS_ORIGINS = [...new Set([
+  `http://127.0.0.1:${Number(process.env.AGENT_CANVAS_PORT) || 4173}`,
+  'app://obsidian.md',
+])];
 const ROOT = path.resolve(__dirname, '..');
+const SCHOLARIUM_MCP_SERVER = path.join(__dirname, 'scholarium-mcp.js');
+// Per-task capabilities used only by the stdio MCP child.  They deliberately
+// are not the Bridge master token: even if a research Agent can inspect its
+// environment, this capability cannot submit actions, commit drafts or run
+// processes.  Entries disappear when the owning task exits.
+const mcpReadCapabilities = new Map();
 // AGENT_BRIDGE_CONFIG_PATH lets a caller (currently only the test suite)
 // redirect the *entire* config file to a disposable path. Without this, an
 // isolated test-spawned Bridge process would still read/write the real
@@ -42,44 +67,254 @@ const CONFIG_PATH = process.env.AGENT_BRIDGE_CONFIG_PATH
   ? path.resolve(process.env.AGENT_BRIDGE_CONFIG_PATH)
   : path.join(__dirname, 'bridge.config.json');
 const CONFIG_ROOT = ROOT.replaceAll('\\', '/');
+// The Obsidian host supplies the real Vault root on a fresh portable launch.
+// This keeps the distributed package path-independent while allowing the
+// read-only Scholarium registry/page to work before a user hand-edits config.
+const PORTABLE_VAULT_ROOT = process.env.AGENT_WEAVER_VAULT_ROOT
+  ? path.resolve(process.env.AGENT_WEAVER_VAULT_ROOT)
+  : null;
 const NPM_CODEX_ENTRY = path.join(process.env.APPDATA || path.join(process.env.USERPROFILE, 'AppData', 'Roaming'), 'npm', 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+const AGENT_DETECT_SCRIPT = path.join(ROOT, '..', 'tools', 'agent-detect.js');
+const AGENT_ENV_SCRIPT = path.join(ROOT, '..', 'tools', 'agent-env.js');
+let autoDetectionPending = false;
+let autoDetectionChild = null;
+let autoDetectionCancelled = false;
+
+/* The environment report (agent-env.js) is produced by a child process for the
+   same reason detection is: probing four agents means four spawnSync calls,
+   each with a 20-second ceiling, and doing that inline would block the Bridge's
+   single-threaded request loop for up to a minute on a cold Windows PATH.
+   The cache is what lets /v1/agents answer honestly without paying that cost on
+   every poll — see agentStatus(). */
+const ENVIRONMENT_TTL_MS = 60_000;
+let environmentCache = { at: 0, report: null };
+let environmentInFlight = null;
+
+function agentRoots() {
+  // Folders the user chose to install agents into. Persisted in the config so a
+  // Bridge restart does not lose an install the user just performed.
+  return Array.isArray(config?.agentRoots) ? config.agentRoots.filter(Boolean) : [];
+}
+
+function runEnvironmentProbe() {
+  if (environmentInFlight) return environmentInFlight;
+  environmentInFlight = new Promise((resolve) => {
+    let stdout = '';
+    let child;
+    try {
+      child = spawn(process.execPath, [AGENT_ENV_SCRIPT, ...agentRoots()], {
+        cwd: path.dirname(AGENT_ENV_SCRIPT), windowsHide: true,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch (error) {
+      environmentInFlight = null;
+      return resolve({ error: error.message, agents: [], ccSwitch: { installed: false, providers: [], current: {} } });
+    }
+    child.stdout.on('data', (chunk) => { stdout = `${stdout}${String(chunk)}`.slice(-4 * 1024 * 1024); });
+    const finish = (payload) => {
+      environmentInFlight = null;
+      environmentCache = { at: Date.now(), report: payload };
+      resolve(payload);
+    };
+    child.on('error', (error) => finish({ error: error.message, agents: [], ccSwitch: { installed: false, providers: [], current: {} } }));
+    child.on('close', () => {
+      try { finish(JSON.parse(stdout)); }
+      catch (error) { finish({ error: `无法读取环境体检结果：${error.message}`, agents: [], ccSwitch: { installed: false, providers: [], current: {} } }); }
+    });
+  });
+  return environmentInFlight;
+}
+
+/* Adapter ids are family names plus a lane suffix ('claude-research',
+   'codex-full'). Verification is a property of the binary, not of the lane, so
+   every lane of one family shares a single probe result. */
+/* Installing an agent on the user's behalf.
+   ------------------------------------------------------------------------
+   Two things here are deliberately not configurable by the caller.
+
+   The package name is looked up from this table by agent key and is never
+   taken from the request. An endpoint that ran `npm install <whatever the
+   body said>` into a directory of the caller's choosing would be arbitrary
+   code execution with an install step attached — the Bridge already refuses
+   far less dangerous things than that.
+
+   The install is `--prefix <folder>` rather than `-g` because the user chose
+   the folder: it keeps the system-wide npm tree untouched, works on a machine
+   where the global prefix needs elevation, and makes an unwanted install one
+   folder deletion to undo. The folder is then recorded in config.agentRoots —
+   but only after a real --version probe passes, so a half-finished install
+   never silently becomes a configured search path. */
+const INSTALLABLE = {
+  claude: { pkg: '@anthropic-ai/claude-code', label: 'Claude Code' },
+  codex: { pkg: '@openai/codex', label: 'Codex' },
+  opencode: { pkg: 'opencode-ai', label: 'OpenCode' },
+  openclaw: { pkg: 'openclaw', label: 'OpenClaw' },
+};
+let installJob = null;
+
+function installDirectoryProblem(directory) {
+  if (!directory || typeof directory !== 'string') return '必须提供安装目录。';
+  if (!path.isAbsolute(directory)) return '安装目录必须是绝对路径。';
+  // Refuse the obvious foot-guns rather than trusting the caller: an install
+  // into a Windows system directory or into the vault itself is never what the
+  // user meant, and both are painful to undo.
+  const normalized = path.resolve(directory).replace(/\\/g, '/').toLowerCase();
+  const forbidden = [
+    (process.env.SystemRoot || 'C:/Windows').replace(/\\/g, '/').toLowerCase(),
+    (process.env.ProgramFiles || 'C:/Program Files').replace(/\\/g, '/').toLowerCase(),
+    '/etc', '/usr/bin', '/bin', '/sbin',
+  ];
+  if (forbidden.some((bad) => bad && normalized.startsWith(bad))) return '拒绝安装到系统目录。请另选一个普通文件夹。';
+  return null;
+}
+
+function startInstall(agent, directory) {
+  const spec = INSTALLABLE[agent];
+  if (!spec) throw new Error(`不支持自动安装：${agent}`);
+  const problem = installDirectoryProblem(directory);
+  if (problem) throw new Error(problem);
+  if (installJob && installJob.state === 'running') throw new Error('已有一个安装任务在进行中，请等待它结束。');
+
+  fs.mkdirSync(directory, { recursive: true });
+  const id = randomBytes(8).toString('hex');
+  const job = {
+    id, agent, directory, package: spec.pkg, label: spec.label,
+    state: 'running', log: '', startedAt: new Date().toISOString(), finishedAt: null,
+    detected: null, error: null,
+  };
+  installJob = job;
+
+  // npm is a .cmd shim on Windows and needs a shell for the same
+  // CVE-2024-27980 reason documented in tools/agent-detect.js.
+  const windows = process.platform === 'win32';
+  const child = spawn(windows ? 'npm.cmd' : 'npm',
+    ['install', '--prefix', directory, `${spec.pkg}@latest`, '--no-fund', '--no-audit'],
+    { cwd: directory, windowsHide: true, shell: windows, stdio: ['ignore', 'pipe', 'pipe'] });
+
+  const append = (chunk) => { job.log = `${job.log}${String(chunk)}`.slice(-64 * 1024); };
+  child.stdout.on('data', append);
+  child.stderr.on('data', append);
+  child.on('error', (error) => {
+    job.state = 'failed'; job.error = error.message; job.finishedAt = new Date().toISOString();
+  });
+  child.on('close', (code) => {
+    job.finishedAt = new Date().toISOString();
+    if (code !== 0) {
+      job.state = 'failed';
+      job.error = job.error || `npm install 退出码 ${code}。`;
+      return;
+    }
+    /* npm exiting 0 is not proof the agent runs — that is the same mistake as
+       trusting a PATH hit. Probe the freshly installed binary before claiming
+       anything, and record the folder only if it answered. */
+    try {
+      const detected = agentDetection.detectAgent(agent, { extraRoots: [directory] });
+      job.detected = detected;
+      if (!detected.ok) {
+        job.state = 'failed';
+        job.error = `安装完成，但 ${spec.label} 仍无法运行：${detected.error}`;
+        return;
+      }
+      job.state = 'done';
+      config.agentRoots = [...new Set([...(config.agentRoots || []), directory])];
+      const generated = agentDetection.toAdapters({ [agent]: detected }, {
+        mcpResearchConfig: path.join(__dirname, 'mcp.research.json'),
+      });
+      Object.assign(config.adapters, generated.adapters);
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+      environmentCache = { at: 0, report: null };
+    } catch (error) {
+      job.state = 'failed';
+      job.error = `安装后校验失败：${error.message}`;
+    }
+  });
+  return job;
+}
+
+function installJobView() {
+  if (!installJob) return { state: 'idle' };
+  const { id, agent, directory, package: pkg, label, state, startedAt, finishedAt, error, detected } = installJob;
+  return {
+    id, agent, directory, package: pkg, label, state, startedAt, finishedAt, error,
+    version: detected?.version || null,
+    // Only the tail is returned; a full npm log is megabytes and the useful
+    // part of a failure is always at the end.
+    log: installJob.log.slice(-4000),
+  };
+}
+
+function adapterFamily(id) {
+  const name = String(id || '');
+  for (const family of ['claude', 'codex', 'opencode', 'openclaw', 'hermes']) {
+    if (name === family || name.startsWith(`${family}-`)) return family;
+  }
+  return name;
+}
+
+function assertSafeResearchAdapter(configValue) {
+  for (const adapter of Object.values(configValue?.adapters || {})) {
+    if (adapter?.lane === 'research') assertMinimalResearchCapabilities(adapter.args);
+  }
+  return configValue;
+}
 
 function loadConfig() {
   if (fs.existsSync(CONFIG_PATH)) {
+    let existing;
     try {
-      const existing = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-      existing.workspaceRoot ??= existing.allowedRoots?.[0] || CONFIG_ROOT;
-      // Preserve custom directories while continuously discovering the standard
-      // per-user Codex/Claude locations added by newer Bridge versions.
-      existing.skillDirectories = [...new Set([
-        ...(Array.isArray(existing.skillDirectories) ? existing.skillDirectories : []),
-        ...defaultSkillDirectories(),
-      ])];
-      // A config file written before this field existed must not silently
-      // gain the ability to run rss.* actions against a live vault. Same
-      // fail-closed rule as allowExecution above: an explicit opt-in only.
-      existing.scholarium ??= defaultScholariumConfig();
-      // Same fail-closed rule: a config written before the full lane existed
-      // gets the pilot category table by default; an explicit {} in the file
-      // means "no categories", which the dispatcher reads as refuse-everything.
-      existing.fullTaskCategories ??= defaultFullTaskCategories();
-      // Research lane 同样 fail-closed：旧配置不自动获得 claude-research 派发权。
-      existing.researchLaneEnabled ??= false;
-      return existing;
+      existing = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
     }
     catch { throw new Error(`Invalid JSON in ${CONFIG_PATH}. Delete it and restart the Bridge.`); }
+    existing.workspaceRoot ??= existing.allowedRoots?.[0] || CONFIG_ROOT;
+    // Preserve custom directories while continuously discovering the standard
+    // per-user Codex/Claude locations added by newer Bridge versions.
+    existing.skillDirectories = [...new Set([
+      ...(Array.isArray(existing.skillDirectories) ? existing.skillDirectories : []),
+      ...defaultSkillDirectories(),
+    ])];
+    // A config file written before this field existed must not silently
+    // gain the ability to run rss.* actions against a live vault. Same
+    // fail-closed rule as allowExecution above: an explicit opt-in only.
+    existing.scholarium ??= defaultScholariumConfig();
+    existing.rag ??= defaultRagConfig();
+    // Same fail-closed rule: a config written before the full lane existed
+    // gets the pilot category table by default; an explicit {} in the file
+    // means "no categories", which the dispatcher reads as refuse-everything.
+    existing.fullTaskCategories ??= defaultFullTaskCategories();
+    // Research lane 同样 fail-closed：旧配置不自动获得 claude-research 派发权。
+    existing.researchLaneEnabled ??= false;
+    existing.agentRoots ??= [];
+    /* Upgrade path. Existing configs predate automatic agent discovery. Mark
+       them once and perform detection after startup; never invent a binary or
+       silently replace a working adapter. */
+    if (!existing.agentDetection) {
+      autoDetectionPending = true;
+      existing.agentDetection = { status: 'pending', detectedAt: null, results: {}, notes: [], reason: 'upgrade' };
+    }
+    // Capability failures are not JSON failures. Keep the original reason so
+    // an operator sees which permission widened instead of being told to delete
+    // an otherwise valid configuration file.
+    return assertSafeResearchAdapter(migrateKnownPromptTransports(existing));
   }
   const value = {
     token: randomBytes(24).toString('hex'),
     // A missing local config must never grant process-spawning permission.
     // Users can explicitly opt in after reviewing bridge.config.example.json.
     allowExecution: false,
-    workspaceRoot: CONFIG_ROOT,
-    allowedRoots: [CONFIG_ROOT],
+    workspaceRoot: PORTABLE_VAULT_ROOT || CONFIG_ROOT,
+    allowedRoots: [PORTABLE_VAULT_ROOT || CONFIG_ROOT],
     skillDirectories: defaultSkillDirectories(),
-    scholarium: defaultScholariumConfig(),
+    scholarium: {
+      ...defaultScholariumConfig(),
+      // Reading the synthetic/demo or user's own Scholarium registry is safe;
+      // process execution remains disabled until explicitly configured.
+      enabled: Boolean(PORTABLE_VAULT_ROOT),
+      vaultRoot: PORTABLE_VAULT_ROOT,
+    },
+    rag: defaultRagConfig(),
     fullTaskCategories: defaultFullTaskCategories(),
     researchLaneEnabled: false,
+    agentRoots: [],
     // `sandboxed: true` is an explicit claim that this adapter's *own* args enforce
     // read-only execution (a real CLI-level flag), independent of the permission:'read'
     // check below. An adapter without a verified read-only mechanism must default to
@@ -87,13 +322,13 @@ function loadConfig() {
     // rule as allowExecution/scholarium above: no adapter gets write-capable process
     // access just because it's listed here.
     adapters: {
-      codex: { command: process.execPath, args: [NPM_CODEX_ENTRY, 'exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--json', '{{prompt}}'], sandboxed: true },
+      codex: { command: process.execPath, args: [NPM_CODEX_ENTRY, 'exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--json', '-'], sandboxed: true, promptTransport: 'stdin' },
       // --permission-mode plan was tried first and rejected: against the real claude.exe on
       // this machine it hangs indefinitely in non-interactive -p mode (no TTY to approve the
       // plan-to-execution transition), and start()/spawn() below has no process timeout, so a
       // hung task would sit forever. --tools is what actually works, verified against a live
-      // process: (1) needs `--` before {{prompt}} or claude's variadic `--tools <tools...>`
-      // parser swallows the prompt itself, producing "Input must be provided..."; (2) --tools
+      // process. The prompt now travels over stdin, which also prevents claude's variadic
+      // `--tools <tools...>` parser from swallowing it; (2) --tools
       // only restricts *built-in* tools, not MCP-server tools — this machine's global
       // ~/.claude.json exposes MCP tools (confirmed one, an MCP PDF tool, leaking through with
       // --tools alone) that are outside the allowlist and would still be write-capable if some
@@ -111,12 +346,14 @@ function loadConfig() {
       // "sandboxed: true" implying it was functional. --allowedTools is the actual approval
       // grant, scoped to the identical five-tool list, so the reachable tool set is unchanged;
       // it just makes the ones already listed actually usable instead of silently denied.
-      claude: { command: 'claude', args: ['-p', '--output-format', 'json', '--tools', 'Read,Grep,Glob,WebFetch,WebSearch', '--allowedTools', 'Read,Grep,Glob,WebFetch,WebSearch', '--strict-mcp-config', '--', '{{prompt}}'], sandboxed: true },
-      // claude-research —— 受边界约束的"科研车道"（lane:'research'）。权限模型是
-      // 黑名单制（用户决策 2026-08-21）：Bash/Write/Edit 默认全部放开，仅
-      // --disallowedTools 拦截不可逆/外发类危险命令（rm -rf、del、format、
-      // git push、npm publish 等）；MCP 仍走白名单（mcp.research.json +
-      // --strict-mcp-config，~/.claude.json 里的其他服务器不会漏进来）。
+      // Prompt text is piped over stdin. This removes the Windows CreateProcess
+      // 32767-character ceiling without widening any tool capability.
+      claude: { command: 'claude', args: ['-p', '--output-format', 'json', '--tools', 'Read,Grep,Glob,WebFetch,WebSearch', '--allowedTools', 'Read,Grep,Glob,WebFetch,WebSearch', '--strict-mcp-config'], sandboxed: true, promptTransport: 'stdin' },
+      // claude-research —— capability-minimal 科研车道（lane:'research'）。
+      // 论文、PDF 与网页都是不可信输入；一旦同时暴露 shell/native write，
+      // prompt injection 就能越出 cwd 写入同一 OS 用户可写的任意路径。因而
+      // Bash/PowerShell/Write/Edit 不出现在可见或批准列表，Vault 结构化读取
+      // 只通过 strict MCP 配置中的受限端点。
       // stream-json + --verbose 让 Bridge 能逐条收到"思考/工具调用"事件，
       // 聊天界面据此展示过程而不是盲等。它放弃"不可写"承诺，因此不是
       // sandboxed；派发除检查 lane 标记外，还要求 config.researchLaneEnabled
@@ -124,17 +361,13 @@ function loadConfig() {
       'claude-research': {
         command: 'claude',
         args: ['-p', '--output-format', 'stream-json', '--verbose',
-          // Shell 工具名随平台不同：macOS/Linux 构建叫 Bash，Windows 构建叫
-          // PowerShell（2026-08-22 实测本机 init 事件确认；只写 Bash 会导致
-          // --tools 过滤后一个 shell 工具都不剩，模型自述"没有 Bash 工具"）。
-          // 两个名字都列上，不存在的会被静默忽略。黑名单同样双写。
-          '--tools', 'Read,Grep,Glob,WebFetch,WebSearch,Bash,PowerShell,Write,Edit',
-          '--allowedTools', 'Read,Grep,Glob,WebFetch,WebSearch,Bash,PowerShell,Write,Edit',
-          '--disallowedTools', 'Bash(rm -rf:*),Bash(rm -fr:*),Bash(rm -r:*),Bash(del:*),Bash(rmdir:*),Bash(format:*),Bash(mkfs:*),Bash(diskpart:*),Bash(shutdown:*),Bash(reg delete:*),Bash(git push:*),Bash(git reset --hard:*),Bash(npm publish:*),PowerShell(Remove-Item:*),PowerShell(rm:*),PowerShell(del:*),PowerShell(rmdir:*),PowerShell(Format-:*),PowerShell(Clear-Disk:*),PowerShell(Initialize-Disk:*),PowerShell(Stop-Computer:*),PowerShell(Restart-Computer:*),PowerShell(shutdown:*),PowerShell(reg delete:*),PowerShell(git push:*),PowerShell(git reset --hard:*),PowerShell(npm publish:*)',
-          '--mcp-config', path.join(__dirname, 'mcp.research.json'), '--strict-mcp-config', '--', '{{prompt}}'],
+          '--tools', CLAUDE_RESEARCH_TOOLS,
+          '--allowedTools', CLAUDE_RESEARCH_ALLOWED_TOOLS,
+          '--mcp-config', path.join(__dirname, 'mcp.research.json'), '--strict-mcp-config'],
         lane: 'research',
+        promptTransport: 'stdin',
       },
-      opencode: { command: 'opencode', args: ['run', '{{prompt}}'], sandboxed: false },
+      opencode: { command: 'opencode', args: ['run'], sandboxed: false, promptTransport: 'stdin' },
       hermes: { command: 'hermes', args: ['{{prompt}}'], sandboxed: false },
       openclaw: { command: 'openclaw', args: ['run', '{{prompt}}'], sandboxed: false },
       // "-full" adapters (full-permission lane, docs/full-permission-lane-design.md).
@@ -149,16 +382,69 @@ function loadConfig() {
       // {{tools}} 在 probe/派发时替换：probe 用 defaultTools 基线，派发用类别
       // 覆盖列表（fetch_and_attach_pdf 没有 Write）。若类别未声明，回退到
       // defaultTools。改动 args 或 defaultTools 都会使上次 probe 失效（hash 门）。
-      'claude-full': { command: 'claude', args: ['-p', '--output-format', 'json', '--allowedTools', '{{tools}}', '--strict-mcp-config', '--', '{{prompt}}'], permission: 'full', sandbox: 'none', defaultTools: ['Read', 'Write', 'Glob', 'Grep', 'WebFetch'] },
-      'codex-full': { command: process.execPath, args: [NPM_CODEX_ENTRY, 'exec', '--sandbox', 'workspace-write', '--skip-git-repo-check', '--json', '{{prompt}}'], permission: 'full', sandbox: 'workspace-write' },
-      'opencode-full': { command: 'opencode', args: ['run', '{{prompt}}'], permission: 'full', sandbox: 'none' }
+      'claude-full': { command: 'claude', args: ['-p', '--output-format', 'json', '--allowedTools', '{{tools}}', '--strict-mcp-config'], permission: 'full', sandbox: 'none', defaultTools: ['Read', 'Write', 'Glob', 'Grep', 'WebFetch'], promptTransport: 'stdin' },
+      'codex-full': { command: process.execPath, args: [NPM_CODEX_ENTRY, 'exec', '--sandbox', 'workspace-write', '--skip-git-repo-check', '--json', '-'], permission: 'full', sandbox: 'workspace-write', promptTransport: 'stdin' },
+      'opencode-full': { command: 'opencode', args: ['run'], permission: 'full', sandbox: 'none', promptTransport: 'stdin' }
     }
   };
+  // Do not block the Bridge listener on PATH probes. On Windows a stale npm
+  // shim can make a cold first-run probe take 20+ seconds. The launcher writes
+  // a usable fail-closed config now and the asynchronous child probe below
+  // replaces only verified adapter locations/profiles when it finishes.
+  autoDetectionPending = true;
+  value.agentDetection = {
+    status: 'pending', detectedAt: null, results: {}, notes: [],
+  };
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(value, null, 2), 'utf8');
-  return value;
+  return assertSafeResearchAdapter(migrateKnownPromptTransports(value));
 }
 
 const config = loadConfig();
+function scheduleAutoDetection() {
+  if (!autoDetectionPending) return;
+  autoDetectionPending = false;
+  autoDetectionCancelled = false;
+  let stdout = '';
+  let child;
+  try {
+    child = spawn(process.execPath, [AGENT_DETECT_SCRIPT, ...agentRoots()], {
+      cwd: path.dirname(AGENT_DETECT_SCRIPT), windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch (error) {
+    config.agentDetection = { status: 'failed', detectedAt: new Date().toISOString(), results: {}, notes: [error.message] };
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+    return;
+  }
+  autoDetectionChild = child;
+  child.stdout.on('data', (chunk) => { stdout = `${stdout}${String(chunk)}`.slice(-2 * 1024 * 1024); });
+  child.on('error', (error) => {
+    if (autoDetectionCancelled) return;
+    config.agentDetection = { status: 'failed', detectedAt: new Date().toISOString(), results: {}, notes: [error.message] };
+    try { fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8'); } catch { /* best effort */ }
+  });
+  child.on('close', () => {
+    if (autoDetectionChild === child) autoDetectionChild = null;
+    if (autoDetectionCancelled) return;
+    try {
+      const parsed = JSON.parse(stdout);
+      const generated = agentDetection.toAdapters(parsed.detected || {}, { mcpResearchConfig: path.join(__dirname, 'mcp.research.json') });
+      const families = {
+        claude: ['claude', 'claude-research', 'claude-full'],
+        codex: ['codex', 'codex-full'],
+      };
+      for (const [key, names] of Object.entries(families)) {
+        if (!parsed.detected?.[key]?.ok) for (const name of names) delete config.adapters[name];
+      }
+      Object.assign(config.adapters, generated.adapters);
+      config.agentDetection = { status: 'ready', detectedAt: new Date().toISOString(), results: parsed.detected || {}, notes: generated.notes };
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+    } catch (error) {
+      config.agentDetection = { status: 'failed', detectedAt: new Date().toISOString(), results: {}, notes: [`无法读取代理探测结果：${error.message}`] };
+      try { fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8'); } catch { /* best effort */ }
+    }
+  });
+}
 const tasks = new Map();
 const drafts = new Map();
 const draftBatches = new Map();
@@ -197,16 +483,61 @@ function defaultScholariumConfig() {
     enabled: false,
     vaultRoot: null,
     allowedActions: ['rss.refresh_feed', 'rss.score_feed', 'rss.clip_high_score', 'rss.clip_url', 'rss.fetch_pdf',
-      'rss.set_article_score', 'rss.mark_article',
+      'rss.set_article_score', 'rss.mark_article', 'rss.list_articles',
       'project.list', 'project.get', 'experiment.scan_outcomes', 'idea.list', 'decision.list', 'lesson.list', 'research.ids',
       'workspace.get_state', 'workspace.timeblock_drift_audit', 'workspace.rescan_pending', 'workspace.timeblock_add', 'workspace.timeblock_update', 'workspace.timeblock_remove',
       'workspace.checkin_upsert', 'workspace.habit_add', 'workspace.habit_log', 'workspace.emotion_log',
       'workspace.task_add', 'workspace.task_update', 'workspace.task_remove', 'workspace.focus_log', 'workspace.capture_add',
       'material.list', 'material.add', 'material.update', 'material.remove', 'material.category_add', 'material.category_remove',
-      'experiment.append_note'],
+      'experiment.append_note', 'experiment.validate_chem', 'experiment.insert_chem'],
+  };
+}
+function defaultRagConfig() {
+  return {
+    embeddingModel: 'ibm-granite/granite-embedding-311m-multilingual-r2',
+    embeddingProvider: 'hf-inference',
+    embeddingBatchSize: 16,
+    defaultRetrieval: 'hybrid',
+    maxPerSource: 3,
+    /* Terms the knowledge graph should look for, on top of the hardcoded
+       ENTITY_PATTERNS in build_paper_graph.js.
+
+       `null` is not the same as `[]`, and the difference is the whole point:
+       null means "never configured", in which case the terms are derived from
+       the corpus at graph time, so a vault of battery papers gets battery
+       vocabulary without anyone editing code. `[]` means the researcher
+       explicitly wants nothing added. Collapsing the two would make the
+       feature impossible to turn off — the same explicit-empty rule the
+       config already applies to fullTaskCategories. */
+    graphKeywords: null,
   };
 }
 function scholariumConfig() { return config.scholarium || defaultScholariumConfig(); }
+
+function ragConfig() { return { ...defaultRagConfig(), ...(config.rag || {}) }; }
+
+function graphVaultRoot() {
+  return path.resolve(scholariumConfig().vaultRoot || config.workspaceRoot || ROOT);
+}
+
+/* Resolve the graph's keyword list and say where it came from.
+
+   Derivation reads the chunk index and is therefore not free; it runs only
+   when the list has never been configured, and the result is reported to the
+   caller so the settings page can show "这次用的是自动推导的词" rather than
+   leaving the user to wonder why the graph changed after a re-index. */
+function resolveGraphKeywords(requested) {
+  if (Array.isArray(requested)) {
+    return { keywords: graphKeywordTool.normalize(requested), source: 'request', derived: null };
+  }
+  try {
+    return graphKeywordTool.resolveKeywords(ragConfig().graphKeywords, graphVaultRoot());
+  } catch (error) {
+    // A missing or unreadable corpus must not take the graph down; it just
+    // means no extra keywords this run.
+    return { keywords: [], source: 'unavailable', derived: null, error: error.message };
+  }
+}
 
 /* ---------------------------------------------------------------------------
  * Full-permission lane ("-full" adapters) — slice 1: server-side skeleton.
@@ -394,6 +725,7 @@ function auditFullLane(event, fields = {}) { auditLog('full', event, fields); }
 function auditDraftsLane(event, fields = {}) { auditLog('drafts', event, fields); }
 function auditActionsLane(event, fields = {}) { auditLog('actions', event, fields); }
 function auditEditsLane(event, fields = {}) { auditLog('edits', event, fields); }
+function auditChatTurnsLane(event, fields = {}) { auditLog('chat-turns', event, fields); }
 
 // Read cc-switch at every real task dispatch. Model output is never used as
 // evidence of provider identity; a relay could forge that response metadata.
@@ -408,7 +740,7 @@ function sweepFullLaneAudit() {
     if (!fs.existsSync(dir)) return;
     const cutoff = Date.now() - FULL_TASK_AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
     for (const name of fs.readdirSync(dir)) {
-      const match = /^(?:full|drafts)-(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(name);
+      const match = /^(?:full|drafts|actions|edits|chat-turns)-(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(name);
       if (!match) continue;
       if (Date.parse(`${match[1]}T00:00:00Z`) < cutoff) {
         try { fs.unlinkSync(path.join(dir, name)); } catch { /* best effort */ }
@@ -495,7 +827,10 @@ function listRunRecords(kind, limit = 50) {
     const dir = runHistoryDir(kind);
     if (!fs.existsSync(dir)) return [];
     return fs.readdirSync(dir)
-      .filter((name) => name.endsWith('.json'))
+      // .state.json 是 Pipeline 的状态包 sidecar，不是运行记录。它跟 <id>.json
+      // 同目录且同后缀，漏掉这个排除会让每条 Pipeline 在历史列表里多出一条
+      // 没有 id/status 的幽灵记录。
+      .filter((name) => name.endsWith('.json') && !name.endsWith('.state.json'))
       .map((name) => { try { return JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')); } catch { return null; } })
       .filter(Boolean)
       .sort((a, b) => String(b.startedAt || b.createdAt || '').localeCompare(String(a.startedAt || a.createdAt || '')))
@@ -530,6 +865,42 @@ function pipelineRunStatus(record) {
   const live = activePipelineRuns.get(record.id);
   return live && Date.now() - live.lastCheckpointAt < 15000 ? 'running' : 'interrupted';
 }
+
+/* --- Pipeline 断点续跑：状态包 sidecar ------------------------------------
+ *
+ * 状态包（步骤之间流转的全部值：检索式、概念矩阵、召回记录、去重结果、已下载
+ * PDF 清单、证据卡片…）单独存一个文件，不塞进 <id>.json 摘要记录里。
+ *
+ * 分开存的理由是 /v1/history：那个端点会把 pipelines 目录下**每一条**记录整个
+ * 读进内存来拼摘要列表。状态包里 combined 一项就可能有几 MB，混在摘要记录里
+ * 会让「打开历史任务列表」这个高频操作随历史条数线性变慢——而列表本身一个
+ * 状态包字段都用不到。
+ *
+ * 体积上限在这里再兜一次底（浏览器侧 fitStateToBudget 已经裁过一轮）：磁盘写
+ * 入是本机操作，但一条失控的记录不该把课题目录撑爆。 */
+const PIPELINE_STATE_MAX_BYTES = 8 * 1024 * 1024;
+function pipelineStatePath(id) { return path.join(runHistoryDir('pipelines'), `${id}.state.json`); }
+function readPipelineState(id) {
+  try {
+    if (!/^[\w-]+$/.test(String(id || ''))) return null;
+    const file = pipelineStatePath(id);
+    if (!fs.existsSync(file)) return null;
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch { return null; }
+}
+function writePipelineState(id, state) {
+  const text = JSON.stringify(state ?? {}, null, 2);
+  if (Buffer.byteLength(text, 'utf8') > PIPELINE_STATE_MAX_BYTES) {
+    throw new Error(`pipeline state exceeds ${PIPELINE_STATE_MAX_BYTES} bytes`);
+  }
+  const dir = runHistoryDir('pipelines');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = pipelineStatePath(id);
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, text, 'utf8');
+  fs.renameSync(tmp, file);
+  return Buffer.byteLength(text, 'utf8');
+}
 function fullLaneStatusPath() { return path.join(fullTaskRuntimeDir(), 'full-lane-status.json'); }
 function readFullLaneStatus() {
   try { return JSON.parse(fs.readFileSync(fullLaneStatusPath(), 'utf8')); } catch { return { adapters: {} }; }
@@ -562,6 +933,10 @@ function reloadFullLaneConfig() {
     if (fresh.fullTaskCategories && typeof fresh.fullTaskCategories === 'object' && !Array.isArray(fresh.fullTaskCategories)) config.fullTaskCategories = fresh.fullTaskCategories;
     if (fresh.adapters && typeof fresh.adapters === 'object' && !Array.isArray(fresh.adapters)) config.adapters = fresh.adapters;
     if (typeof fresh.allowExecution === 'boolean') config.allowExecution = fresh.allowExecution;
+    // research lane 是一个独立的 fail-closed 执行开关。配置被热改或字段被
+    // 删除时都必须立即反映到内存；否则 false -> true 仍会拒绝到进程重启，
+    // true -> 缺省则会错误地继续放行。
+    config.researchLaneEnabled = fresh.researchLaneEnabled === true;
     if (Array.isArray(fresh.allowedRoots)) config.allowedRoots = fresh.allowedRoots;
     if (fresh.fullTaskAuditDir) config.fullTaskAuditDir = fresh.fullTaskAuditDir;
     if (fresh.fullTaskRuntimeDir) config.fullTaskRuntimeDir = fresh.fullTaskRuntimeDir;
@@ -731,9 +1106,12 @@ async function runFullLaneProbe(adapterName) {
   // Probe 用适配器基线工具集（defaultTools，含 Write）——probe 本身要验证
   // Write 可用性和边界检测，按类别的缩减发生在派发时，缩减只可能是子集。
   const probeTools = (Array.isArray(adapter.defaultTools) && adapter.defaultTools.length ? adapter.defaultTools : FULL_LANE_FALLBACK_TOOLS).join(',');
-  const args = [...resolved.prefixArgs, ...(adapter.args || []).map((item) => String(item).replaceAll('{{prompt}}', prompt).replaceAll('{{tools}}', probeTools))];
+  const transport = preparePromptTransport(adapter, prompt, { tools: probeTools });
+  const args = [...resolved.prefixArgs, ...transport.args];
   auditFullLane('probe-started', { adapter: adapterName, enforcement: adapter.sandbox === 'workspace-write' ? 'prevention' : 'detection' });
-  const run = await spawnCollect(resolved.executable, args, 180000, 1024 * 1024, { ...process.env, NO_COLOR: '1' }, null, workspace);
+  const run = await spawnCollect(resolved.executable, args, 180000, 1024 * 1024, { ...process.env, NO_COLOR: '1' }, null, workspace, null, {
+    shell: Boolean(resolved.shell), stdin: transport.stdin,
+  });
   const out = `${run.stdout || ''}\n${run.stderr || ''}`;
   result.checks.readOk = out.includes(token);
   result.checks.writeOk = fs.existsSync(t.writeOk) && fs.readFileSync(t.writeOk, 'utf8').trim() === 'probe-ok';
@@ -825,13 +1203,16 @@ function startFullTask(run, adapter, spec) {
   if (!resolved) { finish({ status: 'failed', exitCode: null, failureMessage: `${adapter.command} is not installed or not on PATH` }); return; }
   run.snapshotBefore = snapshotTree(run.workspace); // §5 写前快照，与适配器同批上线
   run.effectiveTools = fullLaneEffectiveTools(spec, adapter); // 按类别覆盖（fetch_and_attach_pdf 无 Write）
-  const args = [...resolved.prefixArgs, ...(adapter.args || []).map((item) => String(item).replaceAll('{{prompt}}', run.prompt).replaceAll('{{tools}}', run.effectiveTools))];
+  const transport = preparePromptTransport(adapter, run.prompt, { tools: run.effectiveTools });
+  const args = [...resolved.prefixArgs, ...transport.args];
   const timeoutMs = Number(spec.timeoutMs) > 0 ? Number(spec.timeoutMs) : 10 * 60 * 1000;
   const parsed = { rawStdout: '', diagnostics: '', events: [] };
-  spawnCollect(resolved.executable, args, timeoutMs, 1024 * 1024, { ...process.env, NO_COLOR: '1' }, null, run.workspace, (child) => { run.child = child; })
+  spawnCollect(resolved.executable, args, timeoutMs, 1024 * 1024, { ...process.env, NO_COLOR: '1' }, null, run.workspace, (child) => { run.child = child; }, {
+    shell: Boolean(resolved.shell), stdin: transport.stdin,
+  })
     .then(async ({ status, stdout, stderr, error }) => {
       run.child = null;
-      ingestCodexOutput(parsed, stdout || '');
+      ingestCodexOutput(parsed, stdout || '', true);
       let failure = run.cancelRequested
         ? null // 用户取消：退出码非零是 taskkill 的必然结果，不是任务失败
         : error && error.code === 'ETIMEDOUT'
@@ -890,6 +1271,49 @@ function scholariumVaultStatus() {
   };
 }
 
+const MCP_VAULT_TEXT_EXTENSIONS = new Set(['.md', '.txt', '.json', '.csv', '.tsv', '.yaml', '.yml', '.bib', '.ris']);
+const MCP_VAULT_EXCLUDED_DIRS = new Set(['.obsidian', '.git', '.trash', '.scholarium', 'node_modules']);
+function mcpVaultRoot() {
+  const status = scholariumVaultStatus();
+  if (!status.enabled) throw new Error('Scholarium actions are disabled.');
+  if (!status.vaultRootExists) throw new Error('scholarium.vaultRoot is not configured or does not exist.');
+  return status.vaultRoot;
+}
+function safeMcpVaultFile(root, relativePath) {
+  const relative = String(relativePath || '').replaceAll('\\', '/');
+  if (!relative || path.isAbsolute(relative) || relative.includes('../')) throw new Error('path must be a vault-relative text file');
+  const segments = relative.split('/').filter(Boolean);
+  if (segments.some((segment) => MCP_VAULT_EXCLUDED_DIRS.has(segment)) || (segments[0] === 'Research' && segments[1] === '_runs'))
+    throw new Error('path is in a private settings, runtime or audit directory');
+  const target = path.resolve(root, relative);
+  if (!isInsideRoot(root, target)) throw new Error('path is outside the configured vault');
+  if (!MCP_VAULT_TEXT_EXTENSIONS.has(path.extname(target).toLowerCase())) throw new Error('only safe text files can be read');
+  return target;
+}
+function walkMcpVault(root, requestedExtensions, maxFiles = 5000) {
+  const requested = new Set((Array.isArray(requestedExtensions) ? requestedExtensions : [])
+    .map((value) => String(value || '').toLowerCase())
+    .map((value) => value.startsWith('.') ? value : `.${value}`)
+    .filter((value) => MCP_VAULT_TEXT_EXTENSIONS.has(value)));
+  const extensions = requested.size ? requested : MCP_VAULT_TEXT_EXTENSIONS;
+  const files = [];
+  const visit = (folder, relativeFolder = '') => {
+    if (files.length >= maxFiles) return;
+    for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+      if (files.length >= maxFiles) break;
+      const relative = relativeFolder ? `${relativeFolder}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (MCP_VAULT_EXCLUDED_DIRS.has(entry.name) || relative === 'Research/_runs') continue;
+        visit(path.join(folder, entry.name), relative);
+      } else if (entry.isFile() && extensions.has(path.extname(entry.name).toLowerCase())) {
+        files.push(relative);
+      }
+    }
+  };
+  visit(root);
+  return files;
+}
+
 function promotionVault() {
   const status = scholariumVaultStatus();
   if (!status.enabled) throw new Error('Scholarium actions are disabled; Idea promotion requires scholarium.enabled=true');
@@ -908,6 +1332,217 @@ function draftBaseRoot(base) {
     return path.resolve(config.workspaceRoot || ROOT);
   if (base === 'scholarium-vault') return promotionVault();
   throw new Error(`unknown draft base: ${base}`);
+}
+
+const SERVER_MANAGED_PROJECT_TYPES = new Set(['question', 'hypothesis', 'experiment', 'decision']);
+const SERVER_MANAGED_REFERENCE_FIELDS = new Set([
+  'source_uid', 'target_uid', 'next_test', 'method_uid', 'protocol_uid',
+  'tests_hypotheses', 'related_hypotheses', 'supporting_evidence',
+  'contradicting_evidence', 'produced_evidence', 'relates_to', 'evidence_refs',
+  'active_hypothesis_uids',
+]);
+const SERVER_MANAGED_STATUS_DEFAULTS = {
+  project: 'active', question: 'open', hypothesis: 'proposed', experiment: 'designed',
+  idea: 'exploring', decision: 'active', lesson: 'active',
+};
+const SERVER_MANAGED_REVIEW_TYPES = new Set(['paper', 'evidence', 'hypothesis', 'experiment', 'decision', 'lesson']);
+const SERVER_MANAGED_DIRECTORIES = {
+  project: 'Research/Projects', question: 'Research/Questions', hypothesis: 'Research/Hypotheses',
+  paper: 'Research/Papers', evidence: 'Research/Evidence', experiment: 'Research/Experiments',
+  idea: 'Research/Ideas', decision: 'Research/Decisions', lesson: 'Research/Lessons',
+};
+const HUMAN_ONLY_DRAFT_FIELDS = [
+  'confidence', 'confidence_set_by',
+  'data_origin', 'data_recorded_by', 'data_recorded_at', 'raw_data_sha256',
+  'verified_by_user', 'verified_at', 'rejection_reason', 'rejected_at',
+  'demonstration_reason', 'demonstrated_at', 'demonstrated_by',
+  'invalidation_reason', 'invalidated_at', 'invalidated_by',
+  'status_history', 'history', 'promoted_to',
+];
+
+function pruneExpiredDraftBatches() {
+  const now = Date.now();
+  for (const [id, batch] of draftBatches) {
+    if (Date.parse(batch.expiresAt) <= now) draftBatches.delete(id);
+  }
+}
+
+function historicalDisplayIdReservations() {
+  const used = {};
+  try {
+    const dir = fullTaskAuditDir();
+    if (!fs.existsSync(dir)) return used;
+    for (const name of fs.readdirSync(dir)) {
+      if (!/^id-allocations-\d{4}-\d{2}-\d{2}\.jsonl$/.test(name)) continue;
+      const lines = fs.readFileSync(path.join(dir, name), 'utf8').split(/\r?\n/).filter(Boolean);
+      for (const line of lines) {
+        let record;
+        try { record = JSON.parse(line); } catch { continue; }
+        for (const allocation of Array.isArray(record.allocations) ? record.allocations : []) {
+          const type = String(allocation.type || '');
+          const displayId = String(allocation.displayId || '');
+          if (scholariumSchema.PREFIX[type] && new RegExp(`^${scholariumSchema.PREFIX[type]}-\\d+$`).test(displayId))
+            (used[type] ||= new Set()).add(displayId);
+        }
+      }
+    }
+  } catch { /* allocator can still seed from the live vault */ }
+  return used;
+}
+
+function nextMonotonicDisplayId(type, used) {
+  const prefix = scholariumSchema.PREFIX[type];
+  let highWater = 0;
+  for (const value of used) {
+    const match = new RegExp(`^${prefix}-(\\d+)$`).exec(String(value));
+    if (match) highWater = Math.max(highWater, Number(match[1]));
+  }
+  return `${prefix}-${String(highWater + 1).padStart(3, '0')}`;
+}
+
+function serverManagedPath(relativePath, object) {
+  const normalized = String(relativePath || '').replaceAll('\\', '/');
+  const dir = SERVER_MANAGED_DIRECTORIES[object.type] || path.posix.dirname(normalized);
+  const basename = path.posix.basename(normalized, path.posix.extname(normalized));
+  const knownPrefix = new RegExp(`^(?:${Object.values(scholariumSchema.PREFIX).join('|')})-[A-Za-z0-9_-]+(?:\\s+|$)`, 'i');
+  let suffix = basename.replace(knownPrefix, '').trim();
+  if (!suffix) suffix = String(object.title || object.statement || object.type || '草稿').trim();
+  suffix = suffix.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const name = `${object.display_id}${suffix ? ` ${suffix}` : ''}.md`;
+  return dir === '.' ? name : `${dir}/${name}`;
+}
+
+function prepareServerManagedDraftItems(root, items, projectDisplayId, createdBy = 'ai') {
+  if (!['ai', 'user'].includes(createdBy)) throw new Error(`unsupported draft authority: ${createdBy}`);
+  pruneExpiredDraftBatches();
+  const vaultEntries = scholariumSchema.readVaultObjects(root);
+  const project = projectDisplayId
+    ? vaultEntries.find((entry) => entry.object.type === 'project' && entry.object.display_id === projectDisplayId)?.object
+    : null;
+  const usedIds = {};
+  const historicalIds = historicalDisplayIdReservations();
+  for (const [type, ids] of Object.entries(historicalIds)) usedIds[type] = new Set(ids);
+  for (const entry of vaultEntries) {
+    const type = entry.object.type;
+    if (scholariumSchema.PREFIX[type])
+      (usedIds[type] ||= new Set()).add(String(entry.object.display_id || ''));
+    // A Decision can preserve an identity whose object was deliberately
+    // deleted or could not be recovered.  It is not a live relation, but its
+    // display id must remain reserved or a later draft will repeat the same
+    // misleading identity.
+    for (const displayId of Array.isArray(entry.object.retired_display_ids) ? entry.object.retired_display_ids : []) {
+      for (const [retiredType, prefix] of Object.entries(scholariumSchema.PREFIX)) {
+        if (new RegExp(`^${prefix}-\\d+$`).test(String(displayId)))
+          (usedIds[retiredType] ||= new Set()).add(String(displayId));
+      }
+    }
+  }
+  // Preview ids are reservations until commit/expiry. Counting them here makes
+  // two concurrent previews allocate different display_ids instead of both
+  // discovering the same "next" number and racing at commit.
+  for (const batch of draftBatches.values()) {
+    for (const item of batch.items || []) {
+      const object = scholariumSchema.parseObject(String(item.content || '')).object;
+      if (scholariumSchema.PREFIX[object.type]) (usedIds[object.type] ||= new Set()).add(String(object.display_id || ''));
+    }
+  }
+
+  const parsed = items.map((item) => ({ ...item, parsed: scholariumSchema.parseObject(String(item.content || '')) }));
+  const referenceMap = new Map();
+  const refs = new Set();
+  for (const entry of parsed) {
+    const object = entry.parsed.object;
+    const type = object.type;
+    if (!type || !scholariumSchema.PREFIX[type]) continue;
+    const ref = String(entry.ref || '').trim();
+    if (ref) {
+      if (!/^[a-zA-Z0-9._-]{1,80}$/.test(ref)) throw new Error(`invalid draft ref '${ref}'`);
+      if (refs.has(ref)) throw new Error(`duplicate draft ref '${ref}'`);
+      refs.add(ref);
+    }
+    const oldUid = String(object.uid || '').trim();
+    const oldDisplayId = String(object.display_id || '').trim();
+    const uid = scholariumSchema.uuidV7();
+    const displayId = nextMonotonicDisplayId(type, usedIds[type] ||= new Set());
+    usedIds[type].add(displayId);
+    entry.managed = { uid, displayId };
+    if (ref) referenceMap.set(`draft:${ref}`, uid);
+    if (oldUid) referenceMap.set(oldUid, uid);
+    if (oldDisplayId) referenceMap.set(oldDisplayId, uid);
+  }
+
+  const now = new Date().toISOString();
+  const knownUids = new Set([
+    ...vaultEntries.map((entry) => String(entry.object.uid || '')).filter(Boolean),
+    ...parsed.filter((entry) => entry.managed).map((entry) => entry.managed.uid),
+  ]);
+  const prepared = parsed.map((entry) => {
+    if (!entry.managed) return { path: entry.path, content: entry.content };
+    const object = { ...entry.parsed.object };
+    const type = object.type;
+    if (SERVER_MANAGED_PROJECT_TYPES.has(type)) {
+      if (!project) throw new Error(`${type} draft requires a valid projectDisplayId bound by the current chat topic`);
+      object.project_uid = project.uid;
+    } else {
+      // Optional project scoping (notably lessons) must not be asserted by a
+      // model-supplied uid. A future explicit UI control can add it safely.
+      delete object.project_uid;
+    }
+    object.uid = entry.managed.uid;
+    object.display_id = entry.managed.displayId;
+    object.schema_version = 1;
+    // Authority is selected by the server route, never copied from caller
+    // frontmatter.  The ordinary drafts endpoint is AI-only; the separate
+    // manual endpoint is reachable only after an explicit UI confirmation
+    // marker and still strips provenance/review claims below.
+    object.created_by = createdBy;
+    object.created_at = now;
+    object.updated_at = now;
+    // These fields record human judgment/provenance. Silently trusting values
+    // such as confidence_set_by:user from model output would let the model
+    // impersonate the researcher, so server-managed chat drafts always remove
+    // them before applying safe draft defaults.
+    for (const key of HUMAN_ONLY_DRAFT_FIELDS) delete object[key];
+    // A schema object created through an AI draft always starts at its initial
+    // lifecycle state. Accepting caller-supplied supported/resolved/promoted or
+    // invalidated states would make the creation endpoint an unreviewed state
+    // transition endpoint.
+    if (SERVER_MANAGED_STATUS_DEFAULTS[type]) object.status = SERVER_MANAGED_STATUS_DEFAULTS[type];
+    if (SERVER_MANAGED_REVIEW_TYPES.has(type)) {
+      object.review_status = 'pending';
+      object.verified_by_user = false;
+    }
+    if (type === 'experiment') {
+      object.raw_data_refs = [];
+      object.produced_evidence = [];
+    }
+    if (type === 'hypothesis') {
+      object.supporting_evidence = [];
+      object.contradicting_evidence = [];
+      object.history = [];
+    }
+    if (type === 'project') object.active_hypothesis_uids = [];
+    for (const key of SERVER_MANAGED_REFERENCE_FIELDS) {
+      if (Array.isArray(object[key])) object[key] = object[key].map((value) => referenceMap.get(String(value)) || value);
+      else if (object[key] !== undefined) object[key] = referenceMap.get(String(object[key])) || object[key];
+      const values = Array.isArray(object[key]) ? object[key] : object[key] ? [object[key]] : [];
+      for (const value of values) {
+        if (!knownUids.has(String(value))) throw new Error(`${type}.${key} points to an unknown uid: ${value}`);
+      }
+    }
+    return {
+      path: serverManagedPath(entry.path, object),
+      content: scholariumSchema.serializeObject(object, entry.parsed.body),
+    };
+  });
+  return {
+    items: prepared,
+    allocations: parsed.filter((entry) => entry.managed).map((entry) => ({
+      type: entry.parsed.object.type,
+      uid: entry.managed.uid,
+      displayId: entry.managed.displayId,
+    })),
+  };
 }
 
 function findIdea(root, displayId) {
@@ -993,7 +1628,19 @@ function scholariumActionPolicies(allowedActions) {
 }
 
 function resolveCommand(command) {
-  if (path.isAbsolute(command)) return fs.existsSync(command) ? { executable: command, prefixArgs: [] } : null;
+  if (path.isAbsolute(command)) {
+    if (!fs.existsSync(command)) return null;
+    if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
+      try {
+        const source = fs.readFileSync(command, 'utf8');
+        const relativeEntries = [...source.matchAll(/"%dp0%\\([^"\r\n]+)"/ig)].map((match) => match[1]);
+        const entry = relativeEntries.map((relative) => path.resolve(path.dirname(command), relative)).find((candidate) => /\.(js|mjs|exe)$/i.test(candidate) && fs.existsSync(candidate));
+        if (entry) return /\.(js|mjs)$/i.test(entry) ? { executable: process.execPath, prefixArgs: [entry] } : { executable: entry, prefixArgs: [] };
+      } catch { /* fall through to the explicit shell wrapper */ }
+      return { executable: command, prefixArgs: [], shell: true };
+    }
+    return { executable: command, prefixArgs: [] };
+  }
   const result = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [command], { encoding: 'utf8', windowsHide: true });
   if (result.status !== 0) return null;
   const candidates = result.stdout.trim().split(/\r?\n/).filter(Boolean);
@@ -1011,31 +1658,50 @@ function resolveCommand(command) {
   } catch { return null; }
 }
 function binary(command) { return resolveCommand(command)?.executable || null; }
+/* Adapter readiness.
+   ------------------------------------------------------------------------
+   This used to report `installed: Boolean(resolveCommand(...))` and a
+   readiness of 'command_detected' — a PATH lookup and nothing more. On this
+   machine that marked openclaw as runnable in the agent picker while
+   `openclaw --version` exits 1 with "Node.js >=22.22.3 is required": the shim
+   is on PATH, and the binary refuses to start. Dispatching to it produced a
+   failure with no explanation, because nothing had ever asked the binary
+   whether it worked.
+
+   So a PATH hit is now reported as exactly what it is — 'command_detected',
+   meaning found but unverified — and only a real `--version` answer earns
+   'ready'. The verification comes from the cached environment probe rather
+   than from a spawn inside this handler, so the honest answer costs nothing
+   per poll; when no probe has run yet the state is 'command_detected', never
+   an unearned 'ready'. */
 function agentStatus() {
-  return Object.entries(config.adapters).map(([id, adapter]) => ({
-    id, command: adapter.command, installed: Boolean(resolveCommand(adapter.command)), path: resolveCommand(adapter.command)?.executable || null,
-    executionEnabled: Boolean(config.allowExecution), readiness: resolveCommand(adapter.command) ? 'command_detected' : 'missing',
-    sandboxed: adapter.sandboxed === true, permission: adapter.permission || null, lane: adapter.lane || null,
-  }));
-}
-// GET /v1/agents/discover's backing function. Unlike agentStatus() above,
-// this does not read config.adapters at all -- it probes PATH (via the
-// same resolveCommand() every configured adapter already uses) for the
-// well-known CLI coding agents in tools/known-agents.js, so a brand-new
-// install with an empty `adapters` object still tells a researcher what is
-// actually installed on this machine. See known-agents.js for why this
-// registry exists and how each entry was verified.
-function discoverKnownAgents() {
-  return knownAgentsRegistry.KNOWN_AGENTS.map((entry) => {
-    const resolved = resolveCommand(entry.command);
+  const byFamily = new Map();
+  for (const agent of environmentCache.report?.agents || []) byFamily.set(agent.key, agent);
+  return Object.entries(config.adapters).map(([id, adapter]) => {
+    const resolved = resolveCommand(adapter.command);
+    const probed = byFamily.get(adapterFamily(id)) || null;
+    // A family-level probe may find another installation on PATH, but the
+    // adapter dispatches the command saved in this config. Never let that
+    // unrelated installation turn a missing configured command green.
+    const readiness = !resolved ? 'missing'
+      : probed?.readiness === 'broken' ? 'broken'
+        : probed?.readiness === 'ready' || probed?.readiness === 'no_credential' ? 'ready'
+          : resolved ? 'command_detected' : 'missing';
     return {
-      id: entry.id,
-      label: entry.label,
-      command: entry.command,
-      guide: entry.guide,
-      available: Boolean(resolved),
-      path: resolved ? resolved.executable : null,
-      alreadyConfigured: Boolean(config.adapters[entry.id]),
+      id, command: adapter.command,
+      // `installed` still means "we found something to run", which is what
+      // callers have always used it for. `runnable` is the new, stricter fact.
+      installed: Boolean(resolved),
+      runnable: !resolved ? false : probed ? probed.readiness !== 'missing' && probed.readiness !== 'broken' : null,
+      path: resolved?.executable || null,
+      executionEnabled: Boolean(config.allowExecution), readiness,
+      problem: probed?.problem || null,
+      verifiedAt: environmentCache.at ? new Date(environmentCache.at).toISOString() : null,
+      sandboxed: adapter.sandboxed === true, permission: adapter.permission || null, lane: adapter.lane || null,
+      detectedVersion: probed?.version || adapter.detected_version || null,
+      detectedSource: probed?.source || adapter.detected_source || null,
+      provider: probed?.provider?.name || null,
+      credential: probed?.credential?.mode || null,
     };
   });
 }
@@ -1043,21 +1709,44 @@ function send(res, status, data) {
   // Reflect only known local origins: the launcher page and the Obsidian
   // desktop webview (which calls the Bridge directly for Material Library
   // plotting when the launcher proxy is down).
+  //
+  // The canvas port is whatever the launcher actually bound, passed in through
+  // AGENT_CANVAS_PORT. It used to be hard-coded to 4173, so once the launcher
+  // moved off its default the header named an origin nothing was serving: the
+  // proxied path still worked because it is same-origin, while every direct
+  // call failed as a bare "Failed to fetch" with no indication that CORS, not
+  // the Bridge, had refused it. When the launcher has no configured canvas
+  // port, 4173 remains the default through the expression above.
   const origin = res.req && res.req.headers ? res.req.headers.origin : undefined;
-  const allowOrigin = ['http://127.0.0.1:4173', 'app://obsidian.md'].includes(origin) ? origin : 'http://127.0.0.1:4173';
+  const cors = CANVAS_ORIGINS.includes(origin)
+    ? { 'access-control-allow-origin': origin, 'vary': 'Origin' }
+    : {};
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
-    'access-control-allow-origin': allowOrigin,
-    'access-control-allow-headers': 'content-type,x-agent-bridge-token',
+    'access-control-allow-headers': 'content-type,x-agent-bridge-token,x-scholarium-user-confirmed',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'vary': 'Origin'
+    ...cors,
   });
   res.end(JSON.stringify(data));
 }
 function allowed(req) { return req.headers['x-agent-bridge-token'] === config.token; }
+function allowedMcpRead(req, pathname) {
+  const token = String(req.headers['x-scholarium-mcp-token'] || '');
+  const capability = mcpReadCapabilities.get(token);
+  if (!capability || capability.expiresAt < Date.now()) {
+    if (token) mcpReadCapabilities.delete(token);
+    return false;
+  }
+  return (req.method === 'GET' && (pathname === '/v1/scholarium/state' || pathname === '/v1/scholarium/rescan-checkpoint-mark'))
+    || (req.method === 'POST' && (pathname === '/v1/scholarium/vault/search' || pathname === '/v1/scholarium/vault/read'));
+}
 function body(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
+    // Let Node's StringDecoder preserve a multi-byte UTF-8 character that is
+    // split across TCP chunks. Concatenating Buffer.toString() per chunk can
+    // silently turn one Chinese character into several U+FFFD replacements.
+    req.setEncoding('utf8');
     req.on('data', (chunk) => { raw += chunk; });
     req.on('end', () => { try { resolve(raw ? JSON.parse(raw) : {}); } catch { reject(new Error('invalid JSON')); } });
     req.on('error', reject);
@@ -1089,6 +1778,23 @@ function allowedScholariumVaultPath(target) {
 }
 function allowedDraftTarget(base, target) {
   return allowedRoot(target) || (base === 'scholarium-vault' && allowedScholariumVaultPath(target));
+}
+
+// Legacy notes remain outside schema-v1, but a chat request must not turn that
+// into arbitrary Vault write authority. Keep the editable surface explicit and
+// narrow: current human-authored Experiment notes only. Research/ is excluded
+// even if a caller supplies a Markdown-looking path.
+const LEGACY_NOTE_EDIT_ROOTS = Object.freeze(['Experiments']);
+function legacyNoteEditTarget(vaultRoot, requestedPath) {
+  const relativePath = String(requestedPath || '').replaceAll('\\', '/');
+  if (!relativePath || path.isAbsolute(relativePath) || relativePath.includes('../') || !relativePath.toLowerCase().endsWith('.md'))
+    throw new Error('legacy note path must be a relative Markdown path');
+  const normalized = relativePath.replace(/^\.\//, '');
+  const permitted = LEGACY_NOTE_EDIT_ROOTS.some((root) => normalized.toLowerCase().startsWith(`${root.toLowerCase()}/`));
+  if (!permitted) throw new Error(`legacy note edits are restricted to ${LEGACY_NOTE_EDIT_ROOTS.join(', ')}/; Research schema objects require dedicated authority endpoints`);
+  const target = path.resolve(vaultRoot, ...normalized.split('/'));
+  if (!isInsideRoot(vaultRoot, target)) throw new Error('legacy note path escaped the configured vault root');
+  return { relativePath: normalized, target };
 }
 // Skills run through the allow-listed SKILL_RUNNERS registry (single source of
 // truth above executableSkill()) rather than arbitrary code, so unlike
@@ -1358,11 +2064,10 @@ const SKILL_RUNNERS = {
   // sequentially over an uncertain institutional network. Pirate mirrors are
   // disabled inside the skill itself, not here.
   'scansci-institutional': { script: 'scansci_download.js', argsShape: ['root', 'input'], timeoutMs: 2400000, async: true },
-  // Reads the researcher's hand-written experiment frontmatter into
-  // Research/experiment-index.json. Report-only: it never rewrites a note,
-  // because the frontmatter is a two-way contract and the body belongs to the
-  // researcher. See EXPERIMENT_SCHEMA.md.
-  'experiment-record': { script: 'validate_experiments.py', argsShape: ['root'], timeoutMs: 60000 },
+  // Indexes only canonical schema-v1 objects under Research/Experiments.
+  // Legacy Experiments/ notes are reported separately and never interpreted
+  // with a second, incompatible schema.
+  'experiment-record': { script: 'validate_experiments.js', argsShape: ['root'], timeoutMs: 60000 },
   // A batch may contain dozens of PDFs. This must stay asynchronous so the
   // Bridge can answer progress polls and cancellation requests while pypdf is
   // reading a large or malformed file.
@@ -1370,13 +2075,14 @@ const SKILL_RUNNERS = {
   'pdf': { script: 'pdf_to_evidence_cards.py', argsShape: ['root', 'input'], timeoutMs: 600000, async: true },
   'obsidian-bases': { script: 'build_literature_base.py', argsShape: ['root', 'input'], timeoutMs: 60000 },
   'literature-partition': { script: 'partition_literature.py', argsShape: ['root', 'input'], timeoutMs: 60000 },
-  // Data-analysis intake is intentionally limited to read-only steps.  The
-  // profile, classifier, and planning runners emit JSON only; they never
-  // rewrite raw measurements or execute AI-authored code.  The plotter is the
-  // one deliberately bounded write exception: it accepts only CSV/TSV and
-  // creates source-hash-named SVG/report artifacts under Materials/_analysis/.
-  // Transformation and AI-script execution still need an explicit
-  // write/sandbox policy first.
+  // Data-analysis intake keeps raw measurements read-only and never executes
+  // AI-authored code. profile/classifier/planning emit JSON only. normalize is
+  // a bounded structural-conversion write: it creates an immutable, source-
+  // hashed UTF-8 CSV + manifest under Materials/_normalized/. plot is the
+  // bounded rendering write under Materials/_analysis/. Neither runner may
+  // clean, smooth, filter, or rewrite the source data. Arbitrary transformation
+  // and AI-script execution still need a separate write/sandbox policy first.
+  'sch-data-normalize': { script: 'normalize_data.py', argsShape: ['root', 'input'], timeoutMs: 60000, forceFileInput: true },
   'sch-data-profile-audit': { script: 'profile_audit.py', argsShape: ['root', 'input'], timeoutMs: 60000, forceFileInput: true },
   'sch-data-classifier': { script: 'data_classifier.py', argsShape: ['root', 'input'], timeoutMs: 60000, forceFileInput: true },
   'sch-data-cleaning-plan': { script: 'cleaning_plan.py', argsShape: ['root', 'input'], timeoutMs: 60000, forceFileInput: true },
@@ -1512,6 +2218,12 @@ function resolvePython() {
 // with that file's short path instead of being passed inline.
 const SKILL_INPUT_TMP_DIR = path.join(os.tmpdir(), 'research-weaver-skill-input');
 const MAX_INLINE_ARG_LENGTH = 4000;
+/* Skill 输入的硬上限。这不是命令行长度保护（那件事由 MAX_INLINE_ARG_LENGTH +
+ * 临时文件负责），而是防止一次失控的调用把内存吃光。定在 64 MB：Zotero 全库
+ * 1842 篇的批处理载荷约 330 KB，留足两个数量级的余量，同时任何越过它的调用
+ * 几乎必然是构造错误而不是正常用法。越限时明确报错，绝不截断——截断 JSON
+ * 得到的是非法 JSON，不是更短的 JSON。 */
+const MAX_SKILL_INPUT_LENGTH = 64 * 1024 * 1024;
 function materializeArg(value, tag, forceFile = false) {
   const text = String(value);
   if (!forceFile && text.length <= MAX_INLINE_ARG_LENGTH) return { value: text, tempFile: null };
@@ -1523,16 +2235,32 @@ function materializeArg(value, tag, forceFile = false) {
 // Async twin of the spawnSync call below, for runners marked async:true.
 // Same contract — resolves to { status, stdout, stderr, error } shaped like
 // spawnSync's return — so the caller's error handling does not have to fork.
-function spawnCollect(executable, args, timeoutMs, maxBuffer = 8 * 1024 * 1024, env = null, onActivity = null, cwd = null, onSpawn = null) {
+function spawnCollect(executable, args, timeoutMs, maxBuffer = 8 * 1024 * 1024, env = null, onActivity = null, cwd = null, onSpawn = null, options = {}) {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
     let overflowed = false;
     let settled = false;
-    const child = spawn(executable, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], ...(env ? { env } : {}), ...(cwd ? { cwd } : {}) });
+    // Accept the pre-P1 final string argument during migration, but prefer the
+    // object form so shell requirements and stdin transport cannot overwrite
+    // one another at a call site.
+    const launch = options && typeof options === 'object' && !Buffer.isBuffer(options)
+      ? options : { stdin: options };
+    const stdin = Object.prototype.hasOwnProperty.call(launch, 'stdin') ? launch.stdin : null;
+    const child = spawn(executable, args, {
+      windowsHide: true,
+      stdio: [stdin === null ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+      ...(env ? { env } : {}),
+      ...(cwd ? { cwd } : {}),
+      ...(launch.shell ? { shell: true } : {}),
+    });
     // onSpawn lets long-running lanes (full tasks) keep a handle for explicit
     // user cancellation; optional so every existing caller is unchanged.
     if (onSpawn) { try { onSpawn(child); } catch { /* observer must not break the run */ } }
+    if (stdin !== null) {
+      child.stdin.on('error', () => { /* EPIPE is reported through process exit/stderr */ });
+      child.stdin.end(String(stdin));
+    }
     const finish = (result) => { if (!settled) { settled = true; resolve(result); } };
     const timer = setTimeout(() => {
       try {
@@ -1560,7 +2288,30 @@ async function executableSkill(skillId, root, skillInput = '', hooks = {}) {
   const skill = localSkills().find((item) => item.id === skillId);
   if (!skill) throw new Error('unknown local skill');
   const skillFolder = path.basename(path.dirname(skill.origin));
-  const input = String(skillInput || '').slice(0, 200000);
+  /* 这里以前是 String(skillInput).slice(0, 200000)。
+   *
+   * 那个截断是为了保护 Windows 的命令行长度上限（~32K）而加的，但它加错了
+   * 位置：真正负责这件事的是下面的 materializeArg——超过 MAX_INLINE_ARG_LENGTH
+   * （4000）就自动写进临时文件、只把文件路径放上命令行；forceFileInput 的
+   * runner（rag-ingest、paper-knowledge-graph、research-weaver）更是无条件走
+   * 文件。也就是说命令行长度从来不由这一行守护，它唯一的实际效果是把大载荷
+   * 拦腰砍断。
+   *
+   * 而这些输入是 JSON。砍断 JSON 得到的不是"短一点的 JSON"，是**非法 JSON**：
+   * Zotero 全库批处理（1842 篇，paths 与 graph.source_paths 各serialize 一遍
+   * 约 330KB）被砍到 200000 字符后写进临时文件，rag.js 一解析就抛
+   *   Unterminated string in JSON at position 200000
+   * 而且是在字符串中间断的，所以连"少了几条记录"都算不上——整份输入直接作废。
+   *
+   * 所以不再截断。体积保护交给一个真正的上限：超过就明确报错，让调用方知道
+   * 该分批，而不是拿到一份损坏的输入去猜哪里出了问题。 */
+  const input = String(skillInput || '');
+  if (input.length > MAX_SKILL_INPUT_LENGTH) {
+    throw new Error(
+      `skill input is ${input.length} characters, over the ${MAX_SKILL_INPUT_LENGTH} limit; `
+      + 'split the batch into smaller groups (truncating would hand the tool invalid JSON)'
+    );
+  }
   const runner = SKILL_RUNNERS[skillFolder] || null;
   if (!runner) throw new Error('this Skill has no executable local tool yet');
   const materialized = runner.argsShape.map((kind, index) => materializeArg(kind === 'root' ? root : input, `${skillFolder}-${kind}${index}`, Boolean(runner.forceFileInput && kind === 'input')));
@@ -1608,9 +2359,31 @@ async function executableSkill(skillId, root, skillInput = '', hooks = {}) {
   }
   try {
     const timeoutMs = runner.timeoutMs || 45000;
-    // Skills that call external APIs (rag-ingest → MinerU) get their keys via
+    // Skills that call external APIs (rag-ingest → MinerU/Hugging Face) get their keys via
     // env from config; keys never appear in argv, temp files, or manifests.
-    const skillEnv = { ...process.env, MINERU_API_KEY: resolveSecret('MINERU_API_KEY', 'mineruApiKey')?.value || '' };
+    const rag = { ...defaultRagConfig(), ...(config.rag || {}) };
+    /* 凭据注册表里的每一项都要注入，不能只挑两个。
+     *
+     * 这里以前只注入 MINERU_API_KEY 和 HF_TOKEN，于是
+     * SEMANTIC_SCHOLAR_API_KEY / SCOPUS_API_KEY / UNPAYWALL_EMAIL /
+     * OPENALEX_EMAIL / NCBI_API_KEY 即使在设置页里存好了，skill 进程也读不到。
+     * 而 api_resolver.js 的约定是"key 缺失就静默跳过该数据源"——所以用户看到
+     * 的现象是：配置显示已保存，检索却始终少几个源，而且没有任何报错。
+     *
+     * 按注册表遍历而不是逐个手写，是为了让"新增一个凭据"只需要改注册表一处；
+     * 漏注入这类问题不会有任何报错，只会安静地少干活。 */
+    const credentialEnv = {};
+    for (const item of settingsCore.CREDENTIAL_REGISTRY) {
+      credentialEnv[item.envVar] = resolveSecret(item.envVar, item.legacyConfigField)?.value || '';
+    }
+    const skillEnv = {
+      ...process.env,
+      ...credentialEnv,
+      SCHOLARIUM_RAG_MODEL: String(rag.embeddingModel || ''),
+      SCHOLARIUM_RAG_PROVIDER: String(rag.embeddingProvider || ''),
+      SCHOLARIUM_RAG_BATCH_SIZE: String(rag.embeddingBatchSize || 16),
+      SCHOLARIUM_RAG_ENDPOINT: String(rag.endpointUrl || ''),
+    };
     const run = runner.async
       ? await spawnCollect(executable, [...prefixArgs, script, ...args], timeoutMs, 8 * 1024 * 1024, skillEnv, hooks.onActivity || null, null, hooks.onSpawn || null)
       : spawnSync(executable, [...prefixArgs, script, ...args], { encoding: 'utf8', windowsHide: true, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, env: skillEnv });
@@ -1645,6 +2418,37 @@ function findLocalSkill(name) { return localSkills().find((skill) => skill.name 
  * ------------------------------------------------------------------------- */
 const skillRuns = new Map();
 const SKILL_RUN_TTL_MS = 60 * 60 * 1000;
+
+// Bridge shutdown must use the same whole-tree termination as runner timeout
+// and user cancellation. Claude/Codex can leave Python, Playwright, or
+// Chromium descendants alive after a bare child.kill(), which then keeps a
+// browser profile locked across reconnects.
+function terminateChildTree(child) {
+  if (!child || child.exitCode !== null || child.killed) return false;
+  try {
+    if (process.platform === 'win32' && child.pid) spawnSync('taskkill.exe', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+    else child.kill('SIGTERM');
+    return true;
+  } catch { return false; }
+}
+function terminateActiveChildren() {
+  const children = new Set();
+  for (const registry of [tasks, fullTasks, skillRuns]) {
+    for (const run of registry.values()) if (run?.child) children.add(run.child);
+  }
+  if (autoDetectionChild) children.add(autoDetectionChild);
+  for (const child of children) terminateChildTree(child);
+}
+let shutdownSignalHandled = false;
+function handleShutdownSignal() {
+  if (shutdownSignalHandled) return;
+  shutdownSignalHandled = true;
+  autoDetectionCancelled = true;
+  terminateActiveChildren();
+  process.exit(0);
+}
+process.once('SIGTERM', handleShutdownSignal);
+process.once('SIGINT', handleShutdownSignal);
 
 function pruneSkillRuns() {
   const now = Date.now();
@@ -1965,8 +2769,37 @@ function stage(task, key, text) {
   task.stageKeys ??= new Set();
   if (!task.stageKeys.has(key)) { task.stageKeys.add(key); event(task, 'stage', text); }
 }
-function ingestCodexOutput(task, data) {
-  for (const line of String(data).split(/\r?\n/).filter(Boolean)) {
+function claudeToolNames(task) {
+  if (!Object.prototype.hasOwnProperty.call(task, '_claudeToolNames')) {
+    // Internal correlation state must not leak through GET /v1/tasks/:id.
+    Object.defineProperty(task, '_claudeToolNames', { value: new Map(), enumerable: false });
+  }
+  return task._claudeToolNames;
+}
+function claudeToolResultContent(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((block) => {
+      if (typeof block === 'string') return block;
+      if (typeof block?.text === 'string') return block.text;
+      try { return JSON.stringify(block); } catch { return String(block || ''); }
+    }).filter(Boolean).join('\n');
+  }
+  try { return content == null ? '' : JSON.stringify(content); } catch { return String(content || ''); }
+}
+function ingestCodexOutput(task, data, flush = false) {
+  if (!Object.prototype.hasOwnProperty.call(task, '_stdoutLineBuffer')) {
+    Object.defineProperty(task, '_stdoutLineBuffer', { value: '', writable: true, enumerable: false });
+  }
+  // stdout 的 data 事件按任意字节边界切块，并不保证一块就是一行。保留最后
+  // 一段未换行文本，和下一块拼接后再解析；进程 close 时显式 flush 尾行。
+  const lines = `${task._stdoutLineBuffer}${String(data)}`.split(/\r?\n/);
+  task._stdoutLineBuffer = lines.pop() || '';
+  if (flush && task._stdoutLineBuffer) {
+    lines.push(task._stdoutLineBuffer);
+    task._stdoutLineBuffer = '';
+  }
+  for (const line of lines.filter(Boolean)) {
     let message;
     try { message = JSON.parse(line); } catch {
       task.rawStdout = `${task.rawStdout || ''}${line}\n`.slice(-16000);
@@ -2009,13 +2842,31 @@ function ingestCodexOutput(task, data) {
           event(task, 'step', `思考：${String(block.text).trim().replace(/\s+/g, ' ').slice(0, 200)}`);
         } else if (block.type === 'tool_use') {
           const input = block.input || {};
-          const hint = block.name === 'Bash' ? input.command
+          // Windows 上 Claude Code 的原生 shell 工具叫 PowerShell（不是 Bash），
+          // 两者都用 input.command 承载实际命令。漏掉 PowerShell 会让聊天界面只
+          // 显示"调用 PowerShell"而看不到命令内容——过程可观测性（Agent 对话
+          // 存在感）和 probe 的机器可读证据识别都会因此失效。
+          const hint = (block.name === 'Bash' || block.name === 'PowerShell') ? input.command
             : block.name === 'WebFetch' ? input.url
             : block.name === 'WebSearch' ? input.query
             : (input.path || input.pattern || input.file_path || '');
+          if (block.id) claudeToolNames(task).set(String(block.id), String(block.name || '工具'));
           event(task, 'step', `调用 ${block.name}${hint ? `：${String(hint).replace(/\s+/g, ' ').slice(0, 160)}` : ''}`);
           stage(task, 'sources', '正在调用工具');
         }
+      }
+    }
+    // Claude stream-json 把工具返回放在 user/tool_result 事件中。旧实现只记
+    // tool_use，导致失败的 curl/WebSearch 也能被能力探针误当成成功调用。
+    else if (message.type === 'user') {
+      const blocks = message.message?.content || [];
+      for (const block of blocks) {
+        if (block?.type !== 'tool_result') continue;
+        const toolUseId = String(block.tool_use_id || '');
+        const toolName = claudeToolNames(task).get(toolUseId) || '工具';
+        const ok = block.is_error !== true;
+        const preview = claudeToolResultContent(block.content).replace(/\s+/g, ' ').trim().slice(0, 500);
+        event(task, 'step', `工具返回 ${toolName}（${ok ? '成功' : '失败'}）${preview ? `：${preview}` : ''}`);
       }
     }
   }
@@ -2024,15 +2875,41 @@ function start(task) {
   const adapter = config.adapters[task.agentId];
   const resolved = resolveCommand(adapter.command);
   if (!resolved) { task.status = 'failed'; event(task, 'error', `${adapter.command} is not installed or not on PATH`); return; }
-  const args = [...resolved.prefixArgs, ...(adapter.args || []).map((item) => String(item).replaceAll('{{prompt}}', task.prompt))];
-  // research 车道没有预防式路径边界（Claude 工具规则表达不了"只准写某目录"），
-  // 执法只能是检测式：任务前后对 cwd 做快照，diff 落审计并把写入清单说给用户。
-  // 与 full 车道共用快照设施与保留策略（sweepFullLaneSnapshots）。
+  let transport;
+  try { transport = preparePromptTransport(adapter, task.prompt); }
+  catch (error) { task.status = 'failed'; event(task, 'error', error.message); return; }
+  const args = [...resolved.prefixArgs, ...transport.args];
+  // Research adapters are capability-minimal and cannot receive shell/native
+  // write tools. The snapshot remains defense-in-depth and migration evidence;
+  // it is not described as a preventive filesystem sandbox.
   const researchAudit = adapter.lane === 'research' && allowedRoot(task.cwd)
     ? { dir: path.resolve(task.cwd), before: snapshotTree(path.resolve(task.cwd)) }
     : null;
-  stage(task, 'launch', `已启动 ${task.agentId}（${adapter.lane === 'research' ? '科研车道·黑名单制' : '只读模式'}）`);
-  const child = spawn(resolved.executable, args, { cwd: task.cwd, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NO_COLOR: '1' } });
+  const mcpReadToken = adapter.lane === 'research' ? randomBytes(24).toString('hex') : '';
+  const activeBridgePort = server.address()?.port || PORT;
+  if (mcpReadToken) {
+    mcpReadCapabilities.set(mcpReadToken, { taskId: task.id, expiresAt: Date.now() + 2 * 60 * 60 * 1000 });
+  }
+  stage(task, 'launch', `已启动 ${task.agentId}（${adapter.lane === 'research' ? '科研车道·最小能力集' : '只读模式'}）`);
+  const child = spawn(resolved.executable, args, {
+    cwd: task.cwd,
+    shell: false,
+    windowsHide: true,
+    stdio: [transport.stdin === null ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      NO_COLOR: '1',
+      ...(mcpReadToken ? {
+        SCHOLARIUM_MCP_SERVER_PATH: SCHOLARIUM_MCP_SERVER,
+        SCHOLARIUM_MCP_BRIDGE_URL: `http://${HOST}:${activeBridgePort}`,
+        SCHOLARIUM_MCP_READ_TOKEN: mcpReadToken,
+      } : {}),
+    },
+  });
+  if (transport.stdin !== null) {
+    child.stdin.on('error', () => { /* process exit/stderr carries the actionable failure */ });
+    child.stdin.end(transport.stdin);
+  }
   task.child = child;
   task.status = 'running';
   child.stdout.on('data', (data) => ingestCodexOutput(task, data));
@@ -2041,6 +2918,8 @@ function start(task) {
   child.stderr.on('data', (data) => { task.stderr = `${task.stderr || ''}${String(data)}`.slice(-16000); });
   child.on('error', (error) => { task.status = 'failed'; event(task, 'error', error.message); });
   child.on('close', (code) => {
+    if (mcpReadToken) mcpReadCapabilities.delete(mcpReadToken);
+    ingestCodexOutput(task, '', true);
     task.status = code === 0 ? 'completed' : 'failed'; task.exitCode = code; task.child = null;
     if (researchAudit) {
       try {
@@ -2068,40 +2947,129 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${HOST}:${PORT}`);
   if (req.method === 'OPTIONS') return send(res, 204, {});
   if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, host: HOST, port: PORT, executionEnabled: Boolean(config.allowExecution) });
-  if (!allowed(req)) return send(res, 401, { error: 'invalid or missing Agent Bridge token' });
+  if (!allowed(req) && !allowedMcpRead(req, url.pathname)) return send(res, 401, { error: 'invalid or missing Agent Bridge token' });
   if (req.method === 'GET' && url.pathname === '/v1/agents') return send(res, 200, { agents: agentStatus() });
-  // Read-only: probe the known-agents registry against this machine's PATH,
-  // independent of what bridge.config.json's `adapters` already lists. This
-  // is what makes the Settings Center's "检测本机 Agent" button work on a
-  // fresh install with no adapters configured yet.
-  if (req.method === 'GET' && url.pathname === '/v1/agents/discover') {
-    return send(res, 200, { agents: discoverKnownAgents() });
+  if (req.method === 'GET' && url.pathname === '/v1/agents/detection') {
+    if (config.agentDetection?.status === 'pending') return send(res, 200, { status: 'pending', detected: {}, notes: [] });
+    if (config.agentDetection?.results) return send(res, 200, { status: config.agentDetection.status || 'ready', detected: config.agentDetection.results, notes: config.agentDetection.notes || [] });
+    return send(res, 200, { status: 'not_run', detected: {}, notes: ['当前配置不是自动生成的；可用 /v1/agents/configure 提交一次明确的手动路径校验。'] });
   }
-  // Add one adapter entry from the known-agents registry into
-  // bridge.config.json, so a discovered-but-unconfigured agent becomes
-  // usable without the researcher hand-editing JSON. Re-resolves the
-  // command server-side rather than trusting the client's earlier
-  // /discover result (which could be stale); never overwrites an adapter
-  // the researcher already configured (by hand or by a previous call to
-  // this route), so a customized args/sandbox/permission entry is never
-  // silently clobbered. This alone never grants execution: allowExecution
-  // still defaults false and gates every adapter regardless of how it got
-  // into `adapters` (see bridge.config.example.json's _allowExecution).
-  if (req.method === 'POST' && url.pathname === '/v1/agents/adapters') {
+  if (req.method === 'GET' && url.pathname === '/v1/agents/environment') {
+    const fresh = url.searchParams.get('refresh') === '1';
+    const stale = Date.now() - environmentCache.at > ENVIRONMENT_TTL_MS;
+    const report = (fresh || stale || !environmentCache.report)
+      ? await runEnvironmentProbe()
+      : environmentCache.report;
+    return send(res, 200, {
+      ...report,
+      agentRoots: agentRoots(),
+      install: installJobView(),
+      cachedAt: environmentCache.at ? new Date(environmentCache.at).toISOString() : null,
+    });
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/agents/install') {
     try {
       const input = await body(req);
-      const id = String(input.id || '');
-      const entry = knownAgentsRegistry.KNOWN_AGENTS.find((item) => item.id === id);
-      if (!entry) return send(res, 404, { error: `unknown agent id '${id}'; not in the known-agents registry` });
-      if (config.adapters[id]) return send(res, 200, { ok: true, id, alreadyConfigured: true, agents: agentStatus() });
-      const resolved = resolveCommand(entry.command);
-      if (!resolved) return send(res, 409, { error: `'${entry.command}' was not found on PATH; install ${entry.label} first, then retry` });
-      config.adapters[id] = { command: entry.command, args: entry.args };
-      saveConfig();
-      return send(res, 201, { ok: true, id, alreadyConfigured: false, path: resolved.executable, agents: agentStatus() });
+      const job = startInstall(String(input?.agent || ''), String(input?.directory || ''));
+      return send(res, 202, { ok: true, job: installJobView(), id: job.id });
     } catch (error) { return send(res, 400, { error: error.message }); }
   }
+  if (req.method === 'GET' && url.pathname === '/v1/agents/install') {
+    return send(res, 200, { job: installJobView() });
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/agents/configure') {
+    try {
+      const input = await body(req);
+      const overrides = input && input.overrides && typeof input.overrides === 'object' ? input.overrides : {};
+      if (autoDetectionChild) { autoDetectionCancelled = true; try { autoDetectionChild.kill(); } catch {} }
+      const detected = agentDetection.detectAll({
+        overrides, extraRoots: agentRoots(),
+        keys: Object.keys(overrides).length ? Object.keys(overrides) : undefined,
+      });
+      const generated = agentDetection.toAdapters(detected, {
+        mcpResearchConfig: path.join(__dirname, 'mcp.research.json'),
+      });
+      const invalidManual = Object.keys(overrides).filter((key) => !detected[key] || !detected[key].ok);
+      if (invalidManual.length) {
+        return send(res, 400, { error: `手动路径校验失败：${invalidManual.join('、')}。配置未改变。`, detected, notes: generated.notes });
+      }
+      if (!Object.keys(generated.adapters).length) {
+        return send(res, 400, { error: '没有一个手动路径或自动探测结果通过 --version 校验，配置未改变。', detected, notes: generated.notes });
+      }
+      // Merge only verified profiles. Unknown/custom adapters stay untouched;
+      // no request can replace a working capability profile with a simplified
+      // one merely because a path was entered incorrectly.
+      config.adapters = { ...config.adapters, ...generated.adapters };
+      config.agentDetection = { status: 'manual', detectedAt: new Date().toISOString(), results: detected, notes: generated.notes };
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+      // The paths just changed, so the cached verification is about the old
+      // ones. Drop it rather than let /v1/agents keep answering from it.
+      environmentCache = { at: 0, report: null };
+      return send(res, 200, { ok: true, agents: agentStatus(), detected, notes: generated.notes });
+    } catch (error) {
+      return send(res, 400, { error: error.message });
+    }
+  }
   if (req.method === 'GET' && url.pathname === '/v1/provider-context') return send(res, 200, currentProviderContext());
+  if (req.method === 'POST' && url.pathname === '/v1/chat-turns/audit') {
+    try {
+      const input = await body(req);
+      const taskId = String(input.taskId || '').slice(0, 100);
+      if (!taskId) return send(res, 400, { error: 'taskId is required' });
+      const event = String(input.event || 'parsed');
+      if (!['parsed', 'confirmation-state', 'skill-submission'].includes(event)) return send(res, 400, { error: 'unsupported chat-turn audit event' });
+      const blocks = {};
+      for (const kind of ['action', 'draft', 'legacyNoteEdit', 'run', 'normalize', 'plot', 'plotRevision', 'suggestReconstruction']) {
+        const source = input.blocks?.[kind] || {};
+        const attempted = Math.max(0, Math.min(1000, Number(source.attempted) || 0));
+        const parsed = Math.max(0, Math.min(attempted, Number(source.parsed) || 0));
+        blocks[kind] = { attempted, parsed, rejected: attempted - parsed };
+      }
+      const cardStates = {};
+      for (const kind of ['action', 'draft', 'legacyNoteEdit', 'run', 'normalize', 'plot', 'plotRevision', 'suggestReconstruction']) {
+        const value = String(input.cardStates?.[kind] || 'none');
+        cardStates[kind] = ['none', 'pending', 'confirmed', 'abandoned'].includes(value) ? value : 'none';
+      }
+      // Browser-provided audit data is not trusted as authority, but a bounded
+      // copy of the final recipe is essential evidence of what the confirmation
+      // card actually submitted.  Keep it JSON-only and size-bounded so audit
+      // records cannot become a second arbitrary-payload store.
+      const auditValue = (value, depth = 0) => {
+        if (value === null || typeof value === 'boolean') return value;
+        if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+        if (typeof value === 'string') return value.slice(0, 500);
+        if (depth >= 5 || !value || typeof value !== 'object') return undefined;
+        if (Array.isArray(value)) return value.slice(0, 16).map((item) => auditValue(item, depth + 1)).filter((item) => item !== undefined);
+        const safe = {};
+        for (const [key, item] of Object.entries(value).slice(0, 40)) {
+          const cleaned = auditValue(item, depth + 1);
+          if (cleaned !== undefined) safe[String(key).slice(0, 80)] = cleaned;
+        }
+        return safe;
+      };
+      const submitted = input.submission && typeof input.submission === 'object' && !Array.isArray(input.submission)
+        ? {
+          kind: ['normalize', 'plot', 'plotRevision'].includes(String(input.submission.kind)) ? String(input.submission.kind) : undefined,
+          skill: String(input.submission.skill || '').slice(0, 120) || undefined,
+          input: auditValue(input.submission.input),
+        }
+        : undefined;
+      auditChatTurnsLane(event, {
+        taskId,
+        flowId: String(input.flowId || '').slice(0, 120) || undefined,
+        provider: providerForSourceTask(taskId),
+        replyLength: Math.max(0, Math.min(10000000, Number(input.replyLength) || 0)),
+        blocks,
+        renderedCards: Math.max(0, Math.min(8, Number(input.renderedCards) || 0)),
+        cardStates,
+        writeClaim: String(input.writeClaim || '').slice(0, 80) || undefined,
+        submission: submitted?.kind && submitted?.skill && submitted?.input ? submitted : undefined,
+      });
+      return send(res, 202, { ok: true });
+    } catch (error) {
+      return send(res, 400, { error: error.message });
+    }
+  }
   if (req.method === 'GET' && url.pathname === '/v1/workspace') return send(res, 200, workspaceStatus());
   if (req.method === 'POST' && url.pathname === '/v1/research-topics') {
     try {
@@ -2539,6 +3507,84 @@ const server = http.createServer(async (req, res) => {
     auditFullLane('task-cancelled', { taskId: run.id, category: run.category, adapter: run.adapter });
     return send(res, 200, { ok: true, id: run.id, status: 'cancelling', note: '进程树已收到终止信号；落盘状态将在进程退出后变为 cancelled' });
   }
+  // Human-assisted publisher access is deliberately single-paper. Reusing a
+  // human challenge/session for a batch would turn this endpoint into an
+  // unattended crawler, so array-shaped requests fail loudly at the boundary.
+  if (req.method === 'POST' && url.pathname === '/v1/literature/manual-capture') {
+    try {
+      const input = await body(req);
+      for (const key of ['urls', 'records', 'dois', 'paths']) {
+        if (Array.isArray(input[key])) {
+          return send(res, 400, { error: `manual capture is single-item only; '${key}' array rejected. Trigger it once per paper.` });
+        }
+      }
+      const doi = String(input.doi || '').trim();
+      const target = String(input.url || '').trim();
+      if (!doi && !target) return send(res, 400, { error: 'manual capture requires a single url or doi' });
+      const skill = findLocalSkill('paper-downloader');
+      if (!skill) return send(res, 503, { error: 'paper-downloader Skill is not installed' });
+      const root = path.resolve(input.workspace || config.workspaceRoot || ROOT);
+      if (!allowedRoot(root)) return send(res, 403, { error: 'workspace is outside configured allowedRoots' });
+      return send(res, 200, await executableSkill(skill.id, root, JSON.stringify({
+        mode: 'manual_capture',
+        url: target || undefined,
+        doi: doi || undefined,
+        allow_markdown_fallback: input.allow_markdown_fallback === true,
+        waitMs: Number(input.waitMs) || undefined,
+      })));
+    } catch (error) { return send(res, 502, { error: error.message }); }
+  }
+
+  // A researcher skip is a durable decision, not a transient UI state. Store
+  // it atomically so a partial JSON write cannot erase the entire skip ledger.
+  if (req.method === 'POST' && url.pathname === '/v1/literature/manual-skip') {
+    try {
+      const input = await body(req);
+      const key = String(input.doi || input.url || '').trim();
+      if (!key) return send(res, 400, { error: 'manual skip requires a doi or url' });
+      const root = path.resolve(input.workspace || config.workspaceRoot || ROOT);
+      if (!allowedRoot(root)) return send(res, 403, { error: 'workspace is outside configured allowedRoots' });
+      const dir = path.join(root, 'Scholarium', 'runtime');
+      fs.mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, 'manual-download-skips.json');
+      let skips = [];
+      try {
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+        if (Array.isArray(parsed)) skips = parsed;
+      } catch { /* first skip or unreadable old ledger */ }
+      if (!skips.some((item) => item && item.key === key)) {
+        skips.push({ key, reason: String(input.reason || '').slice(0, 240), skipped_at: new Date().toISOString() });
+        const tmp = `${file}.${process.pid}.tmp`;
+        fs.writeFileSync(tmp, JSON.stringify(skips, null, 2), 'utf8');
+        fs.renameSync(tmp, file);
+      }
+      return send(res, 200, { ok: true, skipped: key, total: skips.length, file: path.relative(root, file).replaceAll('\\', '/') });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
+
+  if (req.method === 'GET' && url.pathname === '/v1/literature/manual-skips') {
+    try {
+      const root = path.resolve(url.searchParams.get('workspace') || config.workspaceRoot || ROOT);
+      if (!allowedRoot(root)) return send(res, 403, { error: 'workspace is outside configured allowedRoots' });
+      const file = path.join(root, 'Scholarium', 'runtime', 'manual-download-skips.json');
+      let skips = [];
+      try {
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+        if (Array.isArray(parsed)) skips = parsed;
+      } catch { /* no decisions yet */ }
+      return send(res, 200, { skips });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
+
+  if (req.method === 'GET' && url.pathname === '/v1/rag/status') {
+    try {
+      const skill = findLocalSkill('rag-ingest');
+      if (!skill) return send(res, 503, { error: 'rag-ingest Skill is not installed' });
+      const root = path.resolve(scholariumConfig().vaultRoot || config.workspaceRoot || ROOT);
+      if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return send(res, 400, { error: 'rag corpus root does not exist' });
+      return send(res, 200, await executableSkill(skill.id, root, JSON.stringify({ mode: 'status' })));
+    } catch (error) { return send(res, 502, { error: error.message }); }
+  }
   if (req.method === 'POST' && url.pathname === '/v1/rag/query') {
     try {
       const input = await body(req);
@@ -2548,7 +3594,11 @@ const server = http.createServer(async (req, res) => {
       if (!skill) return send(res, 503, { error: 'rag-ingest Skill is not installed' });
       const root = path.resolve(scholariumConfig().vaultRoot || config.workspaceRoot || ROOT);
       if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return send(res, 400, { error: 'rag corpus root does not exist' });
-      return send(res, 200, await executableSkill(skill.id, root, JSON.stringify({ mode: 'query', query: queryText, k: input.k })));
+      return send(res, 200, await executableSkill(skill.id, root, JSON.stringify({
+        mode: 'query', query: queryText, k: input.k,
+        retrieval: input.retrieval || config.rag?.defaultRetrieval || 'hybrid',
+        max_per_source: input.max_per_source || config.rag?.maxPerSource || 3,
+      })));
     } catch (error) { return send(res, 502, { error: error.message }); }
   }
   if (req.method === 'POST' && url.pathname === '/v1/rag/ingest') {
@@ -2562,7 +3612,183 @@ const server = http.createServer(async (req, res) => {
       // 受信根），不随面板当前课题工作区漂移。路径越界由 rag.js 二次拒绝。
       const root = path.resolve(scholariumConfig().vaultRoot || config.workspaceRoot || ROOT);
       if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return send(res, 400, { error: 'rag corpus root does not exist' });
-      return send(res, 200, await executableSkill(skill.id, root, JSON.stringify({ mode: 'ingest', paths })));
+      /* graph.source_paths 常常就是 paths 本身（面板的批处理正是这么发的），
+       * 把同一份清单序列化两遍会让载荷凭空翻倍——Zotero 全库 1842 篇因此从
+       * ~165 KB 变成 ~330 KB。相同就省掉，rag.js 缺省复用 paths。 */
+      /* 只读语料根：源 PDF 允许住在工作区之外（Zotero 的 storage 目录），
+       * 但一切写入仍只落在 root 内——rag.js 那边同样只放宽读，不放宽写。
+       *
+       * 这份白名单**只**从 bridge.config.json 取，绝不读 input：如果请求体
+       * 能传 read_roots，浏览器侧一个 POST 就能把任意目录变成可读，这条边界
+       * 也就形同虚设。删掉请求体里的同名字段而不是忽略它，是为了让越权尝试
+       * 在这里就被抹掉，不会顺着 skill 输入漏下去。 */
+      const readOnlyRoots = Array.isArray(scholariumConfig().ragReadOnlyRoots)
+        ? scholariumConfig().ragReadOnlyRoots.map(String).filter(Boolean)
+        : (Array.isArray(config.rag?.readOnlyRoots) ? config.rag.readOnlyRoots.map(String).filter(Boolean) : []);
+      delete input.read_roots;
+      const graphInput = input.graph && typeof input.graph === 'object' ? { ...input.graph } : undefined;
+      if (graphInput) delete graphInput.read_roots;
+      if (graphInput && Array.isArray(graphInput.source_paths)
+        && graphInput.source_paths.length === paths.length
+        && graphInput.source_paths.every((value, index) => String(value) === paths[index])) {
+        delete graphInput.source_paths;
+      }
+      return send(res, 200, await executableSkill(skill.id, root, JSON.stringify({
+        mode: input.build_graph === true ? 'ingest-and-graph' : 'ingest',
+        paths,
+        embedding: input.embedding || 'auto',
+        read_roots: readOnlyRoots,
+        graph: graphInput,
+        apply: input.apply_graph === true,
+      })));
+    } catch (error) { return send(res, 502, { error: error.message }); }
+  }
+  /* --- 人工确认后抓取单篇 --------------------------------------------------
+   *
+   * 出版商反爬拦住自动下载时，研究员人就在屏幕前，页面也开着，此前却没有任何
+   * 入口能说"我已经过了，抓吧"。这个端点补上那一环。
+   *
+   * 单篇是硬约束，在服务端强制，不指望调用方自觉：让自动化复用人工通过的反爬
+   * 验证，单篇等同于研究员自己点"下载 PDF"；一旦允许成批传入，就变成拿人工
+   * 验证给批量爬虫开路。所以任何数组入参一律 400，而不是"取第一条"——静默地
+   * 少做事会让调用方以为批量被接受了。 */
+  if (req.method === 'POST' && url.pathname === '/v1/literature/manual-capture') {
+    try {
+      const input = await body(req);
+      for (const key of ['urls', 'records', 'dois', 'paths']) {
+        if (Array.isArray(input[key])) {
+          return send(res, 400, { error: `manual capture is single-item only; '${key}' array rejected. Trigger it once per paper.` });
+        }
+      }
+      const doi = String(input.doi || '').trim();
+      const target = String(input.url || '').trim();
+      if (!doi && !target) return send(res, 400, { error: 'manual capture requires a single url or doi' });
+      const skill = findLocalSkill('paper-downloader');
+      if (!skill) return send(res, 503, { error: 'paper-downloader Skill is not installed' });
+      const root = path.resolve(input.workspace || config.workspaceRoot || ROOT);
+      if (!allowedRoot(root)) return send(res, 403, { error: 'workspace is outside configured allowedRoots' });
+      return send(res, 200, await executableSkill(skill.id, root, JSON.stringify({
+        mode: 'manual_capture',
+        url: target || undefined,
+        doi: doi || undefined,
+        allow_markdown_fallback: input.allow_markdown_fallback === true,
+        waitMs: Number(input.waitMs) || undefined,
+      })));
+    } catch (error) { return send(res, 502, { error: error.message }); }
+  }
+  /* 跳过决定要落盘：研究员明确说过"这篇不要"之后，它不该在下一轮又回到待处理
+   * 队列里等着被再问一次。 */
+  if (req.method === 'POST' && url.pathname === '/v1/literature/manual-skip') {
+    try {
+      const input = await body(req);
+      const key = String(input.doi || input.url || '').trim();
+      if (!key) return send(res, 400, { error: 'manual skip requires a doi or url' });
+      const root = path.resolve(input.workspace || config.workspaceRoot || ROOT);
+      if (!allowedRoot(root)) return send(res, 403, { error: 'workspace is outside configured allowedRoots' });
+      const dir = path.join(root, 'Scholarium', 'runtime');
+      fs.mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, 'manual-download-skips.json');
+      let skips = [];
+      try { const parsed = JSON.parse(fs.readFileSync(file, 'utf8')); if (Array.isArray(parsed)) skips = parsed; } catch { /* first skip */ }
+      if (!skips.some((item) => item && item.key === key)) {
+        skips.push({ key, reason: String(input.reason || '').slice(0, 240), skipped_at: new Date().toISOString() });
+        const tmp = `${file}.${process.pid}.tmp`;
+        fs.writeFileSync(tmp, JSON.stringify(skips, null, 2), 'utf8');
+        fs.renameSync(tmp, file);
+      }
+      return send(res, 200, { ok: true, skipped: key, total: skips.length, file: path.relative(root, file).replaceAll('\\', '/') });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
+  if (req.method === 'GET' && url.pathname === '/v1/literature/manual-skips') {
+    try {
+      const root = path.resolve(url.searchParams.get('workspace') || config.workspaceRoot || ROOT);
+      if (!allowedRoot(root)) return send(res, 403, { error: 'workspace is outside configured allowedRoots' });
+      const file = path.join(root, 'Scholarium', 'runtime', 'manual-download-skips.json');
+      let skips = [];
+      try { const parsed = JSON.parse(fs.readFileSync(file, 'utf8')); if (Array.isArray(parsed)) skips = parsed; } catch { /* none yet */ }
+      return send(res, 200, { skips });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/rag/reindex') {
+    try {
+      const skill = findLocalSkill('rag-ingest');
+      if (!skill) return send(res, 503, { error: 'rag-ingest Skill is not installed' });
+      const root = path.resolve(scholariumConfig().vaultRoot || config.workspaceRoot || ROOT);
+      if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return send(res, 400, { error: 'rag corpus root does not exist' });
+      return send(res, 200, await executableSkill(skill.id, root, JSON.stringify({ mode: 'reindex' })));
+    } catch (error) { return send(res, 502, { error: error.message }); }
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/rag/evaluate') {
+    try {
+      const input = await body(req);
+      const skill = findLocalSkill('rag-ingest');
+      if (!skill) return send(res, 503, { error: 'rag-ingest Skill is not installed' });
+      const root = path.resolve(scholariumConfig().vaultRoot || config.workspaceRoot || ROOT);
+      if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return send(res, 400, { error: 'rag corpus root does not exist' });
+      return send(res, 200, await executableSkill(skill.id, root, JSON.stringify({
+        mode: 'evaluate', cases: input.cases, k: input.k,
+        retrieval: input.retrieval || config.rag?.defaultRetrieval || 'hybrid',
+        max_per_source: input.max_per_source || config.rag?.maxPerSource || 3,
+      })));
+    } catch (error) { return send(res, 502, { error: error.message }); }
+  }
+  if (req.method === 'GET' && url.pathname === '/v1/rag/graph/keywords') {
+    try {
+      const configured = ragConfig().graphKeywords;
+      const resolved = resolveGraphKeywords(undefined);
+      const suggested = graphKeywordTool.suggestFromCorpus(
+        graphKeywordTool.corpusPath(graphVaultRoot()),
+        { existing: Array.isArray(configured) ? configured : [], limit: 40 },
+      );
+      return send(res, 200, {
+        ok: true,
+        configured: Array.isArray(configured) ? configured : null,
+        effective: resolved.keywords,
+        source: resolved.source,
+        suggestions: suggested.suggestions,
+        corpus: { papers: suggested.papers, chunks: suggested.chunks, note: suggested.note },
+      });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/rag/graph/keywords') {
+    try {
+      const input = await body(req);
+      // `null` resets to automatic derivation; an array (including an empty
+      // one) is an explicit choice and is stored as given.
+      const next = input.keywords === null ? null : graphKeywordTool.normalize(input.keywords);
+      config.rag = { ...ragConfig(), graphKeywords: next };
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+      const resolved = resolveGraphKeywords(undefined);
+      return send(res, 200, { ok: true, configured: next, effective: resolved.keywords, source: resolved.source });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/rag/graph') {
+    try {
+      const input = await body(req);
+      const skill = findLocalSkill('rag-ingest');
+      if (!skill) return send(res, 503, { error: 'rag-ingest Skill is not installed' });
+      const root = path.resolve(scholariumConfig().vaultRoot || config.workspaceRoot || ROOT);
+      if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return send(res, 400, { error: 'rag corpus root does not exist' });
+      /* The UI used to POST only {limit}, so `keywords` arrived undefined and
+         the graph ran on the hardcoded photocatalysis patterns alone. Against
+         this vault's gold-nanostar corpus that produced 512 edges of which 161
+         hung off the single token "au", while HEPES, MOPS and nanostar — the
+         actual subject of every indexed paper — appeared nowhere in the graph. */
+      const resolved = resolveGraphKeywords(input.keywords);
+      const payload = await executableSkill(skill.id, root, JSON.stringify({
+        mode: 'graph', apply: input.apply === true,
+        graph: { source: 'rag', limit: input.limit, keywords: resolved.keywords },
+      }));
+      return send(res, 200, {
+        ...payload,
+        keywords: {
+          used: resolved.keywords,
+          source: resolved.source,
+          corpus: resolved.derived
+            ? { papers: resolved.derived.papers, chunks: resolved.derived.chunks }
+            : null,
+        },
+      });
     } catch (error) { return send(res, 502, { error: error.message }); }
   }
   if (req.method === 'POST' && url.pathname === '/v1/literature/search') {
@@ -2599,6 +3825,9 @@ const server = http.createServer(async (req, res) => {
         workspace, status: 'running', startedAt: now, updatedAt: now, endedAt: null,
         parentRunId: /^[\w-]+$/.test(String(input.parentRunId || '')) ? String(input.parentRunId) : null,
         steps: [], resumeFrom: null, artifacts: { downloadedPaths: [] },
+        // 断点续跑：outcome 决定这条记录将来给不给续跑入口，
+        // resumeStepId/Index 记录「下一次应该从哪一步重入」。
+        outcome: null, stopReason: '', failureMessage: '', resumeStepId: null, resumeStepIndex: null,
       };
       activePipelineRuns.set(id, { lastCheckpointAt: Date.now() });
       persistRunRecord('pipelines', record);
@@ -2623,6 +3852,14 @@ const server = http.createServer(async (req, res) => {
       if (input.artifacts && Array.isArray(input.artifacts.downloadedPaths)) {
         record.artifacts = { ...(record.artifacts || {}), downloadedPaths: cleanPipelinePdfPaths(record.workspace, input.artifacts.downloadedPaths) };
       }
+      /* 断点续跑元数据。outcome 是 UI 判断「给不给续跑按钮」的唯一依据，
+       * 所以在这里收窄成枚举——一个拼错的 outcome 不能让质量门的安全停止
+       * 意外获得续跑入口（见 pipeline-steps-core.js 文件头）。 */
+      if (typeof input.resumeStepId === 'string') record.resumeStepId = String(input.resumeStepId).slice(0, 80) || null;
+      if (Number.isInteger(input.resumeStepIndex)) record.resumeStepIndex = input.resumeStepIndex;
+      if (['stop', 'fail', 'completed'].includes(input.outcome)) record.outcome = input.outcome;
+      if (typeof input.stopReason === 'string') record.stopReason = String(input.stopReason).slice(0, 240);
+      if (typeof input.failureMessage === 'string') record.failureMessage = String(input.failureMessage).slice(0, 1000);
       if (status === 'running') activePipelineRuns.set(record.id, { lastCheckpointAt: Date.now() });
       else activePipelineRuns.delete(record.id);
       persistRunRecord('pipelines', record);
@@ -2632,7 +3869,30 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pipelineRunMatch) {
     const record = readRunRecord('pipelines', pipelineRunMatch[1]);
     if (!record) return send(res, 404, { error: 'pipeline run not found' });
-    return send(res, 200, { ...record, status: pipelineRunStatus(record) });
+    /* 详情端点带上状态包：isResumable() 要用它校验目标步的 needs，
+     * 面板才能在给出「从这步继续」之前确认这一步真的跑得起来。
+     * 摘要列表端点 /v1/history 不带（见 writePipelineState 上方注释）。 */
+    return send(res, 200, { ...record, status: pipelineRunStatus(record), state: readPipelineState(record.id) });
+  }
+  /* 状态包读写。整包覆盖而不是增量合并：状态包是「某一步跑完那一刻的完整
+   * 快照」，合并会让一次失败的部分写入和上一步的旧值混在一起，续跑时读到一个
+   * 从未真实存在过的中间态。 */
+  const pipelineStateMatch = url.pathname.match(/^\/v1\/pipeline-runs\/([\w-]+)\/state$/);
+  if (req.method === 'PUT' && pipelineStateMatch) {
+    try {
+      const record = readRunRecord('pipelines', pipelineStateMatch[1]);
+      if (!record) return send(res, 404, { error: 'pipeline run not found' });
+      const input = await body(req);
+      const bytes = writePipelineState(record.id, input.state ?? {});
+      return send(res, 200, { ok: true, bytes });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
+  if (req.method === 'GET' && pipelineStateMatch) {
+    const record = readRunRecord('pipelines', pipelineStateMatch[1]);
+    if (!record) return send(res, 404, { error: 'pipeline run not found' });
+    const state = readPipelineState(record.id);
+    if (!state) return send(res, 404, { error: 'pipeline state not found' });
+    return send(res, 200, { state });
   }
   // --- 运行历史：面板切工作台/重启后列出并重开历史任务 ----------------------
   // 摘要列表。full 车道的 running 记录若已不在内存（Bridge 重启杀掉了进程）
@@ -2656,7 +3916,15 @@ const server = http.createServer(async (req, res) => {
         stepCount: Array.isArray(r.steps) ? r.steps.length : 0,
         completedSteps: Array.isArray(r.steps) ? r.steps.filter((step) => step.state !== 'pending').length : 0,
         pdfCount: Array.isArray(r.artifacts?.downloadedPaths) ? r.artifacts.downloadedPaths.length : 0,
-        resumable: Array.isArray(r.artifacts?.downloadedPaths) && r.artifacts.downloadedPaths.length > 0,
+        // 列表行要不要长出「续跑」入口。质量门的安全停止（outcome === 'stop'）
+        // 永远不给——那类停止的前提就是「继续跑会污染证据链」，给入口等于给
+        // 一键绕过安全门的开关。第三项是旧记录的兼容路径。
+        outcome: r.outcome || null,
+        stopReason: r.stopReason || '',
+        resumeStepId: r.resumeStepId || null,
+        resumable: r.outcome !== 'stop' && r.status !== 'completed' && Boolean(
+          r.resumeStepId || (Array.isArray(r.artifacts?.downloadedPaths) && r.artifacts.downloadedPaths.length > 0)
+        ),
       }));
       return send(res, 200, { fullTasks: fullRuns, searches, pipelines });
     } catch (error) { return send(res, 400, { error: error.message }); }
@@ -2699,6 +3967,9 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/v1/tasks') {
     try {
       const input = await body(req);
+      // /v1/tasks 是 research lane 的真实派发入口；在读取 adapter、根目录及
+      // 执行开关前同步可热改配置，避免只能靠重启 Bridge 才能启停科研车道。
+      reloadFullLaneConfig();
       if (!config.adapters[input.agentId]) return send(res, 400, { error: 'unknown agentId' });
       if (!allowedRoot(input.cwd)) return send(res, 403, { error: 'cwd is outside configured allowedRoots' });
       if (!config.allowExecution || input.execute !== true) return send(res, 409, { error: 'execution disabled: review bridge.config.json and set allowExecution=true' });
@@ -2709,8 +3980,9 @@ const server = http.createServer(async (req, res) => {
       // any adapter that hasn't been explicitly verified, rather than trust an unverified CLI.
       if (config.adapters[input.agentId].sandboxed !== true) {
         const adapter = config.adapters[input.agentId];
-        // 科研车道：明示放弃只读承诺、换取前缀限定 Bash + 白名单 MCP 的适配器。
-        // 仍需 config.researchLaneEnabled === true 这个独立的显式开关才放行。
+        // 科研车道使用最小内置读取能力 + 白名单 MCP；仍需独立的
+        // researchLaneEnabled 显式开关。loadConfig 已拒绝任何重新暴露
+        // Bash/PowerShell/Write/Edit 的 research adapter。
         if (!(adapter.lane === 'research' && config.researchLaneEnabled === true)) {
           return send(res, 403, { error: `adapter '${input.agentId}' has no verified read-only sandbox (sandboxed:true missing in bridge.config.json); refusing to dispatch` });
         }
@@ -2758,8 +4030,16 @@ const server = http.createServer(async (req, res) => {
     fs.renameSync(temporary, target); drafts.delete(draft.id);
     return send(res, 200, { ok: true, path: draft.path });
   }
-  if (req.method === 'POST' && url.pathname === '/v1/drafts/batch') {
+  if (req.method === 'POST' && ['/v1/drafts/batch', '/v1/manual-drafts/batch'].includes(url.pathname)) {
     try {
+      const manualUiAuthority = url.pathname === '/v1/manual-drafts/batch';
+      if (manualUiAuthority && String(req.headers['x-scholarium-user-confirmed'] || '').toLowerCase() !== 'true') {
+        auditDraftsLane('preview-rejected', {
+          reason: 'manual draft preview requires an explicit user confirmation marker',
+          paths: [], provider: untrustedProvider('manual draft confirmation missing'), authority: 'user',
+        });
+        return send(res, 403, { error: 'manual draft preview requires explicit user confirmation' });
+      }
       const input = await body(req);
       // sourceTaskId 可选：记录这批草稿来自哪一次 Agent 任务（如检索会话的
       // taskId），让审计能回查"这条 HYP 是哪次任务产生的"。仅作审计元数据，
@@ -2773,10 +4053,32 @@ const server = http.createServer(async (req, res) => {
         auditDraftsLane('preview-rejected', { reason: message, paths: requestedPaths, sourceTaskId, provider });
         return send(res, status, { error: message });
       };
-      const items = Array.isArray(input.items) ? input.items : null;
+      let items = Array.isArray(input.items) ? input.items : null;
       if (!items || items.length === 0) return reject(400, 'items must be a non-empty array of { path, content }');
       if (items.length > MAX_BATCH_DRAFT_ITEMS) return reject(400, `batch is limited to ${MAX_BATCH_DRAFT_ITEMS} files per preview`);
       const root = draftBaseRoot(input.base);
+      const serverManagedMetadata = input.serverManagedMetadata === true;
+      const projectDisplayId = String(input.projectDisplayId || '').trim().slice(0, 40);
+      const containsVaultSchemaObject = input.base === 'scholarium-vault' && items.some((item) => {
+        const object = scholariumSchema.parseObject(String(item?.content || '')).object;
+        return Boolean(object.type && scholariumSchema.PREFIX[object.type]);
+      });
+      // Authority is an endpoint invariant, not a caller option. A new or stale
+      // UI must never be able to write caller-chosen uid/display_id/timestamps
+      // or human provenance merely by omitting one Boolean flag.
+      if (containsVaultSchemaObject && !serverManagedMetadata)
+        return reject(400, 'schema-v1 drafts under scholarium-vault require Bridge-managed metadata');
+      let allocations = [];
+      if (serverManagedMetadata) {
+        if (input.base !== 'scholarium-vault') return reject(400, 'serverManagedMetadata requires base scholarium-vault');
+        if (projectDisplayId && !/^PRJ-\d+$/.test(projectDisplayId)) return reject(400, 'projectDisplayId must be PRJ-NNN');
+        try {
+          const managed = prepareServerManagedDraftItems(root, items, projectDisplayId, manualUiAuthority ? 'user' : 'ai');
+          items = managed.items;
+          allocations = managed.allocations;
+        }
+        catch (error) { return reject(400, error.message); }
+      }
       const seenPaths = new Set();
       const prepared = [];
       for (let index = 0; index < items.length; index++) {
@@ -2812,16 +4114,20 @@ const server = http.createServer(async (req, res) => {
           if (!object.updated_at) object.updated_at = now;
           const schemaErrors = scholariumSchema.validateObject(object);
           if (schemaErrors.length) return reject(400, `${label}: draft does not satisfy schema-v1: ${schemaErrors.join('; ')}`);
-          content = scholariumSchema.serializeObject(object, parsedDraft.body);
+          const canonicalBody = object.type === 'experiment'
+            ? scholariumExperiments.canonicalizeBody(object, parsedDraft.body)
+            : parsedDraft.body;
+          content = scholariumSchema.serializeObject(object, canonicalBody);
         }
         const target = path.resolve(root, relativePath);
         if (!allowedDraftTarget(input.base, target)) return reject(403, `${label}: draft target is outside authorized workspace`);
         if (fs.existsSync(target)) return reject(409, `${label}: target already exists (${relativePath}); choose a new path to preserve the existing note`);
         prepared.push({ path: relativePath, content });
       }
-      const batch = { id: randomUUID(), items: prepared, base: input.base === undefined ? 'workspace' : String(input.base), sourceTaskId, provider, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + DRAFT_TTL_MS).toISOString() };
+      const batch = { id: randomUUID(), items: prepared, base: input.base === undefined ? 'workspace' : String(input.base), sourceTaskId, provider, authority: manualUiAuthority ? 'user' : 'ai', serverManagedMetadata, projectDisplayId: projectDisplayId || undefined, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + DRAFT_TTL_MS).toISOString() };
       draftBatches.set(batch.id, batch);
-      auditDraftsLane('preview-created', { batchId: batch.id, paths: prepared.map((item) => item.path), sourceTaskId, provider });
+      if (allocations.length) auditLog('id-allocations', 'reserved', { batchId: batch.id, sourceTaskId, allocations });
+      auditDraftsLane('preview-created', { batchId: batch.id, paths: prepared.map((item) => item.path), sourceTaskId, provider, authority: batch.authority, serverManagedMetadata, projectDisplayId: projectDisplayId || undefined });
       return send(res, 201, batch);
     } catch (error) { return send(res, 400, { error: error.message }); }
   }
@@ -2915,18 +4221,23 @@ const server = http.createServer(async (req, res) => {
       const reason = String(input.reason || '');
       const sourceTaskId = String(input.sourceTaskId || '').slice(0, 100) || undefined;
       const provider = providerForSourceTask(sourceTaskId);
+      // Actor identity is derived from the trusted interaction channel, never
+      // from input.by. A caller cannot label an Agent transition as a human
+      // action merely by adding a JSON field.
+      const actor = String(req.headers['x-scholarium-user-confirmed'] || '').toLowerCase() === 'true'
+        ? 'user' : 'weaver-chat-confirmed';
       let manifest;
       try {
         manifest = scholariumActions.run(status.vaultRoot, 'experiment.transition',
           { experiment_uid: experimentUid, to_status: toStatus, reason },
-          { dryRun: true, allowedLevels: ['L0', 'L1'], by: input.by || 'bridge' });
+          { dryRun: true, allowedLevels: ['L0', 'L1'], by: actor });
       } catch (error) {
         auditEditsLane('preview-rejected', { reason: error.message, experimentUid, toStatus, sourceTaskId, provider });
         return send(res, 400, { error: error.message });
       }
       const id = randomUUID();
       const preview = {
-        id, experimentUid, toStatus, reason, sourceTaskId, provider,
+        id, action: 'experiment.transition', experimentUid, toStatus, reason, actor, sourceTaskId, provider,
         plan: manifest.result,
         createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + DRAFT_TTL_MS).toISOString(),
       };
@@ -2935,11 +4246,172 @@ const server = http.createServer(async (req, res) => {
       return send(res, 201, preview);
     } catch (error) { return send(res, 400, { error: error.message }); }
   }
+  // A plan edit is deliberately narrower than a generic Experiment patch.
+  // It can replace only the canonical "实验方案与过程" section. Provenance,
+  // results, conclusions and lifecycle fields have dedicated human-reviewed
+  // transactions and are rejected here rather than silently ignored.
+  if (req.method === 'POST' && url.pathname === '/v1/edits/experiment-plan/preview') {
+    try {
+      if (String(req.headers['x-scholarium-user-confirmed'] || '').toLowerCase() !== 'true')
+        return send(res, 403, { error: 'experiment plan preview requires explicit user confirmation' });
+      const status = scholariumVaultStatus();
+      if (!status.enabled) return send(res, 409, { error: 'Scholarium actions are disabled.' });
+      if (!status.vaultRootExists) return send(res, 400, { error: 'scholarium.vaultRoot is not configured or does not exist.' });
+      const input = await body(req);
+      if (!input || typeof input !== 'object' || Array.isArray(input))
+        return send(res, 400, { error: 'experiment plan preview body must be a JSON object' });
+      const allowedFields = new Set(['experiment_uid', 'plan_markdown', 'sourceTaskId']);
+      const unexpected = Object.keys(input).filter((key) => !allowedFields.has(key));
+      if (unexpected.length) return send(res, 400, {
+        error: `experiment plan preview accepts only experiment_uid, plan_markdown and sourceTaskId; use dedicated review endpoints for every other field: ${unexpected.join(', ')}`,
+      });
+      const experimentUid = String(input.experiment_uid || '').trim();
+      const planMarkdown = String(input.plan_markdown || '');
+      if (!experimentUid) return send(res, 400, { error: 'experiment_uid is required' });
+      if (!planMarkdown.trim()) return send(res, 400, { error: 'plan_markdown is required' });
+      if (planMarkdown.length > 120000) return send(res, 413, { error: 'plan_markdown exceeds the 120000 character limit' });
+      const entry = scholariumExperiments.loadAll(status.vaultRoot).find((item) => item.object.uid === experimentUid);
+      if (!entry) return send(res, 404, { error: 'experiment not found: ' + experimentUid });
+      const target = path.resolve(status.vaultRoot, ...entry.path.split('/'));
+      const vaultRoot = path.resolve(status.vaultRoot);
+      if (target !== vaultRoot && !target.startsWith(vaultRoot + path.sep))
+        return send(res, 403, { error: 'experiment path escaped the configured vault root' });
+      const beforeContent = fs.readFileSync(target, 'utf8');
+      const beforeParsed = scholariumSchema.parseObject(beforeContent);
+      const nextBody = scholariumExperiments.replacePlanSection(beforeParsed.body, planMarkdown);
+      const nextObject = { ...beforeParsed.object, updated_at: new Date().toISOString() };
+      const schemaErrors = scholariumSchema.validateObject(nextObject);
+      if (schemaErrors.length) return send(res, 400, { error: `experiment is not schema-valid: ${schemaErrors.join('; ')}` });
+      const beforeBlocks = scholariumExperiments.resultBlocks(beforeParsed.body);
+      const afterBlocks = scholariumExperiments.resultBlocks(nextBody);
+      if (JSON.stringify(beforeBlocks) !== JSON.stringify(afterBlocks))
+        return send(res, 409, { error: 'plan edit would change an Evidence-addressable result block' });
+      const nextContent = scholariumSchema.serializeObject(nextObject, nextBody);
+      const sourceTaskId = String(input.sourceTaskId || '').slice(0, 100) || undefined;
+      const provider = providerForSourceTask(sourceTaskId);
+      const id = randomUUID();
+      const preview = {
+        id, action: 'experiment.plan_update', experimentUid, path: entry.path,
+        beforeSha256: createHash('sha256').update(beforeContent, 'utf8').digest('hex'),
+        afterSha256: createHash('sha256').update(nextContent, 'utf8').digest('hex'),
+        nextContent, sourceTaskId, provider,
+        createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + DRAFT_TTL_MS).toISOString(),
+      };
+      editPreviews.set(id, preview);
+      auditEditsLane('preview-created', {
+        id, action: preview.action, experimentUid, path: entry.path,
+        beforeSha256: preview.beforeSha256, afterSha256: preview.afterSha256,
+        sourceTaskId, provider,
+      });
+      return send(res, 201, {
+        id, action: preview.action, experimentUid, path: entry.path,
+        beforeSha256: preview.beforeSha256, afterSha256: preview.afterSha256,
+        createdAt: preview.createdAt, expiresAt: preview.expiresAt,
+      });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
+  // A human-confirmed replacement of a pre-schema legacy Experiment note.
+  // This is intentionally separate from drafts/batch (new files) and from
+  // schema Experiment plan edits. Preview snapshots the old bytes; commit
+  // refuses a stale preview so the agent can never overwrite a concurrent
+  // manual edit merely because its whole-note replacement looked plausible.
+  if (req.method === 'POST' && url.pathname === '/v1/legacy-note-edits/preview') {
+    try {
+      if (String(req.headers['x-scholarium-user-confirmed'] || '').toLowerCase() !== 'true')
+        return send(res, 403, { error: 'legacy note edit preview requires explicit user confirmation' });
+      const status = scholariumVaultStatus();
+      if (!status.enabled) return send(res, 409, { error: 'Scholarium actions are disabled.' });
+      if (!status.vaultRootExists) return send(res, 400, { error: 'scholarium.vaultRoot is not configured or does not exist.' });
+      const input = await body(req);
+      if (!input || typeof input !== 'object' || Array.isArray(input))
+        return send(res, 400, { error: 'legacy note edit preview body must be a JSON object' });
+      const allowedFields = new Set(['path', 'content', 'reason', 'changes', 'sourceTaskId']);
+      const unexpected = Object.keys(input).filter((key) => !allowedFields.has(key));
+      if (unexpected.length) return send(res, 400, { error: `legacy note edit preview accepts only path, content, reason, changes and sourceTaskId: ${unexpected.join(', ')}` });
+      const { relativePath, target } = legacyNoteEditTarget(status.vaultRoot, input.path);
+      if (!fs.existsSync(target)) return send(res, 404, { error: `legacy note does not exist: ${relativePath}` });
+      const content = String(input.content || '');
+      const reason = String(input.reason || '').trim().slice(0, 600);
+      if (!content.trim()) return send(res, 400, { error: 'legacy note content is required' });
+      if (content.length > 200000) return send(res, 413, { error: 'legacy note content exceeds the 200000 character limit' });
+      if (!reason) return send(res, 400, { error: 'legacy note edit reason is required' });
+      const beforeContent = fs.readFileSync(target, 'utf8');
+      if (beforeContent === content) return send(res, 409, { error: 'legacy note content is unchanged; no write preview was created' });
+      const changes = (Array.isArray(input.changes) ? input.changes : []).slice(0, 30).map((change) => ({
+        location: String(change?.location || '').trim().slice(0, 240),
+        before: String(change?.before || '').trim().slice(0, 600),
+        after: String(change?.after || '').trim().slice(0, 600),
+      })).filter((change) => change.location && change.before && change.after);
+      if (!changes.length) return send(res, 400, { error: 'legacy note edit preview requires at least one concrete before/after review row' });
+      const normalized = (value) => String(value).replaceAll('\r\n', '\n');
+      for (const change of changes) {
+        if (!normalized(beforeContent).includes(normalized(change.before)))
+          return send(res, 409, { error: `legacy note review row no longer matches the current note at ${change.location}` });
+        if (!normalized(content).includes(normalized(change.after)))
+          return send(res, 400, { error: `legacy note review row does not appear in proposed content at ${change.location}` });
+      }
+      const sourceTaskId = String(input.sourceTaskId || '').slice(0, 100) || undefined;
+      const provider = providerForSourceTask(sourceTaskId);
+      const id = randomUUID();
+      const preview = {
+        id, action: 'legacy.note_edit', path: relativePath, reason, changes, nextContent: content,
+        beforeSha256: createHash('sha256').update(beforeContent, 'utf8').digest('hex'),
+        afterSha256: createHash('sha256').update(content, 'utf8').digest('hex'),
+        sourceTaskId, provider, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + DRAFT_TTL_MS).toISOString(),
+      };
+      editPreviews.set(id, preview);
+      auditEditsLane('preview-created', { id, action: preview.action, path: preview.path, beforeSha256: preview.beforeSha256, afterSha256: preview.afterSha256, sourceTaskId, provider });
+      return send(res, 201, { id, action: preview.action, path: preview.path, beforeSha256: preview.beforeSha256, afterSha256: preview.afterSha256, createdAt: preview.createdAt, expiresAt: preview.expiresAt });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
+  // Provenance invalidation is also a direct-vault, confirmation-gated edit,
+  // but unlike a normal forward transition it updates the whole dependency
+  // chain (Experiment -> Evidence -> Hypothesis) and writes a recovery journal.
+  // Keep it out of the queue whitelist for the same reason as transition: the
+  // deployed main.js cannot consume this new action, while the Bridge can run
+  // the tested, filesystem-only registry handler directly after confirmation.
+  if (req.method === 'POST' && url.pathname === '/v1/edits/provenance-invalidation/preview') {
+    try {
+      const status = scholariumVaultStatus();
+      if (!status.enabled) return send(res, 409, { error: 'Scholarium actions are disabled. Set scholarium.enabled=true in bridge.config.json after reviewing which actions you are allowing.' });
+      if (!status.vaultRootExists) return send(res, 400, { error: 'scholarium.vaultRoot is not configured or does not exist; set it to the real Obsidian vault root in bridge.config.json' });
+      const input = await body(req);
+      const actionInput = {
+        experiment_uid: String(input.experiment_uid || ''),
+        data_origin: String(input.data_origin || ''),
+        reason: String(input.reason || ''),
+        data_provenance_note: String(input.data_provenance_note || ''),
+      };
+      const sourceTaskId = String(input.sourceTaskId || '').slice(0, 100) || undefined;
+      const provider = providerForSourceTask(sourceTaskId);
+      let manifest;
+      try {
+        manifest = scholariumActions.run(status.vaultRoot, 'experiment.invalidate_provenance', actionInput,
+          { dryRun: true, allowedLevels: ['L0', 'L1'], by: 'bridge' });
+      } catch (error) {
+        auditEditsLane('preview-rejected', { action: 'experiment.invalidate_provenance', reason: error.message, experimentUid: actionInput.experiment_uid, sourceTaskId, provider });
+        return send(res, 400, { error: error.message });
+      }
+      const id = randomUUID();
+      const preview = {
+        id, action: 'experiment.invalidate_provenance', input: actionInput, sourceTaskId, provider,
+        plan: manifest.result,
+        createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + DRAFT_TTL_MS).toISOString(),
+      };
+      editPreviews.set(id, preview);
+      auditEditsLane('preview-created', {
+        id, action: preview.action, experimentUid: actionInput.experiment_uid,
+        evidenceUids: manifest.result.evidence_uids, hypothesisUids: manifest.result.hypothesis_uids,
+        sourceTaskId, provider,
+      });
+      return send(res, 201, preview);
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
   if (req.method === 'POST' && /^\/v1\/edits\/[\w-]+\/commit$/.test(url.pathname)) {
     const id = url.pathname.split('/')[3];
     const preview = editPreviews.get(id);
     const rejectCommit = (status, message) => {
-      auditEditsLane('commit-rejected', { id, reason: message, experimentUid: preview?.experimentUid, sourceTaskId: preview?.sourceTaskId, provider: preview?.provider || untrustedProvider('edit preview unavailable') });
+      auditEditsLane('commit-rejected', { id, reason: message, experimentUid: preview?.experimentUid || preview?.input?.experiment_uid, sourceTaskId: preview?.sourceTaskId, provider: preview?.provider || untrustedProvider('edit preview unavailable') });
       return send(res, status, { error: message });
     };
     if (!preview) return rejectCommit(404, 'edit preview not found or expired');
@@ -2955,12 +4427,76 @@ const server = http.createServer(async (req, res) => {
       // fires after the researcher clicked "确认执行" on the action card in
       // shell-ui.js's executeScholariumActions(), same click that triggers
       // every other queued action in the same batch.
-      const manifest = scholariumActions.run(status.vaultRoot, 'experiment.transition',
-        { experiment_uid: preview.experimentUid, to_status: preview.toStatus, reason: preview.reason },
-        { dryRun: false, confirmed: true, allowedLevels: ['L0', 'L1'], by: 'weaver-chat-confirmed' });
+      let manifest;
+      if (preview.action === 'legacy.note_edit') {
+        if (String(req.headers['x-scholarium-user-confirmed'] || '').toLowerCase() !== 'true')
+          return rejectCommit(403, 'legacy note edit commit requires explicit user confirmation');
+        const { target } = legacyNoteEditTarget(status.vaultRoot, preview.path);
+        if (!fs.existsSync(target)) return rejectCommit(404, 'legacy note disappeared after preview');
+        const currentContent = fs.readFileSync(target, 'utf8');
+        const currentHash = createHash('sha256').update(currentContent, 'utf8').digest('hex');
+        if (currentHash !== preview.beforeSha256) {
+          editPreviews.delete(id);
+          return rejectCommit(409, 'legacy note changed after preview; request a fresh preview before committing');
+        }
+        const temporary = `${target}.${id}.tmp`;
+        try {
+          fs.writeFileSync(temporary, preview.nextContent, 'utf8');
+          fs.renameSync(temporary, target);
+        } catch (error) {
+          try { fs.rmSync(temporary, { force: true }); } catch {}
+          return rejectCommit(500, `legacy note write failed: ${error.message}`);
+        }
+        manifest = { path: preview.path, before_sha256: preview.beforeSha256, after_sha256: preview.afterSha256 };
+      } else if (preview.action === 'experiment.plan_update') {
+        const target = path.resolve(status.vaultRoot, ...String(preview.path || '').split('/'));
+        const vaultRoot = path.resolve(status.vaultRoot);
+        if (target !== vaultRoot && !target.startsWith(vaultRoot + path.sep))
+          return rejectCommit(403, 'experiment path escaped the configured vault root');
+        if (!fs.existsSync(target)) return rejectCommit(404, 'experiment disappeared after preview');
+        const currentContent = fs.readFileSync(target, 'utf8');
+        const currentHash = createHash('sha256').update(currentContent, 'utf8').digest('hex');
+        if (currentHash !== preview.beforeSha256) {
+          editPreviews.delete(id);
+          return rejectCommit(409, 'experiment changed after preview; request a fresh preview before committing');
+        }
+        const nextParsed = scholariumSchema.parseObject(preview.nextContent);
+        const schemaErrors = scholariumSchema.validateObject(nextParsed.object);
+        if (schemaErrors.length) return rejectCommit(400, `planned experiment is not schema-valid: ${schemaErrors.join('; ')}`);
+        const currentBlocks = scholariumExperiments.resultBlocks(scholariumSchema.parseObject(currentContent).body);
+        const nextBlocks = scholariumExperiments.resultBlocks(nextParsed.body);
+        if (JSON.stringify(currentBlocks) !== JSON.stringify(nextBlocks))
+          return rejectCommit(409, 'plan edit would change an Evidence-addressable result block');
+        const temporary = `${target}.${id}.tmp`;
+        try {
+          fs.writeFileSync(temporary, preview.nextContent, 'utf8');
+          fs.renameSync(temporary, target);
+        } catch (error) {
+          try { fs.rmSync(temporary, { force: true }); } catch {}
+          return rejectCommit(500, `experiment plan write failed: ${error.message}`);
+        }
+        manifest = {
+          path: preview.path, experiment_uid: preview.experimentUid,
+          before_sha256: preview.beforeSha256, after_sha256: preview.afterSha256,
+        };
+      } else if (preview.action === 'experiment.invalidate_provenance') {
+        manifest = scholariumActions.run(status.vaultRoot, 'experiment.invalidate_provenance', preview.input,
+          { dryRun: false, confirmed: true, allowedLevels: ['L0', 'L1'], by: 'user' });
+      } else {
+        manifest = scholariumActions.run(status.vaultRoot, 'experiment.transition',
+          { experiment_uid: preview.experimentUid, to_status: preview.toStatus, reason: preview.reason },
+          { dryRun: false, confirmed: true, allowedLevels: ['L0', 'L1'], by: preview.actor || 'weaver-chat-confirmed' });
+      }
       editPreviews.delete(id);
-      auditEditsLane('commit-succeeded', { id, experimentUid: preview.experimentUid, from: manifest.result.from, to: manifest.result.to, sourceTaskId: preview.sourceTaskId, provider: preview.provider });
-      return send(res, 200, { ok: true, result: manifest.result });
+      auditEditsLane('commit-succeeded', {
+        id, action: preview.action || 'experiment.transition',
+        path: preview.path,
+        experimentUid: preview.experimentUid || preview.input?.experiment_uid,
+        from: manifest.result?.from || manifest.result?.from_status,
+        to: manifest.result?.to || manifest.result?.to_status,
+        sourceTaskId: preview.sourceTaskId, provider: preview.provider,
+      });
+      return send(res, 200, { ok: true, result: manifest.result || manifest });
     } catch (error) { return rejectCommit(400, error.message); }
   }
   if (req.method === 'POST' && /^\/v1\/ideas\/[^/]+\/promote\/preview$/.test(url.pathname)) {
@@ -3108,6 +4644,23 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, envVar: item.envVar, masked: settingsCore.maskSecret(value), source: 'file' });
     } catch (error) { return send(res, 400, { error: error.message }); }
   }
+  /* 明文回读，供设置页的"眼睛"按钮使用。
+   *
+   * 和上面的列表端点分开，是有意的：列表是页面一打开就会调的，永远只给掩码；
+   * 明文必须由用户按下眼睛这个动作单独触发，一次只取一个 envVar。这样密钥不会
+   * 因为"顺手打开了设置页"就落进内存和日志里。
+   *
+   * 仍然只接受注册表内的 envVar——否则这个端点就成了任意环境变量读取器。 */
+  if (req.method === 'POST' && url.pathname === '/v1/settings/credentials/reveal') {
+    try {
+      const input = await body(req);
+      const item = settingsCore.CREDENTIAL_REGISTRY.find((c) => c.envVar === String(input.envVar || ''));
+      if (!item) return send(res, 400, { error: 'unknown credential envVar' });
+      const found = resolveSecret(item.envVar, item.legacyConfigField);
+      if (!found || !found.value) return send(res, 404, { error: 'credential is not configured' });
+      return send(res, 200, { ok: true, envVar: item.envVar, value: found.value, source: found.source });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
   if (req.method === 'POST' && url.pathname === '/v1/settings/credentials/migrate') {
     // 把仍留在 bridge.config.json 明文里的 legacy 密钥搬进 bridge/.env 并从
     // config 清除。迁移后 config 里不再有任何第三方密钥（Bridge 自身 token
@@ -3176,6 +4729,18 @@ const server = http.createServer(async (req, res) => {
       const title = String(input.title || '').trim().slice(0, 200);
       const text = String(input.body || '').trim().slice(0, 4000);
       if (!title || !text) return send(res, 400, { error: 'agent-memory entry requires title and body' });
+      // A memory entry must contain a usable claim or observation.  The old
+      // endpoint accepted placeholders such as “上述定稿。” and even allowed
+      // title === body, which created durable empty-looking records that later
+      // ranked as real project memory.  Keep the rule narrow so concise but
+      // substantive entries remain valid.
+      const normalizeMemoryText = (value) => String(value || '').replace(/[\s`。！？；：:,.!?;]+/g, '').toLowerCase();
+      const normalizedTitle = normalizeMemoryText(title);
+      const normalizedBody = normalizeMemoryText(text);
+      const placeholder = /^(上述|同上|见上|如上|待定|暂无|无|略|todo|tbd|定稿|测试|test)+$/i;
+      if (normalizedTitle === normalizedBody || placeholder.test(normalizedTitle) || placeholder.test(normalizedBody)) {
+        return send(res, 400, { error: 'agent-memory entry requires substantive, non-placeholder title and body' });
+      }
       const status = ['已确认', '已核实'].includes(input.status) ? input.status : '待确认';
       const date = new Date().toISOString().slice(0, 10);
       // 近似去重（2026-08-22 实测教训：同一结论在相邻两轮对话被写进
@@ -3392,6 +4957,50 @@ const server = http.createServer(async (req, res) => {
       return item ? send(res, 200, normalizeQueueItem(item)) : send(res, 404, { error: 'action not found' });
     } catch (error) { return send(res, 400, { error: error.message }); }
   }
+  // Bounded whole-vault read channel for the research Agent's stdio MCP.
+  // Settings/plugins, secrets, runtime audits and binary files are excluded;
+  // paths are always returned relative to the configured vault root.
+  if (req.method === 'POST' && url.pathname === '/v1/scholarium/vault/search') {
+    try {
+      const root = mcpVaultRoot();
+      const input = await body(req);
+      const query = String(input.query || '').trim().toLowerCase().slice(0, 500);
+      const limit = Math.max(1, Math.min(200, Number(input.limit) || 50));
+      const terms = query.split(/\s+/).filter(Boolean).slice(0, 20);
+      const matches = [];
+      const files = walkMcpVault(root, input.extensions);
+      for (const relative of files) {
+        if (matches.length >= limit) break;
+        const target = safeMcpVaultFile(root, relative);
+        let text = '';
+        try {
+          const stat = fs.statSync(target);
+          if (stat.size > 2 * 1024 * 1024) continue;
+          text = fs.readFileSync(target, 'utf8');
+        } catch { continue; }
+        const haystack = `${relative}\n${text}`.toLowerCase();
+        if (terms.length && !terms.every((term) => haystack.includes(term))) continue;
+        let excerpt = '';
+        if (query) {
+          const first = Math.max(0, haystack.indexOf(terms[0]) - 180);
+          excerpt = text.slice(first, first + 700).replace(/\s+/g, ' ').trim();
+        }
+        matches.push({ path: relative, size: Buffer.byteLength(text), excerpt });
+      }
+      return send(res, 200, { query, matches, count: matches.length, scanned: files.length, truncated: files.length >= 5000 || matches.length >= limit });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
+  if (req.method === 'POST' && url.pathname === '/v1/scholarium/vault/read') {
+    try {
+      const root = mcpVaultRoot();
+      const input = await body(req);
+      const target = safeMcpVaultFile(root, input.path);
+      if (!fs.existsSync(target) || !fs.statSync(target).isFile()) return send(res, 404, { error: 'vault file not found' });
+      const maxChars = Math.max(1, Math.min(200000, Number(input.max_chars) || 50000));
+      const content = fs.readFileSync(target, 'utf8');
+      return send(res, 200, { path: path.relative(root, target).replaceAll('\\', '/'), content: content.slice(0, maxChars), truncated: content.length > maxChars, total_chars: content.length });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
   // GET /v1/scholarium/rescan-checkpoint-mark[?at=<iso>] — resets the M4
   // rescan due-clock (tools/pending-review-scan.js's Research/_runs/rescan/
   // last-checked.json). Deliberately its own bespoke route, not a registry
@@ -3470,12 +5079,27 @@ const server = http.createServer(async (req, res) => {
 server.on('error', (error) => {
   if (error.code === 'EADDRINUSE') console.error(`Bridge port ${PORT} is already in use. Stop the other Research Weaver process, then retry.`);
   else console.error(`Bridge could not start: ${error.message}`);
+  if (process.send) process.send({ type: 'listen-error', service: 'bridge', code: error.code || 'LISTEN_FAILED', message: error.message });
   process.exitCode = 1;
 });
 sweepFullLaneAudit(); // 启动时清理 90 天前的 full 车道审计（保留期见设计稿 §8）
 sweepFullLaneSnapshots(); // 同上：快照保留最近 20 份或 30 天（设计稿 §8.3）
 server.listen(PORT, HOST, () => {
-  console.log(`ZhiYanZhe Agent Bridge: http://${HOST}:${PORT}`);
+  const address = server.address();
+  const actualPort = address && typeof address === 'object' ? address.port : PORT;
+  if (process.send) process.send({ type: 'listening', service: 'bridge', port: actualPort });
+  console.log(`ZhiYanZhe Agent Bridge: http://${HOST}:${actualPort}`);
   console.log(`Config file: ${CONFIG_PATH}`);
   console.log('Execution is restricted to configured agents, read-only permission, and configured local roots.');
+  scheduleAutoDetection();
+  /* Warm the verification cache in the background.
+
+     Without this, agentStatus() has nothing to consult until someone opens the
+     settings page, so /v1/agents answers 'command_detected' for every adapter
+     and the canvas's agent picker is back to reporting a PATH hit as if it
+     were a working agent — the exact behaviour this change set exists to
+     remove. The probe is a child process and its result is cached, so a picker
+     that polls pays nothing; a failure here leaves the cache empty, which
+     degrades to 'command_detected' rather than to a false 'ready'. */
+  runEnvironmentProbe().catch(() => { /* absent verification is reported as unverified */ });
 });

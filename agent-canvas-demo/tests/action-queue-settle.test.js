@@ -7,14 +7,13 @@
 // synthesize `outcome` for legacy archive entries settled before the fix.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const http = require('node:http');
-const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
 const pluginRoot = path.resolve(__dirname, '..', '..');
 const queue = require(path.join(pluginRoot, 'tools', 'bridge-action-queue.js'));
+const { startBridge } = require('./helpers/bridge-harness.js');
 
 test('settle() stores outcome both flat and nested', () => {
   const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'queue-settle-'));
@@ -45,55 +44,19 @@ test('queue preserves server-derived task/provider provenance through settlement
 
 // HTTP-level: a legacy archive entry (flat-only, written by the pre-fix settle)
 // must still read back with outcome.status through the Bridge endpoint.
-const root = path.resolve(__dirname, '..');
-const bridgePort = 46700 + (process.pid % 300);
-const TOKEN = 'test-token-' + process.pid;
-let bridge;
-let vault;
-let configPath;
-
-function request(pathname) {
-  return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port: bridgePort, path: pathname, headers: { 'x-agent-bridge-token': TOKEN } }, (res) => {
-      let raw = '';
-      res.on('data', (chunk) => { raw += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: raw }));
-    });
-    req.on('error', reject);
-    req.end();
-  });
-}
-
-async function waitForBridge() {
-  let lastError;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try { const res = await new Promise((res2, rej2) => {
-      const r = http.request({ host: '127.0.0.1', port: bridgePort, path: '/health' }, (x) => res2(x.statusCode));
-      r.on('error', rej2); r.end();
-    }); if (res === 200) return; } catch (error) { lastError = error; }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw lastError || new Error('bridge did not start');
-}
+let harness, vault;
+const request = (pathname) => harness.request(pathname).then((res) => ({ ...res, body: res.text }));
 
 test.before(async () => {
   vault = fs.mkdtempSync(path.join(os.tmpdir(), 'queue-legacy-vault-'));
-  configPath = path.join(os.tmpdir(), `queue-legacy-${process.pid}.config.json`);
-  fs.writeFileSync(configPath, JSON.stringify({
-    token: TOKEN, allowExecution: false, workspaceRoot: vault, allowedRoots: [vault], adapters: {},
+  harness = await startBridge({ config: {
+    workspaceRoot: vault, allowedRoots: [vault], adapters: {},
     scholarium: { enabled: true, vaultRoot: vault, allowedActions: ['workspace.task_add'] },
-  }, null, 2), 'utf8');
-  bridge = spawn(process.execPath, [path.join(root, 'bridge', 'server.js')], {
-    cwd: root,
-    env: { ...process.env, AGENT_BRIDGE_PORT: String(bridgePort), AGENT_BRIDGE_CONFIG_PATH: configPath },
-    stdio: 'ignore', windowsHide: true,
-  });
-  await waitForBridge();
+  } });
 });
 
 test.after(() => {
-  if (bridge && !bridge.killed) bridge.kill();
-  if (configPath && fs.existsSync(configPath)) fs.rmSync(configPath);
+  if (harness) harness.stop();
   if (vault && fs.existsSync(vault)) fs.rmSync(vault, { recursive: true, force: true });
 });
 

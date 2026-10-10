@@ -34,7 +34,7 @@ The researcher logs in to WebVPN/CARSI once in a visible browser window. The dow
 { "mode": "auto_login", "timeoutSec": 300 }
 ```
 
-Shells out to `~/.scansci-pdf/webvpn_auto_login.py`, which drives the whole CAS flow: fills the form, waits for a captcha if one appears, clicks through post-login confirmations, and writes the three cookie files. Headed by default — a captcha is the one step it cannot automate, and headless leaves nowhere to solve it. Pass `"headless": true` only when you know there is no captcha.
+Shells out to `~/.scansci-pdf/webvpn_auto_login.py`, which drives the whole CAS flow: fills the form, waits for a captcha if one appears, clicks through post-login confirmations, and writes the three cookie files. This helper is machine-local and is not part of a portable package. If it is unavailable, the UI automatically switches to the visible manual login flow. Headed by default — a captcha is the one step it cannot automate, and headless leaves nowhere to solve it. Pass `"headless": true` only when you know there is no captcha.
 
 Success is not taken from the script's own self-report. After it exits, `_validate_session(load_config())` is called — the same check `scansci-institutional` runs before every batch — and `logged_in` reflects that, not the exit code.
 
@@ -52,7 +52,7 @@ Note the tradeoff this accepts: `webvpn_credentials.json` holds the password in 
 }
 ```
 
-Use this when the downloader returns `needs_login`, or when the session has expired. A visible Chrome window opens. The user signs in manually. Scholarium stores no password.
+Use this when the downloader returns `needs_login`, or when the session has expired. A visible browser window opens. The user signs in manually. Scholarium stores no password. The launcher tries installed Chrome, then Edge, then Playwright Chromium. On a clean computer run `npm install` followed by `npx playwright install chromium` in `agent-canvas-demo`.
 
 Login detection polls every 2s and requires **both** signals, then confirms with an active probe:
 

@@ -46,7 +46,10 @@ test('buildProjectDrafts creates schema-valid linked hypotheses and experiments 
   assert.deepEqual(S.validateObject(exp), []);
   assert.equal(exp.project_uid, PROJECT.uid);
   assert.deepEqual(exp.tests_hypotheses, [hyp.uid]);
-  assert.equal(exp.data_origin, 'planned');
+  assert.equal(exp.data_origin, undefined);
+  assert.equal(exp.data_recorded_by, undefined);
+  assert.equal(exp.data_recorded_at, undefined);
+  assert.match(exp.data_provenance_note, /必须由研究者/);
   assert.match(built.items[2].content, /status: "proposed"/);
   assert.match(built.schedulePath, /^Research\/Projects\/PRJ-001\/Schedule\/\d{4}-W\d{2}\.md$/);
 });

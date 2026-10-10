@@ -1,0 +1,48 @@
+# Line endings
+#
+# main.js is a ~36k-line built bundle edited by several people and agents on
+# Windows. If its line endings are allowed to flip, a single checkout turns the
+# whole file into one diff and every branch conflicts with every other branch,
+# which defeats the "one owner at a time" rule. Pin everything to LF in both the
+# repository and the working tree.
+#
+# Deliberately NOT marked `-text`: that would make git treat main.js as binary
+# and print "Binary files differ" instead of a reviewable diff in pull requests.
+
+* text=auto eol=lf
+
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+*.ts    text eol=lf
+*.json  text eol=lf
+*.css   text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.html  text eol=lf
+*.txt   text eol=lf
+
+# Windows-only helpers keep CRLF or they will not run
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# Never touch these
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.svg   text eol=lf
+*.pdf   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.zip   binary
+*.xlsx  binary
+*.docx  binary
+*.pptx  binary
+
+# Collapse noise in diffs of the built bundle
+main.js linguist-generated=true

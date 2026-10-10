@@ -12,6 +12,9 @@
   const $ = (selector) => document.querySelector(selector);
   const VIEW_KEY = 'weaver.shell.view';
   const TRACKER_KEY = 'weaver.shell.tracker';
+  const RUN_SUMMARY_COLLAPSED_KEY = 'weaver.shell.run-summary-collapsed';
+  let runSummaryCollapsed = false;
+  try { runSummaryCollapsed = localStorage.getItem(RUN_SUMMARY_COLLAPSED_KEY) === '1'; } catch { /* private mode */ }
 
   /* ------------------------------------------------------------ views -- */
 
@@ -218,6 +221,113 @@
     writeChat(flowId, stored);
   }
 
+  const CONFIRMATION_KINDS = ['action', 'draft', 'legacyNoteEdit', 'run', 'normalize', 'plot', 'plotRevision', 'suggestReconstruction'];
+  let focusPendingCardsOnNextRender = true;
+
+  function confirmationState(message, kind) {
+    const explicit = message.confirmationStates?.[kind];
+    if (['pending', 'confirmed', 'abandoned'].includes(explicit)) return explicit;
+    if (kind === 'action' && Array.isArray(message.actions) && message.actions.length)
+      return message.actionsState ? 'confirmed' : 'pending';
+    if (kind === 'draft' && Array.isArray(message.drafts) && message.drafts.length)
+      return message.draftsState ? 'confirmed' : 'pending';
+    if (kind === 'legacyNoteEdit' && Array.isArray(message.legacyNoteEdits) && message.legacyNoteEdits.length)
+      return message.legacyNoteEditsState ? 'confirmed' : 'pending';
+    if (kind === 'run' && Array.isArray(message.runs) && message.runs.length)
+      return message.runs.some((item) => item.state) ? 'confirmed' : 'pending';
+    if (kind === 'normalize' && Array.isArray(message.normalizations) && message.normalizations.length)
+      return message.normalizations.some((item) => item.state) ? 'confirmed' : 'pending';
+    if (kind === 'plot' && Array.isArray(message.plots) && message.plots.length)
+      return message.plots.some((item) => item.state) ? 'confirmed' : 'pending';
+    if (kind === 'plotRevision' && Array.isArray(message.plotRevisions) && message.plotRevisions.length)
+      return message.plotRevisions.some((item) => item.state) ? 'confirmed' : 'pending';
+    if (kind === 'suggestReconstruction' && Array.isArray(message.suggestReconstructions) && message.suggestReconstructions.length)
+      return 'pending';
+    return 'none';
+  }
+
+  function confirmationStates(message) {
+    return Object.fromEntries(CONFIRMATION_KINDS.map((kind) => [kind, confirmationState(message, kind)]));
+  }
+
+  function pendingConfirmationCount() {
+    return chatMessages.reduce((total, message) => total
+      + CONFIRMATION_KINDS.filter((kind) => confirmationState(message, kind) === 'pending').length, 0);
+  }
+
+  function ensurePendingConfirmationButton() {
+    let button = document.getElementById('chatPendingConfirmations');
+    if (button) return button;
+    const row = document.querySelector('.wv-chat-topic-row');
+    if (!row) return null;
+    button = document.createElement('button');
+    button.id = 'chatPendingConfirmations';
+    button.type = 'button';
+    button.className = 'wv-btn wv-pending-confirmations';
+    button.title = '跳到本课题最早一张尚未确认的请求卡片';
+    button.addEventListener('click', () => { focusPendingCardsOnNextRender = true; renderChat(); });
+    row.appendChild(button);
+    return button;
+  }
+
+  function updatePendingConfirmationButton() {
+    const button = ensurePendingConfirmationButton();
+    if (!button) return;
+    const count = pendingConfirmationCount();
+    button.hidden = count === 0;
+    button.textContent = `待确认请求 ${count}`;
+  }
+
+  function protocolAuditPayload(message, event, submission) {
+    const audit = message.protocolAudit || {};
+    return {
+      event,
+      taskId: message.taskId,
+      flowId: message.flowId || chatFlowId,
+      replyLength: audit.replyLength || 0,
+      blocks: audit.blocks || {},
+      renderedCards: audit.renderedCards || 0,
+      cardStates: confirmationStates(message),
+      writeClaim: audit.writeClaim || '',
+      // This is the final, renderer-built Skill recipe—not a model protocol
+      // block.  It makes a later audit able to distinguish model intent from
+      // what the researcher-confirmed card actually submitted.
+      submission: submission || undefined,
+    };
+  }
+
+  async function auditChatTurn(message, event = 'confirmation-state', submission) {
+    if (!message?.taskId || !message?.protocolAudit) return;
+    try {
+      await bridgeFetch('/v1/chat-turns/audit', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(protocolAuditPayload(message, event, submission)),
+      });
+    } catch { /* audit is best-effort and must never break the conversation */ }
+  }
+
+  function markConfirmation(message, kind, state) {
+    message.confirmationStates ||= {};
+    message.confirmationStates[kind] = state;
+    void auditChatTurn(message);
+  }
+
+  function abandonConfirmation(message, kind) {
+    markConfirmation(message, kind, 'abandoned');
+    saveChat();
+    renderChat();
+  }
+
+  function appendAbandonButton(bar, message, kind) {
+    if (confirmationState(message, kind) !== 'pending') return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'wv-action-cancel';
+    button.textContent = '暂不执行';
+    button.addEventListener('click', () => abandonConfirmation(message, kind));
+    bar.appendChild(button);
+  }
+
   function chatBubble(role, text) {
     const row = document.createElement('div');
     row.className = `wv-msg wv-msg-${role}`;
@@ -229,13 +339,12 @@
     head.appendChild(who);
     const body = document.createElement('div');
     body.className = 'wv-msg-body';
-    // Support basic markdown: **bold**, `code`, newlines
-    const html = String(text || '')
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-      .replace(/`(.+?)`/g, '<code style="background:var(--wv-raise2);color:var(--wv-accent-soft);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>')
-      .replace(/\n/g, '<br>');
-    body.innerHTML = html;
+    // The dedicated renderer keeps ordinary agent prose readable (including
+    // Markdown tables) without ever treating the reply itself as HTML.
+    const renderMarkdown = window.weaverChatMarkdown?.renderMarkdown;
+    body.innerHTML = renderMarkdown
+      ? renderMarkdown(text)
+      : String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
     row.append(head, body);
     return row;
   }
@@ -324,16 +433,61 @@
     const title = runTitle?.textContent || '运行中';
     const card = document.createElement('div');
     card.className = 'wv-run-summary';
-    let chipsHtml = rows.map(r => {
-      const name = r.querySelector('b')?.textContent || '';
+    if (runSummaryCollapsed) {
+      card.classList.add('is-collapsed');
+      const reopen = document.createElement('button');
+      reopen.type = 'button';
+      reopen.className = 'wv-run-summary-reopen';
+      reopen.title = '重新显示 Pipeline 进度卡';
+      reopen.setAttribute('aria-label', '重新显示 Pipeline 进度卡');
+      reopen.setAttribute('aria-expanded', 'false');
+      const icon = document.createElement('span');
+      icon.className = 'wv-run-summary-reopen-icon';
+      icon.textContent = '▸';
+      const label = document.createElement('span');
+      label.textContent = '显示 Pipeline 进度';
+      const progress = document.createElement('span');
+      progress.className = 'wv-run-summary-progress';
+      progress.textContent = `${done} / ${total}`;
+      reopen.append(icon, label, progress);
+      reopen.addEventListener('click', () => setRunSummaryCollapsed(false));
+      card.appendChild(reopen);
+      return card;
+    }
+    const head = document.createElement('div');
+    head.className = 'wv-run-summary-head';
+    const heading = document.createElement('b');
+    heading.textContent = title;
+    const actions = document.createElement('span');
+    actions.className = 'wv-run-summary-head-actions';
+    const progress = document.createElement('span');
+    progress.className = 'wv-run-summary-progress';
+    progress.textContent = `${done} / ${total}`;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'wv-run-summary-toggle';
+    close.textContent = '×';
+    close.title = '收起 Pipeline 进度卡（不会停止任务）';
+    close.setAttribute('aria-label', '收起 Pipeline 进度卡，不会停止任务');
+    close.setAttribute('aria-expanded', 'true');
+    close.addEventListener('click', () => setRunSummaryCollapsed(true));
+    actions.append(progress, close);
+    head.append(heading, actions);
+    const chips = document.createElement('div');
+    chips.className = 'wv-run-summary-steps';
+    for (const row of rows) {
+      const name = row.querySelector('b')?.textContent || '';
       const short = name.replace(/^阶段\s*[\d.]+\s*·\s*/, '').slice(0, 20);
       let cls = '';
-      if (r.classList.contains('pending')) cls = '';
-      else if (r.querySelector('i')?.textContent.trim() === '!') cls = 'error';
+      if (row.classList.contains('pending')) cls = '';
+      else if (row.querySelector('i')?.textContent.trim() === '!') cls = 'error';
       else cls = 'done';
-      return `<span class="wv-run-chip ${cls}">${short}</span>`;
-    }).join('');
-    card.innerHTML = `<div class="wv-run-summary-head"><b>${title}</b><span class="wv-run-summary-progress">${done} / ${total}</span></div><div class="wv-run-summary-steps">${chipsHtml}</div>`;
+      const chip = document.createElement('span');
+      chip.className = `wv-run-chip ${cls}`;
+      chip.textContent = short;
+      chips.appendChild(chip);
+    }
+    card.append(head, chips);
     return card;
   }
 
@@ -377,6 +531,14 @@
   }
 
   let lastSummaryHtml = null;
+  function setRunSummaryCollapsed(collapsed) {
+    runSummaryCollapsed = !!collapsed;
+    try { localStorage.setItem(RUN_SUMMARY_COLLAPSED_KEY, runSummaryCollapsed ? '1' : '0'); } catch { /* private mode */ }
+    // Force one small-host replacement so the newly attached close/reopen
+    // handler is installed immediately; the transcript itself stays untouched.
+    lastSummaryHtml = null;
+    refreshRunSummary();
+  }
   function refreshRunSummary() {
     if (!ensureHosts()) return;
     const summary = runSummaryCard();
@@ -512,10 +674,31 @@
       saveChat();
       chatFlowId = flowId;
       chatMessages = readChat(flowId);
+      focusPendingCardsOnNextRender = true;
     }
     syncChatTopicLabel();
     renderChat();
   });
+
+  // Old conversations are persisted locally, so a renderer-only correction
+  // cannot assume every malformed block arrived after this build.  Derive a
+  // safe display object without mutating the stored transcript or reviving an
+  // old request into something executable.
+  function displayMessageForChat(message) {
+    if (message?.role !== 'agent') return message;
+    const concealed = concealMalformedProtocolBlocks(message?.text);
+    const existingFailures = Array.isArray(message.protocolFailures) ? message.protocolFailures : [];
+    if (!concealed.failures.length && !existingFailures.length) return message;
+    // A newly received message already persists its concealed failure in
+    // protocolFailures.  On later renders the historic raw text is inspected
+    // again, so concatenate-without-dedup would turn one old safe rejection
+    // into two identical red cards after a reload.
+    const failures = [...existingFailures, ...concealed.failures].filter((failure, index, all) =>
+      all.findIndex((candidate) => candidate?.protocol === failure?.protocol
+        && candidate?.target === failure?.target
+        && candidate?.guidance === failure?.guidance) === index);
+    return { ...message, text: concealed.text, protocolFailures: failures };
+  }
 
   function renderChat() {
     if (!narrative) return;
@@ -523,12 +706,25 @@
     if (!chatMessages.length) {
       fragment.appendChild(chatBubble('system', `这是「${chatTopicName()}」的专属对话区。每个研究主题的对话相互独立，新建或切换主题时对话记录会一起切换。`));
     }
-    for (const msg of chatMessages) {
-      fragment.appendChild(chatBubble(msg.role, msg.text));
+    for (const storedMessage of chatMessages) {
+      const msg = displayMessageForChat(storedMessage);
+      if (msg.role !== 'agent' || String(msg.text || '').trim()) fragment.appendChild(chatBubble(msg.role, msg.text));
+      const runRequest = runRequestCard(msg);
+      if (runRequest) fragment.appendChild(runRequest);
       const card = actionCard(msg);
       if (card) fragment.appendChild(card);
       const draft = draftCard(msg);
       if (draft) fragment.appendChild(draft);
+      const legacyNoteEdit = legacyNoteEditCard(msg);
+      if (legacyNoteEdit) fragment.appendChild(legacyNoteEdit);
+      const normalizeRequest = normalizeRequestCard(msg);
+      if (normalizeRequest) fragment.appendChild(normalizeRequest);
+      const plotRequest = plotRequestCard(msg);
+      if (plotRequest) fragment.appendChild(plotRequest);
+      const plotRevision = plotRevisionCard(msg);
+      if (plotRevision) fragment.appendChild(plotRevision);
+      const protocolFailure = protocolFailureCard(msg);
+      if (protocolFailure) fragment.appendChild(protocolFailure);
       const suggestReconstruction = suggestReconstructionCard(msg);
       if (suggestReconstruction) fragment.appendChild(suggestReconstruction);
     }
@@ -540,7 +736,11 @@
     refreshRunSummary();
     refreshDownloadProgress();
     refreshPending();
-    narrative.scrollTop = narrative.scrollHeight;
+    updatePendingConfirmationButton();
+    const firstPending = narrative.querySelector('[data-confirmation-state="pending"]');
+    if (focusPendingCardsOnNextRender && firstPending) firstPending.scrollIntoView({ block: 'center' });
+    else narrative.scrollTop = narrative.scrollHeight;
+    focusPendingCardsOnNextRender = false;
   }
 
   // A task can also end as 'cancelled'. Waiting only for completed|failed meant
@@ -597,8 +797,9 @@
     }
     const profiles = window.researchWeaver?.profiles || [];
     const installed = (id) => zhiyanBridge.agents.some((agent) => agent.id === id && agent.installed);
-    // 科研车道优先：claude-research 有网络（WebSearch/curl）+ 黑名单制 Bash/Write/Edit
-    // + 白名单 MCP，是唯一能真正执行五步循环（联网检索/下载/计算）的聊天适配器；
+    // 科研车道优先：claude-research 有 WebSearch/WebFetch + 受限 Vault MCP，
+    // 不暴露 Bash/PowerShell/Write/Edit。
+    // + 白名单 MCP，是唯一能执行受控联网核查与 Vault 只读检索的聊天适配器；
     // 不存在时退回原只读适配器，行为与之前完全一致。
     if (installed('claude-research')) {
       const researchProfile = profiles.find((profile) => profile.adapterId === 'claude-research');
@@ -616,7 +817,7 @@
   // 不说清楚的话它会沉默地只用本地库硬答（2026-08-21 实测复现）。
   function laneCapabilities(adapterId) {
     if (adapterId === 'claude-research') {
-      return `你当前在「科研车道」（claude-research）：可以联网——WebSearch、WebFetch、Bash 中的 curl/python 都可用，也可调用 scansci-pdf 下载工具。凡涉及文献、DOI、配方、实验数据的问题，必须联网核查真实来源（OpenAlex/Crossref/WebSearch），不允许只凭本地文献库或记忆作答；本地库命中只作补充。`;
+      return `你当前在「科研车道」（claude-research）：可以使用 WebSearch、WebFetch，并可通过受限 mcp__scholarium__* 工具搜索/读取 Vault 安全文本；没有 Bash、PowerShell、Write 或 Edit。读取本机 Scholarium/Obsidian 时必须优先使用受限 MCP，禁止用 WebFetch、curl 或猜测 localhost 端口访问本机 Bridge。凡涉及文献、DOI、配方、实验数据的问题，必须联网核查真实来源（OpenAlex/Crossref/WebSearch），不允许只凭本地文献库或记忆作答；本地库命中只作补充。`;
     }
     if (adapterId === 'codex') {
       return `你当前的适配器（codex）没有网络访问能力（沙箱禁网），只能使用本地文件与文献库。若问题需要联网核查（文献、DOI、最新数据），在回答开头明确说明"当前车道无法联网，以下仅基于本地库"，并建议研究员改用 claude-research 车道重问。`;
@@ -637,11 +838,9 @@
     // 这里解析成绝对 URL：页面 origin + /bridge 代理前缀。走代理是对的——
     // start-local.js 把 /bridge/* 转发给本机 Bridge 并注入令牌，CLI 侧永远
     // 不需要也拿不到令牌本身。
-    const base = new URL(zhiyanBridge.url, location.href).href.replace(/\/$/, '');
     return `你可以直接读取和操作研究员的 Scholarium 插件（Obsidian 里的科研管理系统）。
 
-【读取：立即执行】对任何"库里有什么/我的日程/订阅文章评分"类问题，先用 WebFetch 打这个只读端点拿真实数据再回答，不要凭记忆编造：
-GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可选>
+【读取：立即执行】对任何"库里有什么/我的日程/订阅文章评分"类问题，使用 mcp__scholarium__scholarium_state（参数 action 与 input）拿真实数据再回答，不要凭记忆编造。要查整个 Obsidian 仓库中的文件，使用 mcp__scholarium__vault_search；要读取命中的文本文件，使用 mcp__scholarium__vault_read。MCP 是本地只读控制通道，不依赖 localhost WebFetch，也不需要 Bash/PowerShell。
 可用读取动作：
 - workspace.get_state —— 博士工作台。input {"section":"timeblocks|checkin|tasks|captures|focus|habits|emotions|..."} 取某分区；不带 input 返回各分区摘要。
 - material.list —— 素材库全部条目和分类。
@@ -652,8 +851,7 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
 - decision.list —— 已落盘的决策记录（input 可选 {"project_uid":"..."} 限定课题）；project.get 的返回里也已经带了当前课题的 decisions，多数情况不用单独调这个。
 - lesson.list —— 已确认的经验候选（input 可选 {"project_uid":"..."} 限定课题；project_uid 为空的经验是跨课题都成立的方法论层面经验，任何限定下都会带上）。project.get 的返回里也已经带了当前课题相关的 lessons，多数情况不用单独调这个。经验候选怎么从执行回填/漂移/决策里提炼、怎么写成 scholarium-draft，见对话协议规则17——只在研究员明确要求总结经验时才做，不主动提炼。
 - workspace.rescan_pending —— 全量（不限于当前绑定课题）回扫：所有已关联实验的时间块里带 flags 的条目（orphaned/blocked/unreviewed/unbackfilled/stale），以及所有 active 且填了 trigger_condition 的决策。每条都带一个稳定的 marker 字符串（RESCAN-TB:<id> / RESCAN-DEC:<uid>），用来和已经生成过的工作台任务去重。返回里还带 due（布尔，是否到了该提醒的时候——节流周期由研究员在 bridge.config.json 里配置，默认每天最多一次，日期数学在服务端算好，不要自己心算）、last_checked_at（上次真正提醒是什么时候，null 表示从没提醒过）、cadence_days、next_due_at。见下方规则 9，due 是这批数据能不能拿去提议任务的唯一判据。
-示例：${base}/v1/scholarium/state?action=workspace.get_state&input=%7B%22section%22%3A%22timeblocks%22%7D
-注意：以上地址是本机 http 服务。若 WebFetch 对它报证书或版本类错误（如 WRONG_VERSION_NUMBER、certificate 错误），通常是 WebFetch 把 http 自动升级成了 https 所致——不要改用 https、也不要放弃，改用 Bash/PowerShell 原样请求，例如：powershell -NoProfile -Command "Invoke-RestMethod -Uri '<原样 http 地址>'"，拿到的是同样的 JSON。
+示例：调用 mcp__scholarium__scholarium_state，参数 {"action":"workspace.get_state","input":{"section":"timeblocks"}}。若 MCP 工具真实返回错误，如实报告工具名和错误；不得把“没有调用工具”误报为 Bridge 不在线。
 
 【修改：只能请求，不能自称已做】要修改 Scholarium 里的任何内容（排日程、打卡、记心情/习惯、加任务、登记素材、改文章评分、标已读收藏、给实验记日志），在回复末尾输出一个或多个如下格式的代码块：
 \`\`\`scholarium-action
@@ -672,7 +870,10 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
 - rss.set_article_score {article_id, overall_score:0-100, reason:必填} —— 改单篇文章评分
 - rss.mark_article {article_id, read?, starred?} —— 标已读/收藏
 - experiment.append_note {experiment_uid, text} —— 给实验记录追加日志
+- experiment.validate_chem {smiles? 或 reaction_smiles?（至少给一个）} —— 只读化学门禁：检查结构能否解析；反应式检查逐元素守恒和净电荷守恒。只有返回 valid:true 且 status:balanced 才能称为已配平并继续写入。
+- experiment.insert_chem {experiment_uid, smiles? 或 reaction_smiles?（至少给一个）, title?, type?, molfile?, ket?} —— 往实验记录正文插入一个化学结构块，研究员点"编辑"能直接用 Ketcher 打开继续画。它只固化结构表示，不自动证明方程式正确：调用前必须确认物种来源和反应物/产物边界，逐元素核对原子数与净电荷，涉及氧化还原再核对电子/氧化数，涉及离子/配位物再核对价态与配位数；系数化为最小整数比并给出人类可读方程式。Ketcher 把重复物种画成多个图形不等于显示了系数。任一项未核实就标为“待核验/方程式不完整”，拿不准就问研究员或用 experiment.append_note 写文字，绝不编造 SMILES、分子式、产物或“已配平”结论。
 - experiment.transition {experiment_uid, to_status, reason:必填} —— 推进实验生命周期状态（idea→designed→ready→running→data_pending→analyzing→concluded→integrated，一次只能走到紧挨着当前状态的下一步，不能跳级）。这个动作不经 Obsidian 队列，走独立的两阶段确认通道，点确认后 Bridge 直接执行、不用等 Obsidian 打开。
+- experiment.invalidate_provenance {experiment_uid, data_origin:"simulated"|"demonstration"|"unverifiable", reason:必填, data_provenance_note:必填} —— 研究者完成来源判定后，使实验进入 invalidated，并在一个带恢复快照的事务中同步降级其 Evidence、撤出 Hypothesis 正式关系。只有研究者在本轮明确声明来源类别并要求处置时才可请求；Agent 的文件推断、审计发现或“看起来像模拟”都不构成研究者声明。unknown 是尚未判定，unverifiable 是研究者已完成追溯但仍无法核实，两者不得混用。
 规则：
 1. 需要 id 的修改，先用读取动作查到真实 id，禁止编造。
 2. 日期推算以对话中给出的"今天"日期为准，"明天"=今天+1 天。
@@ -684,15 +885,68 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
 8. 研究员回答了某个已排期时间块的完成情况（完成/没完成/被卡住，附带原因或结果）：输出 workspace.timeblock_update {id, execution_status, execution_note} 写回最小事实；若这条回答本身构成一条值得记录的实验观察，同时输出 experiment.append_note {experiment_uid, text} 追加进实验日志——两个动作块可以在同一条回复里一起给。研究员的话若明确到"该推进状态了"（不只是汇报完成情况，而是一次状态判断），可以额外输出 experiment.transition {experiment_uid, to_status, reason}——2026-08-27 起这条通道已接通（走 /v1/edits 两阶段确认，面板会同步执行、不用等 Obsidian 轮询）。to_status 只能是生命周期里紧挨着当前状态的下一步，不能跳级；reason 必填。拿不准算不算"正式判断"时，宁可只做 append_note、在正文里问一句要不要推进，不要替研究员做这个决定。
 9. 这次对话是本次会话的第一条消息（没有此前对话）时，先调用 workspace.rescan_pending 做一次全量回扫。只看它返回的 due：
    - due 为 false：说明距上次提醒还没到节流周期（cadence_days 天），什么都不用做——不要提议任务，也不要在正文里提"我查了一下"，当作这一步没发生过。
-   - due 为 true：再调用 workspace.get_state {"section":"tasks"} 看已有任务的 note 里有没有 RESCAN-TB:<id> / RESCAN-DEC:<uid> 这样的 marker——已经出现过 marker 的条目不再重复提议。对剩下真正新出现的条目，按 blocked/unreviewed 优先、其次 unbackfilled、再 stale、最后决策触发条件的顺序，最多挑 8 条，各输出一个 workspace.task_add {title, note}，note 里必须原样带上对应 marker（比如 "RESCAN-TB:tb-20260810-01 · unbackfilled：日期已过未回填"），这样它才能被下一轮识别、去重。即使去重后一条新的都没有，也要用 WebFetch 打一次 GET ${base}/v1/scholarium/rescan-checkpoint-mark（不带 body，GET 即可），把节流计时重置——这一步不需要研究员确认，它只是记"什么时候查过"，不改任何研究记录；漏掉这步会导致每次打开对话都重新判定 due，节流形同虚设。只有 due 为 true 这一分支才允许调用这个端点，due 为 false 时绝不能调用它。`;
+   - due 为 true：再调用 workspace.get_state {"section":"tasks"} 看已有任务的 note 里有没有 RESCAN-TB:<id> / RESCAN-DEC:<uid> 这样的 marker——已经出现过 marker 的条目不再重复提议。对剩下真正新出现的条目，按 blocked/unreviewed 优先、其次 unbackfilled、再 stale、最后决策触发条件的顺序，最多挑 8 条，各输出一个 workspace.task_add {title, note}，note 里必须原样带上对应 marker（比如 "RESCAN-TB:tb-20260810-01 · unbackfilled：日期已过未回填"），这样它才能被下一轮识别、去重。即使去重后一条新的都没有，也要调用 mcp__scholarium__rescan_checkpoint_mark，把节流计时重置——这一步不需要研究员确认，它只记录“什么时候查过”，不改任何研究内容。只有 due 为 true 这一分支才允许调用，due 为 false 时绝不能调用。
+10. 研究员在描述某个实验的反应体系、底物或产物，而对应的 EXP 记录里还没有这条结构时，可以输出 experiment.insert_chem 把它固化进笔记正文。先调用 experiment.validate_chem；只有 valid:true 且 status:balanced，才允许继续调用 experiment.insert_chem 并传 strict_validation:true。验证器返回 unbalanced、invalid 或 unavailable 时禁止写入反应式，改用 experiment.append_note 记录“待核验/方程式不完整”。前提是结构本身来自研究员的话、文献原文或已有记录——你自己推断出来的、或只是"大概是这么个反应"的，一律不要写：一条编造的 SMILES 在笔记里和一条真实结构长得一模一样，事后没人分得清。
+
+【对话运行：只能请求，确认后执行】当研究员明确要求“运行完整 Pipeline”“只检索文献”或“从某个步骤重新运行”时，在回复末尾输出一个且只输出一个运行块。你不能声称任务已经启动；面板会把它变成确认卡，研究员点击后才运行。
+- 完整 Pipeline：
+\`\`\`scholarium-run
+{"operation":"pipeline.run","topic":"研究主题或问题","reason":"研究员明确要求运行完整链条"}
+\`\`\`
+- 仅检索文献（不下载、不生成证据卡/图谱/手稿）：
+\`\`\`scholarium-run
+{"operation":"literature.search","query":"检索主题或问题","reason":"研究员明确要求只检索"}
+\`\`\`
+- 将已经核实的 DOI 清单放入“文献订阅 → Pipeline 待处理”，供研究员逐篇选择下载，并在确认后直接打开该列表：
+\`\`\`scholarium-run
+{"operation":"literature.queue","items":[{"doi":"10.xxxx/xxxx","title":"论文标题","url":"https://doi.org/10.xxxx/xxxx","reason":"P0 · 摘要命中核心问题"}],"open":true,"reason":"研究员要求加入人工下载队列"}
+\`\`\`
+- 研究员同时要求扫描摘要、打标签并保存文献笔记时：先核实每篇摘要，再输出一个 \`\`\`scholarium-draft 块，items 中每篇一份 Markdown，建议路径为 Literature/<安全文件名>.md。每篇 frontmatter 只写 paper 的科研内容字段：type: paper、title、source（真实 DOI/出版方 URL）、doi、tags；uid、PAPER 编号、schema_version、时间戳与 AI 草稿状态由 Bridge 生成。JSON 顶层设 "open_after_commit":true。不得把没有拿到的摘要补造出来；只拿到元数据时明确写“摘要待补”。队列块与草稿块可以在同一回复中各出现一次，二者会分别显示确认卡。
+- 修改已经存在的人工实验笔记时，不得输出 scholarium-draft（它只会新建文件，绝不覆盖）。只允许修改 \`Experiments/\` 下的既有 Markdown，必须输出一个严格的三反引号 \`\`\`scholarium-note-edit 围栏块：{"path":"Experiments/现有文件.md","content":"完整修改后 Markdown","reason":"研究员要求","changes":[{"location":"位置","before":"原文","after":"修改后"}]}。changes 至少列出每处实质修改，面板会把它渲染成确认表格；研究员点击确认后 Bridge 才会预览、检测并发改动并原子写入。不得用这条路径修改 Research/ 下的 schema-v1 对象、\`.obsidian\` 文件或任何非 Markdown 文件。
+- 研究员想对素材库里的 XLSX 工作簿绘图时：先输出一个 \`\`\`scholarium-normalize 围栏块，把它结构化转换成一份带源哈希的 UTF-8 CSV（TXT/DAT 不需要这一步，绘图器直接嗅探它们的分隔符；只有确实需要把分隔符和表头行固化下来时才规范化）：
+\`\`\`scholarium-normalize
+{"data_path":"Materials/kinetics.xlsx","sheet":"Raw","header_row":2,"formula_mode":"cached","reason":"工作簿有多个工作表，研究员点名用 Raw"}
+\`\`\`
+data_path 必须是 Vault 内相对路径，后缀只能是 .csv/.tsv/.txt/.dat/.xlsx。sheet 只在工作簿有多个可见工作表时必填，且必须是研究员点名或你实际读到的工作表名——不要猜一个填上去。header_row 不确定时整个字段省略，交给 Skill 自动识别，不要编一个行号。formula_mode 默认 cached（读公式格已缓存的值）；研究员明确要求保留公式文本时用 formula_text；要求"有公式就别转"时用 reject。
+绝不要输出 allow_missing_formula_cache：公式格没有缓存值时 Skill 会拒绝，这是对的——那种情况下转换出来的是一整列空白，接着画出的图看着完全正常。只有研究员能在确认卡上自己解除这道闸，你没有办法知道那些公式本该算出什么。
+这条链是两段的，不要合并：规范化完成后面板会告诉研究员产物路径，绘图是另一次明确请求，x/y 列与图型必须由研究员指定。不要在同一条回复里既请求规范化又声称已经画好图。原文件全程只读，转换不清洗、不过滤、不平滑任何数值；你也不得在正文里把转换描述成"数据已整理好"。
+- 研究员指定了数据文件和要画的列之后，输出一个 \`\`\`scholarium-plot 围栏块请求出图（data_path 接受 .csv/.tsv/.txt/.dat；绘图器会嗅探 TXT/DAT 的分隔符、跳过注释行，分隔符有歧义时会拒绝而不是猜。只有 XLSX 工作簿必须先走上面的 normalize）：
+\`\`\`scholarium-plot
+{"data_path":"Materials/_normalized/<哈希>/normalized.csv","x_column":"time","y_columns":["signal"],"plot_kind":"line","title":"信号随时间变化","chart_style":{"theme":"publication"},"reason":"研究员点名 time 对 signal"}
+\`\`\`
+x_column / y_columns 必须是你在该文件表头里实际读到的列名，不得猜测、不得改写大小写或空格。plot_kind 只能是 line/scatter/bar。拿不准画哪一列就先问研究员，不要挑一个看起来合理的填上去——图画出来之后没人会回头核对列名选得对不对。
+- 只改已有图的外观（配色、字号、网格、图例、坐标范围、标注等）时，用 \`\`\`scholarium-plot-revise，指向那张图的 manifest：
+\`\`\`scholarium-plot-revise
+{"target_manifest_path":"Materials/_analysis/<目录>/plot-manifest.json","chart_style":{"theme":"soft","show_grid":false,"series_colors":["#3366cc"]},"reason":"研究员要求去掉网格线"}
+\`\`\`
+改版块里绝不要写 data_path、x_column、y_columns 或 save_mode——换数据或换列就是另一张图，必须走完整的 scholarium-plot 重新确认；覆盖旧版本只能由研究员在卡片上勾选。整块带了这些字段会被直接拒绝。
+你永远不直接编辑 SVG，只提交渲染参数，由绘图器从源 CSV 确定性重画——这样每一张图都始终能从数据复现。也不要把改样式说成"更新了数据"或"修正了曲线"。
+- 从最近一次 Pipeline 的指定步骤重跑：
+\`\`\`scholarium-run
+{"operation":"pipeline.rerun","run_id":"latest","from_step":"search","query":"可选：研究员明确给出的新检索式","reason":"研究员要求从检索步骤重新运行"}
+\`\`\`
+可用 from_step 只有：query-builder、concept-matrix、query-refine、search、quality-gate、extra-providers、final-screen、degraded-gate、dedupe、download、nature-reader、obsidian-bases、knowledge-graph、deep-research、nature-writing、nature-polishing。研究员说“第 3.7 步”时用 quality-gate；说“重新检索”时用 search；说“重新下载”时用 download。除非研究员点名某个真实运行 id，否则 run_id 用 latest，禁止编造 id。研究员同时明确给出新课题主题时可加 topic；明确给出新 Boolean 检索式时可加 query。修改主题会由面板安全回退到第 1 步，修改 query 且所选步骤晚于 search 时会回退到 search。旧任务没有状态包或目标步骤缺上游状态时，面板会拒绝跨步并解释需要从哪里重跑。研究员只是讨论 Pipeline、询问为什么失败或问某一步做什么时，不输出运行块。`;
   }
 
   // 从 agent 回复中剥离 ```scholarium-action 块。纯函数核心在
   // chat-actions-core.js（双端模块，有单测）；这里只做绑定。
   const parseActionRequests = window.weaverChatActionsCore.parseActionRequests;
+  const detectWriteClaim = window.weaverChatActionsCore.detectWriteClaim;
+  // ```scholarium-run``` 块只描述运行意图；由聊天确认卡调用浏览器侧编排器。
+  const parseRunRequests = window.weaverChatActionsCore.parseRunRequests;
   // ```scholarium-draft 块：新建 Markdown 记录（EXP/HYP 等）的保存请求，
   // 走 /v1/drafts/batch 预防式两段提交（设计文档 §7，不走 full 车道）。
   const parseDraftRequests = window.weaverChatActionsCore.parseDraftRequests;
+  const parseLegacyNoteEditRequests = window.weaverChatActionsCore.parseLegacyNoteEditRequests;
+  // ```scholarium-normalize``` 块：把 XLSX/TXT/DAT 结构化转换成带源哈希的
+  // UTF-8 CSV（Materials/_normalized/<hash>/），原文件只读、数值不做任何清洗。
+  // 模型只能提议，研究员在卡片上确认后才由 Bridge 调 sch-data-normalize。
+  const parseNormalizeRequests = window.weaverChatActionsCore.parseNormalizeRequests;
+  // 绘图与改图都只传可复现的 manifest 参数，不能把模型生成的 SVG 当作数据图。
+  // revise 解析器尤其不接受 source/column 字段，防止“改样式”偷换数据配方。
+  const parsePlotRequests = window.weaverChatActionsCore.parsePlotRequests;
+  const parsePlotRevisionRequests = window.weaverChatActionsCore.parsePlotRevisionRequests;
+  const concealMalformedProtocolBlocks = window.weaverChatActionsCore.concealMalformedProtocolBlocks;
   // ```scholarium-suggest-reconstruction``` 块：比 scholarium-action/-draft 都
   // 更弱的一类——模型只能表达"建议从这个种子 DOI 做一轮证据重建"的意图，卡片
   // 只有一个跳转按钮，点击后打开项目面板的种子重建弹窗，不发起任何网络请求
@@ -712,9 +966,11 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
   // project.get 等只读端点根本读不到——不是理论风险，是实际会发生的静默错位。
   async function executeDraftRequests(flowId, message) {
     if (!message.drafts || message.draftsState === 'executing' || message.draftsState === 'settled') return;
+    markConfirmation(message, 'draft', 'confirmed');
     message.draftsState = 'executing';
     saveChat(); renderChat();
     const outcomes = [];
+    const retryableDrafts = [];
     for (const req of message.drafts) {
       try {
         const batch = await bridgeFetch('/v1/drafts/batch', {
@@ -724,19 +980,33 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
           // （服务端仅作元数据记录，不参与校验）。base 固定传 'scholarium-vault'：
           // 这条路径写的从来都是 schema-v1 对象，没有"落在 workspaceRoot 也可以
           // 接受"的场景。
-          body: JSON.stringify({ items: req.items, sourceTaskId: message.taskId, base: 'scholarium-vault' }),
+          body: JSON.stringify({
+            items: req.items, sourceTaskId: message.taskId, base: 'scholarium-vault',
+            serverManagedMetadata: true, projectDisplayId: message.projectDisplayId || '',
+          }),
         });
         const committed = await bridgeFetch(`/v1/drafts/batch/${batch.id}/commit`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: '{}',
         });
-        outcomes.push({ paths: committed.items.map((item) => item.path), status: 'completed' });
+        const paths = committed.items.map((item) => item.path);
+        outcomes.push({ paths, status: 'completed' });
+        if (req.openAfterCommit && paths[0]) {
+          try { window.parent.postMessage({ type: 'scholarium:open-vault-file', path: paths[0] }, '*'); }
+          catch { /* standalone browser mode has no Obsidian host */ }
+        }
       } catch (error) {
         outcomes.push({ paths: req.items.map((item) => item.path), status: 'failed', detail: humanizeActionError(String(error.message || error)) });
+        retryableDrafts.push(req);
       }
     }
-    message.draftsState = 'settled';
+    // A transient Bridge/schema error must not turn the only confirmation card
+    // into a dead end.  Keep just the failed requests on the card so the user
+    // can correct/retry them without asking the Agent to regenerate every
+    // successfully committed sibling draft.
+    message.drafts = retryableDrafts;
+    message.draftsState = retryableDrafts.length ? 'failed' : 'settled';
     const lines = outcomes.map((o) => o.status === 'completed'
       ? `✔ 已写入：${o.paths.join('、')}`
       : `✘ 未写入 ${o.paths.join('、')}：${o.detail}`);
@@ -744,14 +1014,53 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
     saveChat(); renderChat();
   }
 
+  // Existing legacy notes are a separate authority surface from drafts. The
+  // click creates a fresh preview, then commits that exact preview; the Bridge
+  // rejects any note changed after preview instead of overwriting it.
+  async function executeLegacyNoteEdits(flowId, message) {
+    if (!message.legacyNoteEdits || message.legacyNoteEditsState === 'executing' || message.legacyNoteEditsState === 'settled') return;
+    markConfirmation(message, 'legacyNoteEdit', 'confirmed');
+    message.legacyNoteEditsState = 'executing';
+    saveChat(); renderChat();
+    const outcomes = [];
+    const retryable = [];
+    for (const edit of message.legacyNoteEdits) {
+      try {
+        const preview = await bridgeFetch('/v1/legacy-note-edits/preview', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-scholarium-user-confirmed': 'true' },
+          body: JSON.stringify({ path: edit.path, content: edit.content, reason: edit.reason, changes: edit.changes, sourceTaskId: message.taskId }),
+        });
+        const committed = await bridgeFetch(`/v1/edits/${preview.id}/commit`, {
+          method: 'POST', headers: { 'content-type': 'application/json', 'x-scholarium-user-confirmed': 'true' }, body: '{}',
+        });
+        outcomes.push({ path: committed.path || edit.path, status: 'completed' });
+      } catch (error) {
+        outcomes.push({ path: edit.path, status: 'failed', detail: humanizeActionError(String(error.message || error)) });
+        retryable.push(edit);
+      }
+    }
+    message.legacyNoteEdits = retryable;
+    message.legacyNoteEditsState = retryable.length ? 'failed' : 'settled';
+    const lines = outcomes.map((outcome) => outcome.status === 'completed'
+      ? `✔ 已修改：${outcome.path}`
+      : `✘ 未修改 ${outcome.path}：${outcome.detail}`);
+    appendToChat(flowId, { role: 'system', text: '既有笔记修改结果：\n' + lines.join('\n'), at: new Date().toISOString() });
+    saveChat(); renderChat();
+  }
+
   // 草稿确认卡片：列出将新建的文件（路径 + 大小 + 理由），用户点确认才落盘。
   function draftCard(message) {
     if (!Array.isArray(message.drafts) || !message.drafts.length) return null;
+    const state = confirmationState(message, 'draft');
     const card = document.createElement('div');
     card.className = 'wv-action-card';
+    card.dataset.confirmationState = state;
     const title = document.createElement('div');
     title.className = 'wv-action-title';
-    title.textContent = `新建记录（${message.drafts.reduce((sum, d) => sum + d.items.length, 0)} 个文件，确认后才写入）`;
+    title.textContent = state === 'abandoned'
+      ? `新建记录（已放弃，${message.drafts.reduce((sum, d) => sum + d.items.length, 0)} 个文件未写入）`
+      : `新建记录（${message.drafts.reduce((sum, d) => sum + d.items.length, 0)} 个文件，确认后才写入）`;
     card.appendChild(title);
     card.appendChild(providerNotice(message.provider));
     for (const req of message.drafts) {
@@ -773,17 +1082,118 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
         card.appendChild(row);
       }
     }
-    if (message.draftsState !== 'settled') {
+    if (message.draftsState !== 'settled' && state !== 'abandoned') {
       const bar = document.createElement('div');
       bar.className = 'wv-action-bar';
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'wv-action-confirm';
       btn.disabled = message.draftsState === 'executing';
-      btn.textContent = message.draftsState === 'executing' ? '正在写入…' : '确认写入（新建文件，不会覆盖已有记录）';
+      btn.textContent = message.draftsState === 'executing'
+        ? '正在写入…'
+        : message.draftsState === 'failed'
+          ? '重新预览并写入失败的记录'
+          : '确认写入（新建文件，不会覆盖已有记录）';
       btn.addEventListener('click', () => executeDraftRequests(chatFlowId, message));
       bar.appendChild(btn);
+      appendAbandonButton(bar, message, 'draft');
       card.appendChild(bar);
+    }
+    return card;
+  }
+
+  function legacyNoteEditCard(message) {
+    if (!Array.isArray(message.legacyNoteEdits) || !message.legacyNoteEdits.length) return null;
+    const state = confirmationState(message, 'legacyNoteEdit');
+    const card = document.createElement('div');
+    card.className = 'wv-action-card wv-legacy-note-edit-card';
+    card.dataset.confirmationState = state;
+    const title = document.createElement('div');
+    title.className = 'wv-action-title';
+    title.textContent = state === 'abandoned'
+      ? `修改既有笔记（已放弃，${message.legacyNoteEdits.length} 个文件未修改）`
+      : `修改既有笔记（${message.legacyNoteEdits.length} 个文件，确认后才写入）`;
+    card.append(title, providerNotice(message.provider));
+    for (const edit of message.legacyNoteEdits) {
+      const path = document.createElement('code');
+      path.className = 'wv-action-detail';
+      path.textContent = edit.path;
+      card.appendChild(path);
+      if (edit.reason) {
+        const reason = document.createElement('div');
+        reason.className = 'wv-action-detail';
+        reason.textContent = edit.reason;
+        card.appendChild(reason);
+      }
+      if (edit.changes?.length) {
+        const table = document.createElement('table');
+        table.className = 'wv-legacy-note-edit-table';
+        const head = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        for (const label of ['位置', '原文', '修改后']) {
+          const cell = document.createElement('th');
+          cell.textContent = label;
+          headRow.appendChild(cell);
+        }
+        head.appendChild(headRow); table.appendChild(head);
+        const body = document.createElement('tbody');
+        for (const change of edit.changes) {
+          const row = document.createElement('tr');
+          for (const value of [change.location, change.before, change.after]) {
+            const cell = document.createElement('td');
+            cell.textContent = value;
+            row.appendChild(cell);
+          }
+          body.appendChild(row);
+        }
+        table.appendChild(body); card.appendChild(table);
+      }
+    }
+    if (message.legacyNoteEditsState !== 'settled' && state !== 'abandoned') {
+      const bar = document.createElement('div');
+      bar.className = 'wv-action-bar';
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'wv-action-confirm';
+      button.disabled = message.legacyNoteEditsState === 'executing';
+      button.textContent = message.legacyNoteEditsState === 'executing' ? '正在预览并写入…'
+        : message.legacyNoteEditsState === 'failed' ? '重新预览并修改失败的笔记'
+          : '确认修改（会检测并发改动）';
+      button.addEventListener('click', () => executeLegacyNoteEdits(chatFlowId, message));
+      bar.appendChild(button); appendAbandonButton(bar, message, 'legacyNoteEdit'); card.appendChild(bar);
+    }
+    return card;
+  }
+
+  // A malformed protocol must be visible, but its giant JSON payload belongs
+  // neither in the prose transcript nor in a clickable confirmation card.
+  // This card is explicitly non-executable; it states what the renderer could
+  // safely identify and why the researcher needs to ask again.
+  function protocolFailureCard(message) {
+    if (!Array.isArray(message.protocolFailures) || !message.protocolFailures.length) return null;
+    const legacyDrafts = message.protocolFailures.filter((failure) =>
+      failure?.protocol === 'scholarium-draft' && /^Experiments\//i.test(String(failure?.target || '')));
+    const onlyLegacyDrafts = legacyDrafts.length === message.protocolFailures.length;
+    const card = document.createElement('div');
+    // A legacy draft pointed at an existing note is a deliberate safety
+    // rejection, not a malformed request and not a failed write.  Present it
+    // as neutral history so researchers are not told that their note is in an
+    // error state after the safe edit flow has already completed.
+    card.className = `wv-action-card ${onlyLegacyDrafts ? 'wv-protocol-compatibility-card' : 'wv-protocol-failure-card'}`;
+    card.dataset.confirmationState = 'abandoned';
+    const title = document.createElement('div');
+    title.className = 'wv-action-title';
+    title.textContent = onlyLegacyDrafts
+      ? `旧草稿请求已安全跳过（${message.protocolFailures.length} 条）`
+      : `未执行的格式错误请求（${message.protocolFailures.length} 条）`;
+    card.appendChild(title);
+    for (const failure of message.protocolFailures) {
+      const detail = document.createElement('div');
+      detail.className = 'wv-action-detail';
+      detail.textContent = `${failure.protocol} · ${failure.target}`;
+      const guidance = document.createElement('div');
+      guidance.className = 'wv-action-detail';
+      guidance.textContent = failure.guidance;
+      card.append(detail, guidance);
     }
     return card;
   }
@@ -792,8 +1202,10 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
   // 里没有课题上下文）退化为提示手动打开面板，不猜测/不硬绑某个课题。
   function suggestReconstructionCard(message) {
     if (!Array.isArray(message.suggestReconstructions) || !message.suggestReconstructions.length) return null;
+    const state = confirmationState(message, 'suggestReconstruction');
     const card = document.createElement('div');
     card.className = 'wv-action-card';
+    card.dataset.confirmationState = state;
     for (const s of message.suggestReconstructions) {
       const row = document.createElement('div');
       row.className = 'wv-action-row';
@@ -802,14 +1214,552 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'wv-action-confirm';
-      btn.textContent = '打开重建面板';
+      btn.textContent = state === 'abandoned' ? '已放弃' : state === 'confirmed' ? '再次打开重建面板' : '打开重建面板';
+      btn.disabled = state === 'abandoned';
       btn.addEventListener('click', () => {
         const displayId = message.projectDisplayId || document.querySelector('.project-mode-seed-reconstruct')?.dataset.project;
         if (!displayId) return window.researchWeaver.toast('请先在项目面板打开对应课题，再点击"从种子重建 P1–P2"。');
+        markConfirmation(message, 'suggestReconstruction', 'confirmed');
+        saveChat();
+        updatePendingConfirmationButton();
         window.weaverSeedReconstruction?.openSeedReconstructionDialog(displayId, s.seed_doi);
       });
       row.append(label, btn);
       card.appendChild(row);
+    }
+    if (state === 'pending') {
+      const bar = document.createElement('div');
+      bar.className = 'wv-action-bar';
+      appendAbandonButton(bar, message, 'suggestReconstruction');
+      card.appendChild(bar);
+    }
+    return card;
+  }
+
+  const RUN_LABEL = {
+    'pipeline.run': '运行完整文献 Pipeline',
+    'literature.search': '仅检索文献',
+    'literature.queue': '加入人工下载队列',
+    'pipeline.rerun': '从指定步骤重新运行 Pipeline',
+  };
+
+  function runRequestDetail(request) {
+    if (request.operation === 'literature.queue') {
+      return `论文：${request.items.length} 篇\n去向：文献订阅 → Pipeline 待处理${request.open === false ? '' : '（完成后自动打开）'}\n${request.items.map((item) => `${item.doi} · ${item.title}`).join('\n')}`;
+    }
+    if (request.operation === 'pipeline.rerun') {
+      const step = window.weaverPipelineSteps?.stepById?.(request.from_step);
+      return `历史任务：${request.run_id === 'latest' ? '当前工作区最近一次 Pipeline' : request.run_id}\n起点：${step?.title || request.from_step}\n该步骤及其下游旧产物会先从状态包中清除。`;
+    }
+    return `主题：${request.topic}`;
+  }
+
+  async function executeRunRequest(flowId, message, index) {
+    const request = message.runs?.[index];
+    if (!request || request.state === 'running' || request.state === 'completed') return;
+    if (typeof window.runScholariumConversationOperation !== 'function') {
+      window.researchWeaver.toast('对话运行控制器未加载，请重载 Scholarium 后重试。');
+      return;
+    }
+    request.state = 'running';
+    void auditChatTurn(message);
+    saveChat(); renderChat();
+    try {
+      const outcome = await window.runScholariumConversationOperation(request);
+      request.state = outcome?.status === 'stopped' ? 'stopped' : 'completed';
+      request.resolvedRunId = outcome?.runId || '';
+      const detail = outcome?.detail || (request.operation === 'literature.search'
+        ? `检索完成：${outcome?.count ?? 0} 条；实际检索式：${outcome?.query || request.topic}`
+        : request.operation === 'pipeline.rerun'
+          ? `已从 ${request.from_step} 发起重跑${outcome?.runId ? `（父任务 ${outcome.runId}）` : ''}。`
+          : 'Pipeline 已完成。');
+      appendToChat(flowId, { role: 'system', text: `对话运行结果：${detail}`, at: new Date().toISOString() });
+    } catch (error) {
+      request.state = 'failed';
+      request.error = humanizeActionError(String(error?.message || error));
+      appendToChat(flowId, { role: 'system', text: `对话运行失败：${request.error}`, at: new Date().toISOString() });
+    }
+    saveChat(); renderChat();
+  }
+
+  // 数据规范化确认执行：把 XLSX/TXT/DAT 结构化转换成带源哈希的 UTF-8 CSV。
+  // 原文件只读；产物落在 Materials/_normalized/<hash>/；不清洗、不过滤、不平滑
+  // 任何数值。allow_missing_formula_cache 只能由研究员在这张卡上勾选——公式格
+  // 没有缓存值时会静默产出空白列，模型无从知道那些公式本该算出什么。
+  function normalizeSheetChoices(error) {
+    const match = String(error || '').match(/multiple visible sheets:\s*(.+)$/i);
+    if (!match) return [];
+    return match[1].split(/,\s*/).map((entry) => {
+      const sheet = entry.match(/^\d+:(.+?)\s*\((visible|hidden|veryHidden)\)$/i);
+      return sheet ? { name: sheet[1], state: sheet[2] } : null;
+    }).filter(Boolean);
+  }
+
+  async function inspectNormalizeSheets(flowId, message, index) {
+    const request = message.normalizations?.[index];
+    if (!request || request.inspectingSheets || request.state === 'running' || request.state === 'completed') return;
+    request.inspectingSheets = true;
+    delete request.inspectError;
+    saveChat(); renderChat();
+    try {
+      const [skills, vaultStatus] = await Promise.all([
+        bridgeFetch('/v1/skills'), bridgeFetch('/v1/scholarium/status'),
+      ]);
+      const skill = skills.skills.find((item) => item.name === 'sch-data-normalize');
+      if (!skill) throw new Error('未找到 sch-data-normalize 本机 Skill；请重新启动 Research Weaver。');
+      const vaultRoot = String(vaultStatus?.vaultRoot || '');
+      if (!vaultStatus?.vaultRootExists || !vaultRoot) {
+        throw new Error('scholarium.vaultRoot 未配置或不存在；无法读取 Vault 的 XLSX 工作表。');
+      }
+      const response = await bridgeFetch('/v1/skills/run', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ skillId: skill.id, workspace: vaultRoot, input: JSON.stringify({ mode: 'inspect', data_path: request.data_path }) }),
+      });
+      const sheets = Array.isArray(response?.manifest?.workbook?.sheets) ? response.manifest.workbook.sheets : [];
+      request.sheetChoices = sheets
+        .filter((sheet) => String(sheet?.state || 'visible') === 'visible' && String(sheet?.name || '').trim())
+        .map((sheet) => ({ name: String(sheet.name), state: String(sheet.state || 'visible') }));
+      if (request.sheetChoices.length === 1) request.sheet = request.sheetChoices[0].name;
+      if (!request.sheetChoices.length) throw new Error('工作簿中没有可选择的可见工作表。');
+      delete request.error;
+    } catch (error) {
+      request.inspectError = humanizeActionError(String(error?.message || error));
+    } finally {
+      delete request.inspectingSheets;
+      saveChat(); renderChat();
+    }
+  }
+
+  async function executeNormalizeRequest(flowId, message, index) {
+    const request = message.normalizations?.[index];
+    if (!request || request.state === 'running' || request.state === 'completed') return;
+    request.state = 'running';
+    delete request.error;
+    markConfirmation(message, 'normalize', 'confirmed');
+    saveChat(); renderChat();
+    try {
+      const skills = await bridgeFetch('/v1/skills');
+      const skill = skills.skills.find((item) => item.name === 'sch-data-normalize');
+      if (!skill) throw new Error('未找到 sch-data-normalize 本机 Skill；请重新启动 Research Weaver。');
+      const input = { data_path: request.data_path };
+      if (request.sheet) input.sheet = request.sheet;
+      if (request.header_row) input.header_row = request.header_row;
+      if (request.formula_mode) input.formula_mode = request.formula_mode;
+      if (request.allowMissingFormulaCache) input.allow_missing_formula_cache = true;
+      // 数据素材的 data_path 是 Vault 相对路径（Materials/...），而
+      // workspaceRoot 是当前课题的子目录。把后者传给 Skill 会让一个正确的
+      // Materials/... 路径被解析为 <课题>/Materials/...，从而在素材库场景
+      // 必然报“文件不在授权工作区”。Vault 根由 Bridge 的只读状态端点提供，
+      // 不从聊天文本或 DOM 猜测；不存在时 fail-closed，不运行任何转换。
+      const vaultStatus = await bridgeFetch('/v1/scholarium/status');
+      const vaultRoot = String(vaultStatus?.vaultRoot || '');
+      if (!vaultStatus?.vaultRootExists || !vaultRoot) {
+        throw new Error('scholarium.vaultRoot 未配置或不存在；无法从 Vault 的 Materials/ 目录规范化数据。');
+      }
+      void auditChatTurn(message, 'skill-submission', { kind: 'normalize', skill: 'sch-data-normalize', input });
+      const response = await bridgeFetch('/v1/skills/run', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ skillId: skill.id, workspace: vaultRoot, input: JSON.stringify(input) }),
+      });
+      const manifest = response?.manifest || {};
+      request.state = 'completed';
+      request.result = {
+        ready_path: String(manifest?.ready_for?.data_path || ''),
+        sheet: String(manifest?.selection?.sheet || ''),
+        header_row: manifest?.selection?.header_row ?? null,
+        formula_mode: String(manifest?.selection?.formula_mode || ''),
+      };
+      // 规范化成功不自动绘图：x/y 列与图型仍然是研究者的显式选择，只把产物
+      // 路径作为下一张确认卡的预填输入。
+      appendToChat(flowId, {
+        role: 'system',
+        text: `规范化完成：${request.result.ready_path || '（未返回产物路径）'}`
+          + `${request.result.sheet ? `\nsheet：${request.result.sheet}` : ''}`
+          + `${request.result.header_row ? `　表头行：${request.result.header_row}` : ''}`
+          + `${request.result.formula_mode ? `　公式模式：${request.result.formula_mode}` : ''}`
+          + '\n原文件未被修改。下一步绘图需要你指定 x/y 列与图型，不会自动执行。',
+        at: new Date().toISOString(),
+      });
+    } catch (error) {
+      request.state = 'failed';
+      request.error = humanizeActionError(String(error?.message || error));
+      appendToChat(flowId, { role: 'system', text: `规范化失败：${request.error}`, at: new Date().toISOString() });
+    }
+    saveChat(); renderChat();
+  }
+
+  function normalizeRequestCard(message) {
+    if (!Array.isArray(message.normalizations) || !message.normalizations.length) return null;
+    const state = confirmationState(message, 'normalize');
+    const card = document.createElement('div');
+    card.className = 'wv-action-card wv-run-request-card';
+    card.dataset.confirmationState = state;
+    const title = document.createElement('div');
+    title.className = 'wv-action-card-title';
+    title.textContent = '织研者请求规范化数据文件（确认后才生效）';
+    card.append(title, providerNotice(message.provider));
+    message.normalizations.forEach((request, index) => {
+      const row = document.createElement('div');
+      row.className = 'wv-action-row';
+      const copy = document.createElement('div');
+      const name = document.createElement('b');
+      name.textContent = request.data_path;
+      const detail = document.createElement('div');
+      detail.className = 'wv-action-detail';
+      detail.style.whiteSpace = 'pre-line';
+      detail.textContent = [
+        `sheet：${request.sheet || '（单工作表或由 Skill 判定）'}`,
+        `表头行：${request.header_row || '自动识别'}　公式模式：${request.formula_mode || 'cached'}`,
+        '产物：Materials/_normalized/<源哈希>/ 下的 UTF-8 CSV；原文件只读，数值不做任何清洗或过滤。',
+        request.reason ? `理由：${request.reason}` : '',
+        request.result?.ready_path ? `产物路径：${request.result.ready_path}` : '',
+        request.error ? `失败：${request.error}` : '',
+      ].filter(Boolean).join('\n');
+      copy.append(name, detail);
+      row.appendChild(copy);
+      if (state !== 'abandoned' && (!request.state || request.state === 'failed')) {
+        const knownSheets = Array.isArray(request.sheetChoices) && request.sheetChoices.length
+          ? request.sheetChoices
+          : normalizeSheetChoices(request.error);
+        if (/\.xlsx$/i.test(String(request.data_path || '')) && !request.sheet) {
+          if (knownSheets.length) {
+            const label = document.createElement('label');
+            label.className = 'wv-action-detail';
+            label.append(document.createTextNode('工作表：'));
+            const select = document.createElement('select');
+            select.setAttribute('aria-label', '选择要规范化的 XLSX 工作表');
+            select.append(new Option('请选择工作表（必选）', ''));
+            knownSheets.forEach((sheet) => select.append(new Option(`${sheet.name} (${sheet.state})`, sheet.name)));
+            select.value = request.sheet || '';
+            select.addEventListener('change', () => {
+              request.sheet = select.value || undefined;
+              if (request.sheet) delete request.error;
+              saveChat(); renderChat();
+            });
+            label.append(select);
+            copy.appendChild(label);
+          } else {
+            const inspect = document.createElement('button');
+            inspect.type = 'button';
+            inspect.className = 'wv-action-confirm';
+            inspect.textContent = request.inspectingSheets ? '正在读取工作表…' : '读取工作表';
+            inspect.disabled = Boolean(request.inspectingSheets);
+            inspect.addEventListener('click', () => inspectNormalizeSheets(chatFlowId, message, index));
+            copy.appendChild(inspect);
+            if (request.inspectError) {
+              const inspectError = document.createElement('div');
+              inspectError.className = 'wv-action-detail';
+              inspectError.textContent = `读取工作表失败：${request.inspectError}`;
+              copy.appendChild(inspectError);
+            }
+          }
+        }
+        // 只有研究员能解除“公式无缓存值”这道闸；模型的提议里读不到这个字段。
+        const allow = document.createElement('label');
+        allow.className = 'wv-action-detail';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = Boolean(request.allowMissingFormulaCache);
+        box.addEventListener('change', () => { request.allowMissingFormulaCache = box.checked; saveChat(); });
+        allow.append(box, document.createTextNode(' 允许公式缺少缓存值（会产生空白列，仅在你确认无妨时勾选）'));
+        copy.appendChild(allow);
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'wv-action-confirm';
+        const needsExplicitSheet = /\.xlsx$/i.test(String(request.data_path || '')) && knownSheets.length > 1 && !request.sheet;
+        button.textContent = needsExplicitSheet ? '先选择工作表' : (request.state === 'failed' ? '修复后重试' : '确认并规范化');
+        button.disabled = needsExplicitSheet;
+        button.addEventListener('click', () => executeNormalizeRequest(chatFlowId, message, index));
+        row.appendChild(button);
+      } else {
+        const status = document.createElement('span');
+        status.className = 'wv-action-detail';
+        status.textContent = state === 'abandoned'
+          ? '已放弃'
+          : ({ running: '正在规范化…', completed: '已完成' })[request.state] || request.state;
+        row.appendChild(status);
+      }
+      card.appendChild(row);
+    });
+    if (state === 'pending') {
+      const bar = document.createElement('div');
+      bar.className = 'wv-action-bar';
+      appendAbandonButton(bar, message, 'normalize');
+      card.appendChild(bar);
+    }
+    return card;
+  }
+
+  // 绘图执行始终以 Bridge 配置的 Vault 根为基准：聊天协议中的 Materials/…
+  // 是 Vault 相对路径，不能用当前课题子目录解释。模型只给出 recipe；此处
+  // 固定调用 allow-listed sch-data-plot，SVG 只会由确定性脚本生成。
+  async function chartSkillContext() {
+    const [skills, vaultStatus] = await Promise.all([
+      bridgeFetch('/v1/skills'), bridgeFetch('/v1/scholarium/status'),
+    ]);
+    const skill = skills.skills.find((item) => item.name === 'sch-data-plot');
+    if (!skill) throw new Error('未找到 sch-data-plot 本机 Skill；请重新启动 Research Weaver。');
+    const vaultRoot = String(vaultStatus?.vaultRoot || '');
+    if (!vaultStatus?.vaultRootExists || !vaultRoot)
+      throw new Error('scholarium.vaultRoot 未配置或不存在；无法对 Vault 的 Materials/ 数据绘图。');
+    return { skill, vaultRoot };
+  }
+
+  function chartOutput(manifest, name) {
+    return (Array.isArray(manifest?.outputs) ? manifest.outputs : []).find((path) => String(path).endsWith(name)) || '';
+  }
+
+  async function runChartRecipe(input) {
+    const { skill, vaultRoot } = await chartSkillContext();
+    return bridgeFetch('/v1/skills/run', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ skillId: skill.id, workspace: vaultRoot, input: JSON.stringify(input) }),
+    });
+  }
+
+  async function readChartManifest(targetManifestPath) {
+    const response = await bridgeFetch('/v1/scholarium/vault/read', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: targetManifestPath, max_chars: 100000 }),
+    });
+    if (response?.truncated || response?.path !== targetManifestPath)
+      throw new Error('目标绘图 manifest 无法完整、精确地读取；拒绝据此改版。');
+    let manifest;
+    try { manifest = JSON.parse(String(response.content || '')); }
+    catch { throw new Error('目标绘图 manifest 不是有效 JSON；拒绝改版。'); }
+    const source = String(manifest?.source?.path || '');
+    const plot = manifest?.plot || {};
+    const yColumns = Array.isArray(plot.y_columns) ? plot.y_columns.map(String) : [];
+    if (manifest?.skill !== 'sch-data-plot' || !source || !String(plot.x_column || '') || !yColumns.length || !['line', 'scatter', 'bar'].includes(String(plot.kind || '')))
+      throw new Error('目标不是完整的 sch-data-plot manifest；拒绝改版。');
+    return { manifest, source, plot, yColumns };
+  }
+
+  function revisedChartStyle(previous, patch) {
+    const prior = previous && typeof previous === 'object' && !Array.isArray(previous) ? previous : {};
+    const next = { ...prior, ...patch };
+    if (prior.spines || patch.spines) next.spines = { ...(prior.spines || {}), ...(patch.spines || {}) };
+    if (prior.series_colors || patch.series_colors) next.series_colors = { ...(prior.series_colors || {}), ...(patch.series_colors || {}) };
+    return next;
+  }
+
+  async function executePlotRequest(flowId, message, index) {
+    const request = message.plots?.[index];
+    if (!request || request.state === 'running' || request.state === 'completed') return;
+    request.state = 'running';
+    delete request.error;
+    markConfirmation(message, 'plot', 'confirmed');
+    saveChat(); renderChat();
+    try {
+      const input = {
+        data_path: request.data_path, x_column: request.x_column, y_columns: request.y_columns,
+        plot_kind: request.plot_kind, chart_style: request.chart_style, save_mode: 'new',
+      };
+      if (request.title) input.title = request.title;
+      void auditChatTurn(message, 'skill-submission', { kind: 'plot', skill: 'sch-data-plot', input });
+      const response = await runChartRecipe(input);
+      const manifest = response?.manifest || {};
+      request.state = 'completed';
+      request.result = {
+        svg_path: chartOutput(manifest, 'plot.svg'),
+        manifest_path: chartOutput(manifest, 'plot-manifest.json'),
+      };
+      appendToChat(flowId, {
+        role: 'system',
+        text: `绘图完成：${request.result.svg_path || '（未返回 SVG 路径）'}`
+          + `${request.result.manifest_path ? `\nmanifest：${request.result.manifest_path}` : ''}`
+          + '\n这是新的可复现图表版本；源数据未被修改。',
+        at: new Date().toISOString(),
+      });
+    } catch (error) {
+      request.state = 'failed';
+      request.error = humanizeActionError(String(error?.message || error));
+      appendToChat(flowId, { role: 'system', text: `绘图失败：${request.error}`, at: new Date().toISOString() });
+    }
+    saveChat(); renderChat();
+  }
+
+  async function executePlotRevision(flowId, message, index) {
+    const request = message.plotRevisions?.[index];
+    if (!request || request.state === 'running' || request.state === 'completed') return;
+    request.state = 'running';
+    delete request.error;
+    markConfirmation(message, 'plotRevision', 'confirmed');
+    saveChat(); renderChat();
+    try {
+      // Source, variables and plot kind are read fresh from the selected
+      // manifest—not from the model's revision block. The plotter rechecks
+      // the target/source relationship before an explicit overwrite.
+      const { manifest: previous, source, plot, yColumns } = await readChartManifest(request.target_manifest_path);
+      const input = {
+        data_path: source, x_column: String(plot.x_column), y_columns: yColumns,
+        plot_kind: String(plot.kind), chart_style: revisedChartStyle(plot.chart_style, request.chart_style),
+        // This flag is deliberately distinct from any model proposal fields.
+        // Only the researcher-operated checkbox below can set it.  In
+        // particular, old persisted `allowOverwrite` values are ignored so a
+        // stale card can never turn a later confirmation into an overwrite.
+        save_mode: request.overwriteConfirmedByResearcher === true ? 'overwrite' : 'new',
+      };
+      if (plot.title) input.title = String(plot.title);
+      // Pass the selected parent in both modes. In new mode the plotter stores
+      // it as immutable lineage and includes it in the artifact identity; in
+      // overwrite mode it also names the only directory that may be replaced.
+      input.target_manifest_path = request.target_manifest_path;
+      void auditChatTurn(message, 'skill-submission', { kind: 'plotRevision', skill: 'sch-data-plot', input });
+      const response = await runChartRecipe(input);
+      const manifest = response?.manifest || {};
+      request.state = 'completed';
+      request.result = {
+        svg_path: chartOutput(manifest, 'plot.svg'),
+        manifest_path: chartOutput(manifest, 'plot-manifest.json'),
+        revision_mode: String(manifest?.revision?.mode || input.save_mode),
+        source_path: String(manifest?.source?.path || source),
+        based_on_created_at: String(previous?.created_at || ''),
+      };
+      appendToChat(flowId, {
+        role: 'system',
+        text: `图表改版完成：${request.result.svg_path || '（未返回 SVG 路径）'}`
+          + `${request.result.manifest_path ? `\nmanifest：${request.result.manifest_path}` : ''}`
+          + `\n模式：${request.result.revision_mode === 'overwrite' ? '已覆盖研究员选定版本' : '已生成新的可复现版本'}`
+          + '\n源数据、x/y 列和图型均继承自目标 manifest，未被模型改写。',
+        at: new Date().toISOString(),
+      });
+    } catch (error) {
+      request.state = 'failed';
+      request.error = humanizeActionError(String(error?.message || error));
+      appendToChat(flowId, { role: 'system', text: `图表改版失败：${request.error}`, at: new Date().toISOString() });
+    }
+    saveChat(); renderChat();
+  }
+
+  function plotRequestCard(message) {
+    if (!Array.isArray(message.plots) || !message.plots.length) return null;
+    const state = confirmationState(message, 'plot');
+    const card = document.createElement('div');
+    card.className = 'wv-action-card wv-run-request-card';
+    card.dataset.confirmationState = state;
+    const title = document.createElement('div');
+    title.className = 'wv-action-card-title';
+    title.textContent = '织研者请求生成数据图（确认后才生效）';
+    card.append(title, providerNotice(message.provider));
+    message.plots.forEach((request, index) => {
+      const row = document.createElement('div'); row.className = 'wv-action-row';
+      const copy = document.createElement('div');
+      const name = document.createElement('b'); name.textContent = request.title || `${request.y_columns.join('、')} vs ${request.x_column}`;
+      const detail = document.createElement('div'); detail.className = 'wv-action-detail'; detail.style.whiteSpace = 'pre-line';
+      detail.textContent = [
+        `数据：${request.data_path}`, `X：${request.x_column}　Y：${request.y_columns.join('、')}　图型：${request.plot_kind}`,
+        `保存：新版本（原图、SVG 与源数据都不会被覆盖）`, request.reason ? `理由：${request.reason}` : '',
+        request.result?.svg_path ? `SVG：${request.result.svg_path}` : '', request.error ? `失败：${request.error}` : '',
+      ].filter(Boolean).join('\n');
+      copy.append(name, detail); row.appendChild(copy);
+      if (state !== 'abandoned' && (!request.state || request.state === 'failed')) {
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'wv-action-confirm';
+        button.textContent = request.state === 'failed' ? '修复后重试' : '确认并生成图表';
+        button.addEventListener('click', () => executePlotRequest(chatFlowId, message, index)); row.appendChild(button);
+      } else {
+        const status = document.createElement('span'); status.className = 'wv-action-detail';
+        status.textContent = state === 'abandoned' ? '已放弃' : ({ running: '正在确定性绘图…', completed: '已完成' })[request.state] || request.state;
+        row.appendChild(status);
+      }
+      card.appendChild(row);
+    });
+    if (state === 'pending') { const bar = document.createElement('div'); bar.className = 'wv-action-bar'; appendAbandonButton(bar, message, 'plot'); card.appendChild(bar); }
+    return card;
+  }
+
+  function plotRevisionCard(message) {
+    if (!Array.isArray(message.plotRevisions) || !message.plotRevisions.length) return null;
+    const state = confirmationState(message, 'plotRevision');
+    const card = document.createElement('div');
+    card.className = 'wv-action-card wv-run-request-card';
+    card.dataset.confirmationState = state;
+    const title = document.createElement('div'); title.className = 'wv-action-card-title';
+    title.textContent = '织研者请求改版数据图（确认后才生效）';
+    card.append(title, providerNotice(message.provider));
+    message.plotRevisions.forEach((request, index) => {
+      const row = document.createElement('div'); row.className = 'wv-action-row';
+      const copy = document.createElement('div');
+      const name = document.createElement('b'); name.textContent = request.target_manifest_path;
+      const detail = document.createElement('div'); detail.className = 'wv-action-detail'; detail.style.whiteSpace = 'pre-line';
+      detail.textContent = [
+        '仅改视觉配方；源数据、x/y 列和图型将从此 manifest 重新读取。',
+        `样式：${Object.keys(request.chart_style || {}).join('、') || '（无）'}`,
+        `保存：${request.overwriteConfirmedByResearcher === true ? '覆盖目标版本（研究员明确选择）' : '新版本（默认）'}`,
+        request.reason ? `理由：${request.reason}` : '', request.result?.svg_path ? `SVG：${request.result.svg_path}` : '', request.error ? `失败：${request.error}` : '',
+      ].filter(Boolean).join('\n');
+      copy.append(name, detail); row.appendChild(copy);
+      if (state !== 'abandoned' && (!request.state || request.state === 'failed')) {
+        // Overwrite is not model-controlled: the parser rejects this field.
+        // This researcher-only checkbox is its sole path.  Do not resurrect
+        // legacy `allowOverwrite`: a saved/stale card must fail closed.
+        const allow = document.createElement('label'); allow.className = 'wv-action-detail';
+        const box = document.createElement('input'); box.type = 'checkbox'; box.checked = request.overwriteConfirmedByResearcher === true;
+        box.addEventListener('change', () => {
+          request.overwriteConfirmedByResearcher = box.checked;
+          delete request.allowOverwrite;
+          saveChat(); renderChat();
+        });
+        allow.append(box, document.createTextNode(' 覆盖此目标版本（会重写该 SVG、报告和 manifest）'));
+        copy.appendChild(allow);
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'wv-action-confirm';
+        button.textContent = request.state === 'failed' ? '修复后重试' : '确认并改版';
+        button.addEventListener('click', () => executePlotRevision(chatFlowId, message, index)); row.appendChild(button);
+      } else {
+        const status = document.createElement('span'); status.className = 'wv-action-detail';
+        status.textContent = state === 'abandoned' ? '已放弃' : ({ running: '正在确定性改版…', completed: '已完成' })[request.state] || request.state;
+        row.appendChild(status);
+      }
+      card.appendChild(row);
+    });
+    if (state === 'pending') { const bar = document.createElement('div'); bar.className = 'wv-action-bar'; appendAbandonButton(bar, message, 'plotRevision'); card.appendChild(bar); }
+    return card;
+  }
+
+  function runRequestCard(message) {
+    if (!Array.isArray(message.runs) || !message.runs.length) return null;
+    const state = confirmationState(message, 'run');
+    const card = document.createElement('div');
+    card.className = 'wv-action-card wv-run-request-card';
+    card.dataset.confirmationState = state;
+    const title = document.createElement('div');
+    title.className = 'wv-action-card-title';
+    title.textContent = '织研者请求执行 Scholarium 操作（确认后才生效）';
+    card.append(title, providerNotice(message.provider));
+    message.runs.forEach((request, index) => {
+      const row = document.createElement('div');
+      row.className = 'wv-action-row';
+      const copy = document.createElement('div');
+      const name = document.createElement('b');
+      name.textContent = RUN_LABEL[request.operation] || request.operation;
+      const detail = document.createElement('div');
+      detail.className = 'wv-action-detail';
+      detail.style.whiteSpace = 'pre-line';
+      detail.textContent = `${runRequestDetail(request)}${request.reason ? `\n理由：${request.reason}` : ''}${request.error ? `\n失败：${request.error}` : ''}`;
+      copy.append(name, detail);
+      row.appendChild(copy);
+      if (state !== 'abandoned' && (!request.state || request.state === 'failed')) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'wv-action-confirm';
+        button.textContent = request.state === 'failed' ? '修复后重试' : '确认并运行';
+        button.addEventListener('click', () => executeRunRequest(chatFlowId, message, index));
+        row.appendChild(button);
+      } else {
+        const status = document.createElement('span');
+        status.className = 'wv-action-detail';
+        status.textContent = state === 'abandoned'
+          ? '已放弃'
+          : ({ running: '正在运行…', completed: '已完成', stopped: '已安全停止' })[request.state] || request.state;
+        row.appendChild(status);
+      }
+      card.appendChild(row);
+    });
+    if (state === 'pending') {
+      const bar = document.createElement('div');
+      bar.className = 'wv-action-bar';
+      appendAbandonButton(bar, message, 'run');
+      card.appendChild(bar);
     }
     return card;
   }
@@ -819,6 +1769,7 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
   // 已经投递并结算的动作无法撤回（它们是真实写入），取消只是不再投递剩余项。
   async function executeScholariumActions(flowId, message) {
     if (!message.actions || message.actionsState === 'executing' || message.actionsState === 'settled') return;
+    markConfirmation(message, 'action', 'confirmed');
     message.actionsState = 'executing';
     message.actionsDone = 0;
     message.actionsCancel = false;
@@ -831,18 +1782,29 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
       // 但这个动作本来就只操作 Research/Experiments/*.md，和 drafts/batch 写
       // DEC/LES 同一类"Bridge 直接读写 vault"路径。preview+commit 都是 Bridge
       // 进程内同步执行，不需要像队列动作那样轮询等待 Obsidian 消费。
-      if (req.action === 'experiment.transition') {
+      if (req.action === 'experiment.transition' || req.action === 'experiment.invalidate_provenance') {
         try {
-          const preview = await bridgeFetch('/v1/edits/experiment-transition/preview', {
+          const invalidating = req.action === 'experiment.invalidate_provenance';
+          const endpoint = invalidating ? '/v1/edits/provenance-invalidation/preview' : '/v1/edits/experiment-transition/preview';
+          const payload = invalidating
+            ? { ...req.input, sourceTaskId: message.taskId }
+            : { experiment_uid: req.input.experiment_uid, to_status: req.input.to_status, reason: req.input.reason, sourceTaskId: message.taskId };
+          const preview = await bridgeFetch(endpoint, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ experiment_uid: req.input.experiment_uid, to_status: req.input.to_status, reason: req.input.reason, sourceTaskId: message.taskId }),
+            body: JSON.stringify(payload),
           });
           const committed = await bridgeFetch(`/v1/edits/${preview.id}/commit`, {
             method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
           });
           const plan = committed.result || {};
-          outcomes.push({ action: req.action, status: 'completed', detail: plan.noop ? `${plan.from} 未变化（已经是该状态）` : `${plan.from} → ${plan.to}` });
+          outcomes.push({
+            action: req.action,
+            status: 'completed',
+            detail: invalidating
+              ? `${plan.display_id || req.input.experiment_uid}: ${plan.from_status} → ${plan.to_status}；降级 ${(plan.evidence_uids || []).length} 条 Evidence，撤出 ${(plan.hypothesis_uids || []).length} 条 Hypothesis 关系`
+              : (plan.noop ? `${plan.from} 未变化（已经是该状态）` : `${plan.from} → ${plan.to}`),
+          });
         } catch (error) {
           outcomes.push({ action: req.action, status: 'failed', detail: humanizeActionError(String(error.message || error)) });
         }
@@ -882,8 +1844,9 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
     // 的人话（`${from} → ${to}` 或并发去重时的 `${from} 未变化（已经是该
     // 状态）`），这条被同一条规则一起吞掉，导致并发 noop 和真实写入在聊天
     // 里长得一模一样——项3实测（发布冲刺项4清单第4类）明确记录了这个缺口。
-    // 只放行这一个动作的 detail，不改变其它动作的展示方式。
-    const showCompletedDetail = new Set(['experiment.transition']);
+    // Provenance invalidation also returns a deliberately human-readable
+    // whole-graph summary; showing it is part of proving the cascade happened.
+    const showCompletedDetail = new Set(['experiment.transition', 'experiment.invalidate_provenance']);
     // 2026-08-28 发布冲刺项4 P2（清单缺陷#4）：结算行直接打印动作标识符
     // （如 experiment.transition、workspace.timeblock_add），这些是开发侧
     // 命名，不是给研究员看的。ACTION_LABEL 这份映射本来就是为确认卡片
@@ -920,6 +1883,8 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
     'material.add': '登记素材', 'material.update': '改素材', 'material.remove': '移除素材登记', 'material.category_add': '加素材分类', 'material.category_remove': '移除空素材分类',
     'rss.set_article_score': '改文章评分', 'rss.mark_article': '标已读/收藏',
     'experiment.append_note': '实验日志', 'experiment.transition': '推进实验状态',
+    'experiment.invalidate_provenance': '失效并隔离实验来源链',
+    'experiment.insert_chem': '插入化学结构',
   };
   // Each confirmation card carries the provider snapshot captured by Bridge at
   // task dispatch. Never infer it from reply text or a model-supplied field.
@@ -940,12 +1905,16 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
   }
   function actionCard(message) {
     if (!Array.isArray(message.actions) || !message.actions.length) return null;
+    const state = confirmationState(message, 'action');
     const card = document.createElement('div');
     card.className = 'wv-action-card';
+    card.dataset.confirmationState = state;
     const title = document.createElement('div');
     title.className = 'wv-action-card-title';
     const done = Number(message.actionsDone || 0);
-    title.textContent = message.actionsState === 'settled'
+    title.textContent = state === 'abandoned'
+      ? '修改请求（已放弃，未执行）'
+      : message.actionsState === 'settled'
       ? '修改请求（已执行）'
       : message.actionsState === 'executing'
         ? `正在执行 ${done}/${message.actions.length}…`
@@ -985,7 +1954,7 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
         card.appendChild(row);
       }
     }
-    if (message.actionsState !== 'settled') {
+    if (message.actionsState !== 'settled' && state !== 'abandoned') {
       const bar = document.createElement('div');
       bar.className = 'wv-action-bar';
       const btn = document.createElement('button');
@@ -995,6 +1964,7 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
       btn.textContent = message.actionsState === 'executing' ? `正在执行 ${done}/${message.actions.length}…` : '确认执行（写入 Scholarium）';
       btn.addEventListener('click', () => executeScholariumActions(chatFlowId, message));
       bar.appendChild(btn);
+      appendAbandonButton(bar, message, 'action');
       if (message.actionsState === 'executing') {
         const cancel = document.createElement('button');
         cancel.type = 'button';
@@ -1093,7 +2063,9 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
         });
         const hits = rag?.manifest?.results || [];
         if (hits.length) {
-          ragBlock = '\n\n你的文献库检索命中（回答时优先基于这些内容，并在相关处用（来源：文件路径#小节）标注出处；命中内容不相关就忽略，不要硬引）：\n'
+          const retrieval = rag?.manifest?.retrieval || 'unknown';
+          const warning = (rag?.manifest?.warnings || []).join('；');
+          ragBlock = `\n\n你的文献库检索命中（实际检索：${retrieval}${warning ? `；告警：${warning}` : ''}。回答时优先基于这些内容，并在相关处用（来源：文件路径#小节）标注出处；命中内容不相关就忽略，不要硬引）：\n`
             + hits.map((h, i) => `[${i + 1}] 来源：${h.source}${h.heading ? `#${h.heading}` : ''}\n${h.snippet}`).join('\n\n');
         }
       } catch { /* RAG offline: plain conversation */ }
@@ -1165,10 +2137,17 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
       if (pending) pending.taskId = created.id;
       const finished = await pollTaskFull(created.id);
       const reply = extractReply(finished);
+      const rawReply = reply.text;
+      let protocolBlocks = null;
       // 织研者可以在回复里用 ```scholarium-action 块请求对 Scholarium 面板
       // 的实际修改（排日程、打卡、改评分等）。块从正文剥离，渲染成确认卡片，
       // 用户点「确认执行」后才真正投递队列——模型自己永远无法直接落笔。
       if (reply.role === 'agent') {
+        const runParsed = parseRunRequests(reply.text);
+        if (runParsed.runs.length) {
+          reply.text = runParsed.text;
+          reply.runs = runParsed.runs;
+        }
         const parsed = parseActionRequests(reply.text);
         if (parsed.actions.length) {
           reply.text = parsed.text;
@@ -1179,13 +2158,81 @@ GET ${base}/v1/scholarium/state?action=<动作名>&input=<URL编码的JSON，可
           reply.text = draftParsed.text;
           reply.drafts = draftParsed.drafts;
         }
+        const legacyNoteEditParsed = parseLegacyNoteEditRequests(reply.text);
+        if (legacyNoteEditParsed.edits.length) {
+          reply.text = legacyNoteEditParsed.text;
+          reply.legacyNoteEdits = legacyNoteEditParsed.edits;
+        }
+        const normalizeParsed = parseNormalizeRequests(reply.text);
+        if (normalizeParsed.normalizations.length) {
+          reply.text = normalizeParsed.text;
+          reply.normalizations = normalizeParsed.normalizations;
+        }
+        const plotParsed = parsePlotRequests(reply.text);
+        if (plotParsed.plots.length) {
+          reply.text = plotParsed.text;
+          reply.plots = plotParsed.plots;
+        }
+        const plotRevisionParsed = parsePlotRevisionRequests(reply.text);
+        if (plotRevisionParsed.revisions.length) {
+          reply.text = plotRevisionParsed.text;
+          reply.plotRevisions = plotRevisionParsed.revisions;
+        }
         const suggestParsed = parseSuggestReconstructionRequests(reply.text);
         if (suggestParsed.suggestions.length) {
           reply.text = suggestParsed.text;
           reply.suggestReconstructions = suggestParsed.suggestions;
         }
+        // Keep rejected protocol attempts visible as a concise, non-executable
+        // renderer card—not as a giant escaped JSON code block in the chat.
+        const concealed = concealMalformedProtocolBlocks(reply.text);
+        reply.text = concealed.text;
+        if (concealed.failures.length) reply.protocolFailures = concealed.failures;
+        protocolBlocks = {
+          run: runParsed.stats,
+          action: parsed.stats,
+          draft: draftParsed.stats,
+          legacyNoteEdit: legacyNoteEditParsed.stats,
+          normalize: normalizeParsed.stats,
+          plot: plotParsed.stats,
+          plotRevision: plotRevisionParsed.stats,
+          suggestReconstruction: suggestParsed.stats,
+        };
+        reply.confirmationStates = {
+          run: runParsed.runs.length ? 'pending' : 'none',
+          action: parsed.actions.length ? 'pending' : 'none',
+          draft: draftParsed.drafts.length ? 'pending' : 'none',
+          legacyNoteEdit: legacyNoteEditParsed.edits.length ? 'pending' : 'none',
+          normalize: normalizeParsed.normalizations.length ? 'pending' : 'none',
+          plot: plotParsed.plots.length ? 'pending' : 'none',
+          plotRevision: plotRevisionParsed.revisions.length ? 'pending' : 'none',
+          suggestReconstruction: suggestParsed.suggestions.length ? 'pending' : 'none',
+        };
+        reply.protocolAudit = {
+          replyLength: rawReply.length,
+          blocks: protocolBlocks,
+          renderedCards: [runParsed.runs, parsed.actions, draftParsed.drafts, legacyNoteEditParsed.edits, normalizeParsed.normalizations, plotParsed.plots, plotRevisionParsed.revisions, suggestParsed.suggestions].filter((items) => items.length).length,
+          writeClaim: detectWriteClaim(rawReply),
+        };
       }
-      appendToChat(ownerFlow, { ...reply, taskId: created.id, provider: created.provider, at: new Date().toISOString() });
+      const storedReply = { ...reply, taskId: created.id, provider: created.provider, projectDisplayId: projectId, flowId: ownerFlow, at: new Date().toISOString() };
+      appendToChat(ownerFlow, storedReply);
+      if (storedReply.protocolAudit) {
+        void auditChatTurn(storedReply, 'parsed');
+        const writeParsed = (protocolBlocks.action?.parsed || 0) + (protocolBlocks.draft?.parsed || 0) + (protocolBlocks.legacyNoteEdit?.parsed || 0);
+        const writeRejected = (protocolBlocks.action?.rejected || 0) + (protocolBlocks.draft?.rejected || 0) + (protocolBlocks.legacyNoteEdit?.rejected || 0);
+        if (storedReply.protocolAudit.writeClaim && writeParsed === 0) {
+          const detail = writeRejected > 0
+            ? '检测到动作/草稿协议块，但没有一块通过解析；错误内容已渲染为不可执行的格式错误卡。'
+            : '本轮没有产生任何可执行的动作或草稿请求。';
+          appendToChat(ownerFlow, {
+            role: 'error',
+            text: `安全告警：织研者使用了“${storedReply.protocolAudit.writeClaim}”一类已完成表述，但${detail}实际什么都没有写入。`,
+            taskId: created.id,
+            at: new Date().toISOString(),
+          });
+        }
+      }
       // 任务结束 checkpoint + 分级记忆（best-effort，不影响对话本身）：
       // checkpoint 全量覆写 task-checkpoint.md，新会话启动时自动续接；
       // 回复中"建议记入 xxx：…"的长期记忆建议按"待确认"级别自动落盘，

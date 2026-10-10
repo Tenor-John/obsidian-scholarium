@@ -1,0 +1,154 @@
+--- /mnt/user-data/outputs/round2/main.js.before-agent-bridge-20260814.bak	2026-08-14 08:47:21.852621449 +0000
++++ main.js	2026-08-14 08:36:38.992256207 +0000
+@@ -39113,3 +39113,151 @@
+     callback: () => schShowRadarBenchmark(this),
+   });
+ };
++
++/* ------------------------------------------------------------------ */
++/* Agent Bridge control surface (added 2026-08-14).                     */
++/*                                                                      */
++/* Lets the local Research Weaver Bridge (agent-canvas-demo/bridge)     */
++/* drive RSS refresh + AI scoring without a human clicking through the  */
++/* dashboard. Obsidian never listens on a socket; instead this polls a  */
++/* plain file queue under the plugin's own folder:                     */
++/*                                                                      */
++/*   agent-requests/<id>.request.json    -> dropped by the Bridge skill */
++/*   agent-requests/<id>.processing.json -> claimed, in progress        */
++/*   agent-requests/<id>.result.json     -> written when done           */
++/*                                                                      */
++/* Every run uses its own throwaway RssFeedBoard instance (never the    */
++/* live window.__scholariumRssBoard from an open dashboard), so an      */
++/* unattended cycle can never yank the feed/tab the user is looking at  */
++/* out from under them. Writes still land in the same data.json via     */
++/* plugin.updateData(), which is already a serialized queue, so a       */
++/* concurrent live-dashboard save cannot be clobbered or lost.          */
++/* ------------------------------------------------------------------ */
++function schAgentRequestsDir(plugin) {
++  let path = require("path"),
++    base =
++      typeof plugin.app.vault.adapter.getBasePath === "function"
++        ? plugin.app.vault.adapter.getBasePath()
++        : null;
++  return base ? path.join(base, plugin.manifest.dir, "agent-requests") : null;
++}
++async function schRunAgentAction(plugin, req) {
++  if (!req || req.action !== "refresh_and_score")
++    throw new Error("unknown or missing action: " + (req && req.action));
++  let board = new Ys(plugin.app, plugin);
++  await board.load();
++  let before = board.data.articles.filter(
++    (a) => board.currentRadarScore(a) != null,
++  ).length;
++  await board.refreshAll();
++  let perFeed = [];
++  for (let feed of board.data.feeds) {
++    board.selectedFeedId = feed.id;
++    try {
++      await board.scoreNewArticles();
++      perFeed.push({
++        feedId: feed.id,
++        title: feed.title || feed.url,
++        status: "ok",
++      });
++    } catch (err) {
++      perFeed.push({
++        feedId: feed.id,
++        title: feed.title || feed.url,
++        status: "error",
++        error: String((err && err.message) || err),
++      });
++    }
++  }
++  let after = board.data.articles.filter(
++    (a) => board.currentRadarScore(a) != null,
++  ).length;
++  return {
++    feeds: board.data.feeds.length,
++    articlesTotal: board.data.articles.length,
++    articlesScoredBefore: before,
++    articlesScoredAfter: after,
++    newlyScored: Math.max(0, after - before),
++    perFeed,
++  };
++}
++async function schPollAgentRequests() {
++  if (this._schAgentRequestBusy) return;
++  let fs = require("fs"),
++    path = require("path"),
++    dir = schAgentRequestsDir(this);
++  if (!dir) return;
++  let entries;
++  try {
++    entries = fs.readdirSync(dir);
++  } catch (e) {
++    return;
++  }
++  let pending = entries.filter((f) => f.endsWith(".request.json")).sort();
++  if (!pending.length) return;
++  this._schAgentRequestBusy = true;
++  try {
++    for (let file of pending) {
++      let reqPath = path.join(dir, file),
++        processingPath = reqPath.replace(
++          /\.request\.json$/,
++          ".processing.json",
++        ),
++        req = null;
++      try {
++        req = JSON.parse(fs.readFileSync(reqPath, "utf8"));
++        fs.renameSync(reqPath, processingPath);
++      } catch (e) {
++        continue;
++      }
++      let id = req.id || file.replace(/\.request\.json$/, ""),
++        resultPath = path.join(dir, id + ".result.json"),
++        startedAt = new Date().toISOString(),
++        result;
++      try {
++        let action = await schRunAgentAction(this, req);
++        result = Object.assign(
++          {
++            id,
++            action: req.action,
++            status: "ok",
++            startedAt,
++            finishedAt: new Date().toISOString(),
++          },
++          action,
++        );
++      } catch (e) {
++        result = {
++          id,
++          action: req && req.action,
++          status: "error",
++          startedAt,
++          finishedAt: new Date().toISOString(),
++          error: String((e && e.message) || e),
++        };
++      }
++      try {
++        fs.writeFileSync(resultPath, JSON.stringify(result, null, 2), "utf8");
++        fs.unlinkSync(processingPath);
++      } catch (e) {
++        console.error(
++          "[Scholarium][agent-bridge] failed to write result file",
++          e,
++        );
++      }
++    }
++  } finally {
++    this._schAgentRequestBusy = false;
++  }
++}
++const schAgentBridgeOnload = wi.prototype.onload;
++wi.prototype.onload = async function () {
++  await schAgentBridgeOnload.call(this);
++  this._schAgentRequestBusy = false;
++  // 20s poll: fast enough that a Bridge skill waiting on the result file
++  // doesn't sit idle for long, cheap enough (one directory listing) to run
++  // forever in the background. registerInterval() clears it on unload.
++  this.registerInterval(
++    window.setInterval(() => schPollAgentRequests.call(this), 20000),
++  );
++};

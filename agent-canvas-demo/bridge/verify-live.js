@@ -22,15 +22,15 @@ function researchPassed(run) {
   return run.exitCode === 0
     && /final status:\s*completed/i.test(run.output)
     && /permission_denials .*?:\s*0/i.test(run.output)
-    // probe-research-lane 从真实 Bridge step 事件输出的机器可读证据；不要
-    // 依赖 Agent 的自由文本或 prompt 中“curl 是否通了”之类的字样。
-    && /tool_call_evidence:\s*curl=[1-9]\d*\s+websearch=[1-9]\d*/i.test(run.output);
+    // probe-research-lane 从真实 Bridge step 事件输出机器可读证据；不要
+    // 依赖 Agent 的自由文本或 prompt 中的工具名称。
+    && /tool_call_evidence:\s*webfetch=[1-9]\d*\s+websearch=[1-9]\d*/i.test(run.output);
 }
 
 function pathScopePassed(run) {
-  // 对 claude-research，临时越界哨兵被写出是检测式边界的预期现场证据，
-  // 不是“越界已被预防”的成功。probe-path-scope.js 结束时会清理临时目录。
-  return run.exitCode === 0 && /结果: 越界文件被真实写出/.test(run.output);
+  // Success means direct write capabilities were absent and no sentinel was
+  // created. This verifies the capability contract, not an OS sandbox.
+  return run.exitCode === 0 && /RESULT research-direct-write-unreachable/.test(run.output);
 }
 
 function reservePort() {
@@ -99,7 +99,7 @@ async function main() {
   const full = await runFullProbe();
   const results = {
     research: { ok: researchPassed(researchRun), exitCode: researchRun.exitCode },
-    pathScope: { ok: pathScopePassed(pathScopeRun), exitCode: pathScopeRun.exitCode, expected: 'escape-written-and-cleaned' },
+    pathScope: { ok: pathScopePassed(pathScopeRun), exitCode: pathScopeRun.exitCode, expected: 'direct-write-unreachable' },
     claudeFull: full,
   };
   const record = acceptanceRecord(results);

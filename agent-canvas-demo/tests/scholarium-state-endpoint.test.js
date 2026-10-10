@@ -15,35 +15,20 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const pluginRoot = path.resolve(root, '..');
 const S = require(path.join(pluginRoot, 'tools', 'schema-objects.js'));
-const bridgePort = 46100 + (process.pid % 300);
-const TOKEN = 'test-token-' + process.pid;
+const { startBridge } = require('./helpers/bridge-harness.js');
 
-let bridge;
+// The port is assigned by the OS. This file used to compute
+// `46100 + (process.pid % 300)`, a range that covers the ports a developer's
+// own Bridge and canvas actually listen on - a collision did not fail loudly,
+// it pointed the test at the live Bridge and the real vault.
+let harness;
 let vault;
-let configPath;
 
-function request(pathname, options = {}) {
-  return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port: bridgePort, path: pathname, method: options.method || 'GET', headers: options.headers || {}, }, (res) => {
-      let raw = '';
-      res.on('data', (chunk) => { raw += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: raw }));
-    });
-    req.on('error', reject);
-    req.end();
-  });
-}
-const authed = (pathname) => request(pathname, { headers: { 'x-agent-bridge-token': TOKEN } });
-
-async function waitForBridge() {
-  let lastError;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try { const res = await request('/health'); if (res.status === 200) return; }
-    catch (error) { lastError = error; }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw lastError || new Error('bridge did not start');
-}
+// The harness returns the raw payload as `text`; this file was written against
+// a local helper that called it `body`, so keep that name at the call sites.
+const withBody = (res) => ({ ...res, body: res.text });
+const request = (pathname, options = {}) => harness.request(pathname, { ...options, auth: false }).then(withBody);
+const authed = (pathname) => harness.request(pathname).then(withBody);
 
 test.before(async () => {
   vault = fs.mkdtempSync(path.join(os.tmpdir(), 'p7-state-endpoint-vault-'));
@@ -51,32 +36,27 @@ test.before(async () => {
   const dir = path.join(vault, 'Research', 'Projects');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'PRJ-001.md'), S.serializeObject(prj, '\n# 端点测试课题\n'), 'utf8');
+  fs.mkdirSync(path.join(vault, 'Literature'), { recursive: true });
+  fs.writeFileSync(path.join(vault, 'Literature', 'gold-paper.md'), '# Gold paper\nbenzyl alcohol oxidation on Au/TiO2', 'utf8');
+  fs.mkdirSync(path.join(vault, '.obsidian'), { recursive: true });
+  fs.writeFileSync(path.join(vault, '.obsidian', 'secret.json'), '{"apiKey":"must-not-leak"}', 'utf8');
 
-  configPath = path.join(os.tmpdir(), `p7-state-endpoint-${process.pid}.config.json`);
-  fs.writeFileSync(configPath, JSON.stringify({
-    token: TOKEN,
-    allowExecution: false,
-    workspaceRoot: vault,
-    allowedRoots: [vault],
-    adapters: {},
-    scholarium: {
-      enabled: true,
-      vaultRoot: vault,
-      allowedActions: ['rss.refresh_feed', 'project.list', 'project.get', 'experiment.scan_outcomes'],
+  harness = await startBridge({
+    config: {
+      workspaceRoot: vault,
+      allowedRoots: [vault],
+      adapters: {},
+      scholarium: {
+        enabled: true,
+        vaultRoot: vault,
+        allowedActions: ['rss.refresh_feed', 'project.list', 'project.get', 'experiment.scan_outcomes'],
+      },
     },
-  }, null, 2), 'utf8');
-
-  bridge = spawn(process.execPath, [path.join(root, 'bridge', 'server.js')], {
-    cwd: root,
-    env: { ...process.env, AGENT_BRIDGE_PORT: String(bridgePort), AGENT_BRIDGE_CONFIG_PATH: configPath },
-    stdio: 'ignore', windowsHide: true,
   });
-  await waitForBridge();
 });
 
 test.after(() => {
-  if (bridge && !bridge.killed) bridge.kill();
-  if (configPath && fs.existsSync(configPath)) fs.rmSync(configPath);
+  if (harness) harness.stop();
   if (vault && fs.existsSync(vault)) fs.rmSync(vault, { recursive: true, force: true });
 });
 
@@ -121,4 +101,21 @@ test('state reads never write into the vault (no queue, no audit dir)', async ()
   await authed('/v1/scholarium/state?action=project.list');
   await authed('/v1/scholarium/state?action=experiment.scan_outcomes');
   assert.equal(fs.existsSync(path.join(vault, 'Research', '_runs')), false, 'L0 reads must not create Research/_runs');
+});
+
+test('bounded vault search/read exposes research text but excludes Obsidian settings', async () => {
+  // authedPost carries the harness token; the local TOKEN constant is gone.
+  const authedPost = (pathname, payload) => harness.request(pathname, { method: 'POST', body: payload }).then(withBody);
+  const searched = await authedPost('/v1/scholarium/vault/search', { query: 'benzyl alcohol', limit: 20 });
+  assert.equal(searched.status, 200);
+  const searchPayload = JSON.parse(searched.body);
+  assert.deepEqual(searchPayload.matches.map((item) => item.path), ['Literature/gold-paper.md']);
+
+  const read = await authedPost('/v1/scholarium/vault/read', { path: 'Literature/gold-paper.md' });
+  assert.equal(read.status, 200);
+  assert.match(JSON.parse(read.body).content, /Au\/TiO2/);
+
+  const privateRead = await authedPost('/v1/scholarium/vault/read', { path: '.obsidian/secret.json' });
+  assert.equal(privateRead.status, 400);
+  assert.doesNotMatch(privateRead.body, /must-not-leak/);
 });
