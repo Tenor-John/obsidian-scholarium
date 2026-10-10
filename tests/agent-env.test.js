@@ -16,12 +16,21 @@ describe("agent detection: 「装了但跑不起来」和「没装」是两回�
      software that was already installed. */
 
   it("把非零退出的候选报成 broken，并保留它自己给出的原因", () => {
-    const found = D.detectAgent("openclaw", {
-      probeVersionDetail: (command) => ({
-        ok: false, version: null, status: 1,
-        message: "openclaw: Node.js >=22.22.3 is required (current: v22.13.1).",
-      }),
-    });
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "zy-broken-agent-"));
+    const shim = path.join(root, process.platform === "win32" ? "openclaw.cmd" : "openclaw");
+    fs.writeFileSync(shim, "");
+    let found;
+    try {
+      found = D.detectAgent("openclaw", {
+        extraRoots: [root],
+        probeVersionDetail: () => ({
+          ok: false, version: null, status: 1,
+          message: "openclaw: Node.js >=22.22.3 is required (current: v22.13.1).",
+        }),
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
     assert.eq(found.ok, false);
     assert.eq(found.source, "found_but_broken");
     assert.ok(found.command, "必须指出是哪个文件跑不起来");
