@@ -18,7 +18,11 @@ function sha256(file) {
 }
 
 function releasePins(clone) {
-  const record = fs.readFileSync(path.join(clone, "docs", "audits", "release-2.0.9-stability-2026-09-20.md"), "utf8");
+  const main = fs.readFileSync(path.join(clone, "main.js"), "utf8");
+  const recordName = main.includes("/* SCHOLARIUM_NATIVE_WEAVER_EMBED_BEGIN */")
+    ? "native-weaver-embed-preview-2026-10-10.md"
+    : "release-2.0.9-stability-2026-09-20.md";
+  const record = fs.readFileSync(path.join(clone, "docs", "audits", recordName), "utf8");
   return new Map([...record.matchAll(/^\| `([^`]+)` \| ([\d,]+) \| `([A-F0-9]{64})` \|$/gm)]
     .map((match) => [match[1], { bytes: Number(match[2].replace(/,/g, "")), hash: match[3].toLowerCase() }]));
 }

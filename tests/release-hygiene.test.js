@@ -44,8 +44,12 @@ test("no tracked file is local state, research data, a secret config, or a backu
 });
 
 test("the frozen Preview assets match the reviewed stability record", () => {
+  const main = fs.readFileSync(path.join(root, "main.js"), "utf8");
+  const recordName = main.includes("/* SCHOLARIUM_NATIVE_WEAVER_EMBED_BEGIN */")
+    ? "native-weaver-embed-preview-2026-10-10.md"
+    : "release-2.0.9-stability-2026-09-20.md";
   const record = fs.readFileSync(
-    path.join(root, "docs", "audits", "release-2.0.9-stability-2026-09-20.md"),
+    path.join(root, "docs", "audits", recordName),
     "utf8",
   );
   const expected = new Map();

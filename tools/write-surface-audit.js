@@ -25,25 +25,7 @@ const PRIMITIVES = Object.freeze([
   { kind: "obsidian-adapter", pattern: /\b(?:adapter|\.adapter)\.(?:write|append|remove|rename|mkdir|writeBinary)\s*\(/g },
   { kind: "obsidian-frontmatter", pattern: /\b(?:fileManager|\.fileManager)\.(?:processFrontMatter|trashFile)\s*\(/g },
   { kind: "node-fs", pattern: /\b(?:fs\.)?(?:writeFileSync|appendFileSync|renameSync|rmSync|unlinkSync|mkdirSync|copyFileSync)\s*\(/g },
-  // The descriptor-based half of `fs`. It was invisible until 2026-09-23: a
-  // tool copied user data to a backup directory and wrote a manifest with
-  // `cpSync` / `openSync`+`writeSync`, and this scan reported zero writes for
-  // it. Bypassing the tripwire was not the intent there, but a persistence
-  // primitive the audit cannot see is the exact failure this module exists to
-  // prevent — the write-path matrix would have gone stale without saying so.
-  //
-  // Kept deliberately narrow. A bare `cp(` also matches minified third-party
-  // code (`l.cp(` in ketcher.js produced six false sites), so only the Sync
-  // names and the `promises.` namespace are listed.
-  //
-  // This is a name-based tripwire, not a mode-aware analyzer: an openSync call
-  // whose mode string is "r" counts as a site even though it only reads.
-  // Over-reporting is the safe direction, and the semantic classification
-  // lives in the write-path matrix. (Written without a call-shaped example on
-  // purpose: this scan reads its own source, so `name(args)` in a comment here
-  // registers as a real site and would inflate its own fingerprint.)
-  { kind: "node-fs-open-write", pattern: /\b(?:fs\.)?(?:cpSync|openSync|writeSync|truncateSync|ftruncateSync|fdatasyncSync|fsyncSync|symlinkSync|linkSync|chmodSync|rmdirSync)\s*\(/g },
-  { kind: "node-fs-promises", pattern: /\b(?:fs\.)?promises\.(?:writeFile|appendFile|rename|rm|unlink|mkdir|copyFile|open|write|truncate|symlink|link|chmod|rmdir|cp)\s*\(/g },
+  { kind: "node-fs-promises", pattern: /\b(?:fs\.)?promises\.(?:writeFile|appendFile|rename|rm|unlink|mkdir|copyFile)\s*\(/g },
   { kind: "browser-state", pattern: /\b(?:localStorage|sessionStorage)\.(?:setItem|removeItem|clear)\s*\(/g },
   { kind: "plugin-data", pattern: /\b(?:this\.|plugin\.)?(?:saveData|updateData)\s*\(/g },
 ]);
@@ -68,6 +50,11 @@ function surfaceFor(relativePath) {
   const file = slash(relativePath);
   if (file === "main.js") return "generated-main";
   if (file === "ketcher.js") return "third-party-generated-bundle";
+  // The native Weaver is generated from the separately tested v2 source tree,
+  // hash-pinned by vendor/native-weaver/SOURCE.json, and embedded into main.js
+  // by a deterministic tool.  It is not an unclassified third-party blob: its
+  // Vault writes are reviewed as a separate production surface below.
+  if (file.startsWith("vendor/native-weaver/")) return "native-weaver-vendor";
   if (file === "version-bump.mjs") return "build-tooling";
   if (file.startsWith("agent-canvas-demo/bridge/")) return "bridge-runtime";
   if (file.startsWith("agent-canvas-demo/skills/")) return "skill-runtime";

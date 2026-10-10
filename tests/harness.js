@@ -160,6 +160,29 @@ const assert = {
         (msg ? msg + ": " : "") + "expected NOT to match " + re + " in " + fmt(String(str).slice(0, 200)),
       );
   },
+  // Node's assertion spelling is convenient for tests shared with source-side
+  // suites.  Keep the original short names above, but make this tiny harness a
+  // faithful enough subset that a deployment test cannot go green in one suite
+  // merely because its assertion API is different in the other.
+  equal(actual, expected, msg) {
+    return this.eq(actual, expected, msg);
+  },
+  deepEqual(actual, expected, msg) {
+    return this.deepEq(actual, expected, msg);
+  },
+  throws(fn, expected, msg) {
+    let thrown = null;
+    try {
+      fn();
+    } catch (error) {
+      thrown = error;
+    }
+    if (!thrown) throw new Error(msg || "expected function to throw");
+    if (expected instanceof RegExp && !expected.test(String(thrown.message || thrown))) {
+      throw new Error((msg ? msg + ": " : "") + "expected error to match " + expected + ", got " + String(thrown.message || thrown));
+    }
+    return thrown;
+  },
 };
 
 // async so a test function that returns a Promise (an `async () => {...}`

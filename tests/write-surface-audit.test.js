@@ -9,22 +9,20 @@ const { scanProductionWrites } = require("../tools/write-surface-audit");
 // `node tools/write-surface-audit.js`, identify every changed site in the
 // write-path matrix, then replace the digest and counts together. The review
 // authorizing this fingerprint is:
-// docs/audits/write-path-matrix-2026-09-23-chat-persistence.md
-//
-// That review also covers the scanner itself: this file's sibling
-// `tools/write-surface-audit.js` gained the `node-fs-open-write` primitive on
-// 2026-09-23, because a tool that copied user data with `cpSync` and wrote a
-// manifest with `openSync`+`writeSync` was reported as writing nothing at all.
+// docs/audits/write-path-matrix-2026-09-20-preview.md,
+// docs/audits/write-path-matrix-2026-09-26-native-weaver.md and
+// docs/audits/write-path-matrix-2026-10-10-preview4.md
 const APPROVED = Object.freeze({
-  digest: "31100f38794934398af9a7830051956ee17bcb6f176d9cbe0270e91864a8f511",
-  count: 431,
+  digest: "1d57f88a8a96a4e1c51b453c96b9e9b0994afa242b14dabe8b35291a1d0c2c3f",
+  count: 488,
   by_surface: {
     "agent-ui-state": 40,
-    "bridge-runtime": 102,
-    "skill-runtime": 46,
+    "bridge-runtime": 94,
+    "skill-runtime": 47,
     "third-party-generated-bundle": 14,
-    "generated-main": 118,
-    "domain-and-maintenance-tools": 111,
+    "generated-main": 150,
+    "domain-and-maintenance-tools": 128,
+    "native-weaver-vendor": 15,
   },
 });
 

@@ -3,14 +3,15 @@
 /**
  * Require a B-sync trailer on every future commit that changes main.js.
  *
- * 6ef20e5 is the reviewed 2.0.9 Preview checkpoint. Earlier hot patches are
- * covered by the dated DEC-008 exception and ownership audits; after that
- * checkpoint, source-recovery Agent B must be told exactly which bundle
- * symbols changed instead of discovering drift by comparing hashes later.
+ * 35ab710 is the reviewed Preview.4 integration checkpoint.  The preceding
+ * P1/P2 embed commits are covered together by the dated 2026-10-10 write-path
+ * and asset audits; after that checkpoint, source-recovery Agent B must be
+ * told exactly which bundle symbols changed instead of discovering drift by
+ * comparing hashes later.
  */
 const { execFileSync } = require("node:child_process");
 
-const ADOPTION_BASE = "6ef20e5";
+const ADOPTION_BASE = "35ab710";
 const TRAILER = /^B-sync:\s*\S.+$/mi;
 
 function auditCommits(commits) {

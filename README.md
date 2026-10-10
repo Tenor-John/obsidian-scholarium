@@ -22,6 +22,8 @@ Directory release. It is currently verified for Windows x64 desktop Obsidian.
 See [PREVIEW-RELEASE.md](PREVIEW-RELEASE.md) for installation, privacy, and
 known limitations.
 
+It is a release candidate, not a published product release. Real-Obsidian clean-install/upgrade/rollback validation on a second clean Windows machine is still pending.
+
 ## Public-release boundaries
 
 This repository contains source code, templates, fixtures, and documentation.
