@@ -22506,12 +22506,12 @@ queueMicrotask(() =>
           startX = event.clientX;
           startW = listPane.offsetWidth || saved || 300;
           resizer.classList.add("is-dragging");
-          document.body.classList.add("deduction-sidebar-resizing");
+          document.body.classList.add("scholarium-deduction-sidebar-resizing");
           const onMove = (moveEvent) =>
             applyWidth(startW + (moveEvent.clientX - startX));
           const onUp = async () => {
             resizer.classList.remove("is-dragging");
-            document.body.classList.remove("deduction-sidebar-resizing");
+            document.body.classList.remove("scholarium-deduction-sidebar-resizing");
             document.removeEventListener("mousemove", onMove);
             document.removeEventListener("mouseup", onUp);
             const finalW = applyWidth(listPane.offsetWidth);
@@ -22659,12 +22659,12 @@ queueMicrotask(() =>
           startX = event.clientX;
           startW = listPane.offsetWidth || this.getDeductionSidebarWidth();
           resizer.classList.add("is-dragging");
-          document.body.classList.add("deduction-sidebar-resizing");
+          document.body.classList.add("scholarium-deduction-sidebar-resizing");
           const onMove = (moveEvent) =>
             apply(startW + (moveEvent.clientX - startX));
           const onUp = () => {
             resizer.classList.remove("is-dragging");
-            document.body.classList.remove("deduction-sidebar-resizing");
+            document.body.classList.remove("scholarium-deduction-sidebar-resizing");
             document.removeEventListener("mousemove", onMove);
             document.removeEventListener("mouseup", onUp);
             const finalW = this.applyDeductionSidebarWidth(

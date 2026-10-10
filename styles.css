@@ -14322,36 +14322,36 @@ body.scholarium-resizing-sidebar {
 /* Final theme boundary for the top Scholarium shell. Several legacy rules
    above use a dark presentation palette; they must not win in Obsidian light
    mode, where the product name and navigation need readable ink. */
-body.theme-light .scholarium-root .sch-brandbar,
-body.theme-light .scholarium-root .scholarium-header,
-body.theme-light .scholarium-root .scholarium-panel-switch,
-body.theme-light .scholarium-root .scholarium-action-bar {
+.theme-light .scholarium-root .sch-brandbar,
+.theme-light .scholarium-root .scholarium-header,
+.theme-light .scholarium-root .scholarium-panel-switch,
+.theme-light .scholarium-root .scholarium-action-bar {
   background: var(--bg-panel, #ffffff) !important;
   border-color: var(--border, #d8dee8) !important;
   color: var(--text-primary, #172033) !important;
 }
 
-body.theme-light .scholarium-root .sch-brandbar-logo,
-body.theme-light .scholarium-root .scholarium-logo,
-body.theme-light .scholarium-root .scholarium-clock {
+.theme-light .scholarium-root .sch-brandbar-logo,
+.theme-light .scholarium-root .scholarium-logo,
+.theme-light .scholarium-root .scholarium-clock {
   color: var(--text-primary, #172033) !important;
 }
 
-body.theme-light .scholarium-root .sch-brandbar-tabs button,
-body.theme-light .scholarium-root .scholarium-switch-btn,
-body.theme-light .scholarium-root .sch-brandbar-actions button {
+.theme-light .scholarium-root .sch-brandbar-tabs button,
+.theme-light .scholarium-root .scholarium-switch-btn,
+.theme-light .scholarium-root .sch-brandbar-actions button {
   color: var(--text-secondary, #475569) !important;
 }
 
-body.theme-light .scholarium-root .sch-brandbar-tabs button:hover,
-body.theme-light .scholarium-root .scholarium-switch-btn:hover,
-body.theme-light .scholarium-root .sch-brandbar-actions button:hover {
+.theme-light .scholarium-root .sch-brandbar-tabs button:hover,
+.theme-light .scholarium-root .scholarium-switch-btn:hover,
+.theme-light .scholarium-root .sch-brandbar-actions button:hover {
   background: var(--bg-elevated, #eef2f7) !important;
   color: var(--text-primary, #172033) !important;
 }
 
-body.theme-light .scholarium-root .sch-brandbar-tabs button.active,
-body.theme-light .scholarium-root .scholarium-switch-btn.active {
+.theme-light .scholarium-root .sch-brandbar-tabs button.active,
+.theme-light .scholarium-root .scholarium-switch-btn.active {
   color: var(--accent, #1769aa) !important;
   background: color-mix(in srgb, var(--accent, #1769aa) 10%, transparent) !important;
   border-color: color-mix(in srgb, var(--accent, #1769aa) 30%, var(--border, #d8dee8)) !important;
@@ -14681,7 +14681,7 @@ body.theme-light .scholarium-root .scholarium-switch-btn.active {
   background: #1976d2;
 }
 
-body.deduction-sidebar-resizing {
+.scholarium-deduction-sidebar-resizing {
   cursor: col-resize !important;
   user-select: none !important;
 }
