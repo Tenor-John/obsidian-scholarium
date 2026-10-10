@@ -9,39 +9,15 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
-const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const root = path.resolve(__dirname, "..");
-const bridgePort = 47100 + (process.pid % 300);
-const TOKEN = "test-token-" + process.pid;
+const { startBridge } = require('./helpers/bridge-harness.js');
 
-let bridge, workspace, configPath, auditDir, whitelistDir, fakeCrossref, crossrefOrigin;
+let harness, workspace, auditDir, whitelistDir, fakeCrossref, crossrefOrigin, crossrefRequests;
 
-function request(pathname, options = {}) {
-  return new Promise((resolve, reject) => {
-    const headers = options.body ? { "content-type": "application/json" } : {};
-    if (!options.noAuth) headers["x-agent-bridge-token"] = TOKEN;
-    const req = http.request({ host: "127.0.0.1", port: bridgePort, path: pathname, method: options.method || "GET", headers }, (res) => {
-      let raw = ""; res.on("data", (chunk) => { raw += chunk; }); res.on("end", () => resolve({ status: res.statusCode, body: raw }));
-    });
-    req.on("error", reject);
-    if (options.body) req.write(options.body);
-    req.end();
-  });
-}
-
-async function waitForBridge() {
-  let lastError;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try { const res = await request("/health", { noAuth: true }); if (res.status === 200) return; }
-    catch (error) { lastError = error; }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw lastError || new Error("bridge did not start");
-}
+const request = (pathname, options = {}) => harness.request(pathname, { method: options.method, body: options.body, auth: options.noAuth ? false : undefined }).then((res) => ({ ...res, body: res.text }));
 
 test.before(async () => {
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), "seed-recon-workspace-"));
@@ -54,7 +30,9 @@ test.before(async () => {
   fs.writeFileSync(path.join(whitelistDir, "blacklist.json"), JSON.stringify({
     WARNED: { name: "Some Warned Journal", type: "warned", reason: "预警期刊" },
   }), "utf8");
+  crossrefRequests = [];
   fakeCrossref = http.createServer((req, res) => {
+    crossrefRequests.push(req.url);
     const records = {
       "/works/10.1039%2Fd0ta00811g": {
         DOI: "10.1039/d0ta00811g", title: ["Seed paper"], "container-title": ["J. Mater. Chem. A"], ISSN: ["2050-7488"],
@@ -75,25 +53,12 @@ test.before(async () => {
   });
   await new Promise((resolve) => fakeCrossref.listen(0, "127.0.0.1", resolve));
   crossrefOrigin = `http://127.0.0.1:${fakeCrossref.address().port}`;
-  configPath = path.join(os.tmpdir(), `seed-recon-${process.pid}.config.json`);
-  fs.writeFileSync(configPath, JSON.stringify({
-    token: TOKEN, allowExecution: false, workspaceRoot: workspace, allowedRoots: [workspace], adapters: {},
-    scholarium: { enabled: true, vaultRoot: workspace },
-    journalWhitelistPath: whitelistDir,
-  }, null, 2), "utf8");
-
-  bridge = spawn(process.execPath, [path.join(root, "bridge", "server.js")], {
-    cwd: root,
-    env: { ...process.env, AGENT_BRIDGE_PORT: String(bridgePort), AGENT_BRIDGE_CONFIG_PATH: configPath, AGENT_BRIDGE_AUDIT_DIR: auditDir, AGENT_BRIDGE_CROSSREF_ORIGIN: crossrefOrigin },
-    stdio: "ignore", windowsHide: true,
-  });
-  await waitForBridge();
+  harness = await startBridge({ config: { workspaceRoot: workspace, allowedRoots: [workspace], adapters: {}, scholarium: { enabled: true, vaultRoot: workspace }, journalWhitelistPath: whitelistDir }, env: { AGENT_BRIDGE_AUDIT_DIR: auditDir, AGENT_BRIDGE_CROSSREF_ORIGIN: crossrefOrigin } });
 });
 
 test.after(() => {
-  if (bridge && !bridge.killed) bridge.kill();
+  if (harness) harness.stop();
   if (fakeCrossref) fakeCrossref.close();
-  for (const p of [configPath]) if (p && fs.existsSync(p)) fs.rmSync(p);
   for (const d of [workspace, auditDir, whitelistDir]) if (d && fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
 });
 
@@ -183,6 +148,10 @@ test("Crossref seed reader is a fixed-origin, DOI-scoped L0 manifest and does no
   assert.equal(JSON.parse(candidate.body).work.title, "Pt-loaded Au@CeO2 core-shell nanocatalysts for improving methanol oxidation");
   const bad = await request("/v1/literature/crossref/works/not-a-doi");
   assert.equal(bad.status, 400);
+  assert.deepEqual(crossrefRequests, [
+    "/works/10.1039%2Fd0ta00811g",
+    "/works/10.1039%2Fc9ta09333h",
+  ], 'only validated DOI requests may reach the Crossref origin');
 });
 
 test("unknown run id returns 404 for GET and PATCH", async () => {

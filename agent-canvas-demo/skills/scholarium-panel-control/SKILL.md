@@ -72,13 +72,44 @@ article_id 从 `workspace.get_state` 拿不到——用 Bridge 的
 | `material.category_add` | `name` | 加分类 |
 | `material.category_remove` | `name` | 仅删除没有任何材料使用的分类；仍在使用时会拒绝，绝不改动材料条目 |
 
-## 实验记录（experiment.append_note）
+## 实验记录（experiment.append_note / experiment.insert_chem）
 
 | 动作 | 输入 | 说明 |
 | --- | --- | --- |
 | `experiment.append_note` | `experiment_uid`, `text` | 往实验 frontmatter 的 `log` 列表追加 `{at, text, by}`，by 如实记录调用者（队列链路里为 `agent:research-weaver`）。不改 status、不走生命周期门槛；状态迁移仍用 `experiment.transition` |
+| `experiment.validate_chem` | `smiles?` / `reaction_smiles?`（至少一个） | L0 只读化学门禁：用本机 RDKit 检查结构能否解析；反应式还检查左右两侧逐元素守恒和净电荷守恒。返回 `status: balanced` 才能称为已配平 |
+| `experiment.insert_chem` | `experiment_uid`, `smiles?` / `reaction_smiles?`（至少一个）, `title?`, `type?`, `molfile?`, `ket?`, `block_id?`, `allow_duplicate?`, `strict_validation?` | 往实验**正文**末尾追加一个 ` ```scholarium-chem ` 块。研究员在笔记里能直接看到结构图，点"编辑"用 Ketcher 打开继续画；织研者必须先通过 `experiment.validate_chem`，再以 `strict_validation: true` 写入完整反应式 |
 
 experiment_uid 用 `experiment.scan_outcomes`（L0）或 M1 读通道查到。
+
+### insert_chem 的约束
+
+### 化学严谨性协议（强制）
+
+`experiment.insert_chem` 只能固化“来源明确”的结构表示，不能把它当成化学方程式验证器。调用前必须先区分：Ketcher 图、SMILES/RXN 是结构/反应的编码；能渲染、能解析或箭头画得出来，都不代表反应真实、已经配平或机理成立。
+
+- 反应式必须先确认每个物种的身份和来源，明确反应物/产物边界；溶剂、催化剂、条件、旁观离子和未确认副产物不能悄悄省略或改写成产物。
+- 对完整反应式逐元素核对原子数，并核对净电荷；涉及氧化还原时还要核对电子/氧化数，涉及离子或配位物时核对价态与配位数。任一项无法核对，就只能写“方程式不完整/待核验”，不能声称“已配平”。
+- 系数必须化为最小整数比，并同时给出人类可读方程式。RXN/SMILES 中重复同一物种只是编码系数的方式；Ketcher 可能将重复物种画成多个图形，不能把图形数量当成已经显示的系数。
+- 不得从截图、名称或常见反应经验反推缺失结构、产物、系数、条件或机理；不得编造 SMILES、molfile、分子式或守恒结论。拿不准时先问研究员，或使用 `experiment.append_note` 记录文字描述。
+- 写入前在回复或动作理由中明确状态：`已验证/已配平` 只允许用于元素、净电荷、结构有效性和来源都已核实的反应；否则使用 `待核验`，并列出缺失的物种、守恒项或验证工具。不要用“已验证”标题掩盖不完整反应。
+- 反应式写入的固定动作顺序是：先调用 `experiment.validate_chem`；只有返回 `valid: true` 且 `status: balanced`，才可调用 `experiment.insert_chem` 并传 `strict_validation: true`。验证器返回 `unbalanced`、`invalid` 或 `unavailable` 时禁止写入反应式；改用 `experiment.append_note` 记录待核验文字。
+
+- `reaction_smiles` 必须含 `>`（渲染端就是靠它判定"这是一条反应式"），否则
+  报 `reaction_smiles_must_contain_reaction_arrow`。单个分子走 `smiles`。
+- SMILES 里不能有空白字符，否则报 `*_must_not_contain_whitespace`——把一整句
+  自然语言塞进结构字段是最常见的错法。
+- `type` 只能是 `molecule|cycle|scheme|reaction`（默认按有没有反应式推断），
+  `format` 只能是 `ket|rxn|mol`（默认按实际给了哪个字段推断）。
+- 只给 SMILES 时块能正常渲染；`molfile`/`ket` 是可选的原始结构，给了的话研究员
+  点"编辑"时 Ketcher 能拿到原始坐标，而不是从 SMILES 重新布局。
+- frontmatter 的 `smiles`/`reaction_smiles` **只在为空时**补写（决定看板卡片
+  的缩略图）；已有不同的值时不覆盖，在结果的 `frontmatter_skipped` 里如实列出。
+- 正文里已有同一条结构时返回 `{noop: true, reason: "structure_already_present"}`
+  而不是写第二份；确实要重复插入才传 `allow_duplicate: true`。
+- **绝不编造结构**：一条杜撰的 SMILES 在笔记里和一条真实结构长得一模一样，
+  事后没人分得清。结构必须来自研究员的话、文献原文或已有记录；拿不准就问，
+  或退回 `experiment.append_note` 用文字描述。
 
 ## 失败处理
 

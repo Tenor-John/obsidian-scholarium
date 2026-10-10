@@ -16,6 +16,25 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# The manifest is emitted as UTF-8 JSON on stdout. Without this, Python on a
+# Chinese Windows install writes stdout as GBK, and a single non-GBK character
+# anywhere in the manifest - a degree sign in a column name is enough - raises
+# UnicodeEncodeError on the very last line of main(). Everything has already
+# been rendered and written to disk at that point, so the run produced a
+# correct chart and still reported failure, which surfaced in the panel as an
+# unexplained "Failed to fetch". sch-data-normalize already does this; the
+# plotter was missing it.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
+# Extension-derived delimiters stay deterministic; TXT/DAT instrument exports
+# are sniffed instead, and an ambiguous sniff fails loudly rather than guessing.
+SUPPORTED_SUFFIXES = {".csv", ".tsv", ".txt", ".dat"}
+FIXED_DELIMITERS = {".csv": ",", ".tsv": "\t"}
+COMMENT_PREFIXES = ("#", "%", "!", "//")
+
 
 def load_input(value: str) -> dict:
     if not value:
@@ -38,9 +57,37 @@ def safe_source(root: Path, value: str) -> Path:
     target = candidate.resolve()
     if root not in target.parents or not target.is_file():
         raise ValueError("data_path must be an existing file inside the authorized workspace")
-    if target.suffix.lower() not in {".csv", ".tsv"}:
-        raise ValueError("only CSV and TSV files are supported for deterministic plotting")
+    suffix = target.suffix.lower()
+    if suffix in {".opj", ".opju"}:
+        raise ValueError(
+            "Origin project files (.opj/.opju) are a proprietary binary format and cannot be "
+            "parsed deterministically. In Origin use File -> Export -> ASCII to write a .txt or "
+            ".csv, then plot that export."
+        )
+    if suffix in {".xlsx", ".xls", ".xlsm", ".ods"}:
+        raise ValueError(
+            "spreadsheet workbooks are not plotted directly: choosing a sheet, a header row and "
+            "formula-value-vs-formula are decisions that must leave their own auditable record. "
+            "Export the intended sheet to CSV first, then plot that CSV."
+        )
+    if suffix not in SUPPORTED_SUFFIXES:
+        raise ValueError(
+            "only CSV, TSV and delimited TXT/DAT exports are supported for deterministic plotting"
+        )
     return target
+
+
+def overwrite_manifest_snapshot(output: Path, previous: dict, previous_bytes: bytes) -> Path:
+    """Reserve a non-destructive manifest snapshot before an overwrite."""
+    created = str(previous.get("created_at") or "unknown").strip()
+    stamp = re.sub(r"[^0-9A-Za-z]+", "-", created).strip("-")[:80] or "unknown"
+    digest = hashlib.sha256(previous_bytes).hexdigest()[:12]
+    candidate = output / f"plot-manifest.pre-overwrite-{stamp}-{digest}.json"
+    suffix = 1
+    while candidate.exists():
+        candidate = output / f"plot-manifest.pre-overwrite-{stamp}-{digest}-{suffix}.json"
+        suffix += 1
+    return candidate
 
 
 def decode_dataset(raw: bytes) -> tuple[str, str]:
@@ -51,6 +98,54 @@ def decode_dataset(raw: bytes) -> tuple[str, str]:
         except UnicodeDecodeError:
             continue
     raise ValueError("dataset encoding is unsupported; save the CSV/TSV as UTF-8, GB18030, or GBK")
+
+
+def sniff_table(text: str, suffix: str) -> tuple[str, int, str]:
+    """Resolve (delimiter, skipped_lines, detection) without guessing.
+
+    CSV/TSV keep their extension-derived delimiter. TXT/DAT accept exactly one
+    stable separator across the sampled header/data rows; ambiguous inputs are
+    rejected because a wrong separator can still produce a plausible chart.
+    """
+    suffix = suffix.lower()
+    if suffix in FIXED_DELIMITERS:
+        return FIXED_DELIMITERS[suffix], 0, "extension"
+
+    lines = text.splitlines()
+    skipped = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith(COMMENT_PREFIXES):
+            skipped += 1
+            continue
+        break
+    sample = [line for line in lines[skipped:] if line.strip()][:20]
+    if len(sample) < 2:
+        raise ValueError("dataset needs a header row and at least one data row")
+
+    candidates = []
+    for delimiter, label in (("\t", "tab"), (",", "comma"), (";", "semicolon")):
+        counts = {len(line.split(delimiter)) for line in sample}
+        if len(counts) == 1:
+            columns = next(iter(counts))
+            if columns >= 2:
+                candidates.append((columns, delimiter, label))
+    if candidates:
+        candidates.sort(key=lambda item: -item[0])
+        if len(candidates) > 1 and candidates[0][0] == candidates[1][0]:
+            raise ValueError(
+                f"column separator is ambiguous: {candidates[0][2]} and {candidates[1][2]} both produce "
+                f"{candidates[0][0]} columns; re-export this file as CSV or TSV so the parse is unambiguous"
+            )
+        return candidates[0][1], skipped, f"sniffed:{candidates[0][2]}"
+
+    runs = {len(re.split(r"[ \t]+", line.strip())) for line in sample}
+    if len(runs) == 1 and next(iter(runs)) >= 2:
+        return "whitespace", skipped, "sniffed:whitespace-run"
+    raise ValueError(
+        "could not find a column separator that yields the same column count on every row of "
+        "this TXT/DAT export; re-export it as CSV or TSV"
+    )
 
 
 def numeric(value: object) -> float | None:
@@ -469,12 +564,27 @@ def svg_chart(rows: list[dict[str, str]], x_key: str, y_keys: list[str], kind: s
 def main() -> int:
     root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
     payload = load_input(sys.argv[2] if len(sys.argv) > 2 else "")
+    configured_root = str(payload.get("output_root") or "Materials").replace("\\", "/").strip("/")
+    if not configured_root or configured_root in {".", ".."} or any(part in {".", ".."} for part in configured_root.split("/")):
+        raise ValueError("output_root must be a relative vault folder")
+    analysis_root = (root / configured_root / "_analysis").resolve()
+    try:
+        analysis_root.relative_to(root)
+    except ValueError as error:
+        raise ValueError("output_root must remain inside the vault") from error
     source = safe_source(root, str(payload.get("data_path") or ""))
     raw = source.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
-    delimiter = "\t" if source.suffix.lower() == ".tsv" else ","
     text, encoding = decode_dataset(raw)
-    rows = list(csv.DictReader(text.splitlines(), delimiter=delimiter))
+    delimiter, skipped_lines, delimiter_source = sniff_table(text, source.suffix)
+    if delimiter_source == "extension":
+        rows = list(csv.DictReader(text.splitlines(), delimiter=delimiter))
+    else:
+        body = [line for line in text.splitlines()[skipped_lines:] if line.strip()]
+        if delimiter == "whitespace":
+            body = [re.sub(r"[ \t]+", "\t", line.strip()) for line in body]
+            delimiter = "\t"
+        rows = list(csv.DictReader(body, delimiter=delimiter))
     headers = list(rows[0].keys()) if rows else []
     if len(headers) < 2:
         raise ValueError("dataset needs a header row and at least two columns")
@@ -492,38 +602,48 @@ def main() -> int:
     if kind not in {"line", "scatter", "bar"}: raise ValueError("plot_kind must be line, scatter, or bar")
     title = str(payload.get("title") or f"{source.stem}: {', '.join(y_keys)} vs {x_key}").strip()[:180]
     style = chart_style(payload.get("chart_style"))
-    request_key = json.dumps({"x": x_key, "y": y_keys, "kind": kind, "title": title, "chart_style": style}, ensure_ascii=False, sort_keys=True)
-    request_digest = hashlib.sha256(request_key.encode("utf-8")).hexdigest()[:10]
     save_mode = str(payload.get("save_mode") or "new").lower()
     if save_mode not in {"new", "overwrite"}:
         raise ValueError("save_mode must be new or overwrite")
-    target_manifest_relative = None
-    if save_mode == "overwrite":
-        target_manifest_relative = str(payload.get("target_manifest_path") or "").strip().replace("\\", "/")
-        if not target_manifest_relative:
-            raise ValueError("target_manifest_path is required for overwrite")
+    target_manifest_relative = str(payload.get("target_manifest_path") or "").strip().replace("\\", "/") or None
+    if save_mode == "overwrite" and not target_manifest_relative:
+        raise ValueError("target_manifest_path is required for overwrite")
+    if target_manifest_relative:
         target_manifest = (root / target_manifest_relative).resolve()
-        analysis_root = (root / "Materials" / "_analysis").resolve()
         try:
             target_manifest.relative_to(analysis_root)
         except ValueError as error:
-            raise ValueError("overwrite target must remain inside Materials/_analysis") from error
+            raise ValueError("overwrite target must remain inside the configured materials folder/_analysis (default: Materials/_analysis)") from error
         if target_manifest.name != "plot-manifest.json" or not target_manifest.is_file():
             raise ValueError("overwrite target must be an existing plot-manifest.json")
         try:
-            previous = json.loads(target_manifest.read_text(encoding="utf-8"))
+            previous_bytes = target_manifest.read_bytes()
+            previous = json.loads(previous_bytes.decode("utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise ValueError("overwrite target manifest is unreadable") from error
         source_relative = str(source.relative_to(root)).replace("\\", "/")
         if previous.get("skill") != "sch-data-plot" or previous.get("source", {}).get("path") != source_relative:
             raise ValueError("overwrite target does not belong to the selected source dataset")
-        output = target_manifest.parent
+        if save_mode == "overwrite":
+            output = target_manifest.parent
     else:
-        # Source bytes and plotting request together form the artifact identity.
-        # A repeated identical new-version request is naturally idempotent.
-        output = root / "Materials" / "_analysis" / f"{slug(source.stem)}-{digest[:12]}-{request_digest}"
+        target_manifest = None
+        previous_bytes = None
+    # Source bytes and plotting request together form the artifact identity.
+    # A new revision also includes its selected parent manifest: otherwise two
+    # visually identical edits from distinct historical versions would write
+    # the same manifest and silently erase their different lineage.
+    request_recipe = {"x": x_key, "y": y_keys, "kind": kind, "title": title, "chart_style": style}
+    if save_mode == "new" and target_manifest_relative:
+        request_recipe["revision_parent"] = target_manifest_relative
+    request_key = json.dumps(request_recipe, ensure_ascii=False, sort_keys=True)
+    request_digest = hashlib.sha256(request_key.encode("utf-8")).hexdigest()[:10]
+    if save_mode == "new":
+        output = analysis_root / f"{slug(source.stem)}-{digest[:12]}-{request_digest}"
     output.mkdir(parents=True, exist_ok=True)
     svg_path, report_path, manifest_path = output / "plot.svg", output / "plot-report.md", output / "plot-manifest.json"
+    snapshot_path = overwrite_manifest_snapshot(output, previous, previous_bytes) if save_mode == "overwrite" else None
+    snapshot_relative = str(snapshot_path.relative_to(root)).replace("\\", "/") if snapshot_path else None
     svg, summary = svg_chart(rows, x_key, y_keys, kind, title, style)
     outputs = [str(item.relative_to(root)).replace("\\", "/") for item in (svg_path, report_path, manifest_path)]
     extras = ""
@@ -538,8 +658,19 @@ def main() -> int:
     extras += f"- Canvas: `{style['fig_size'][0]}×{style['fig_size'][1]}px`\n- Spines: `{json.dumps(style['spines'])}` (border width {style['border_width']:g})\n- Legend: `{style['legend']}` · Line style: `{style['line_style']}` · Fonts: title {style['title_size']:g} / label {style['label_size']:g} / tick {style['tick_size']:g}\n"
     if style["x_label"] or style["y_label"]:
         extras += f"- Axis labels: x=`{style['x_label'] or ''}` y=`{style['y_label'] or ''}`\n"
-    manifest = {"skill": "sch-data-plot", "created_at": datetime.now(timezone.utc).isoformat(), "source": {"path": str(source.relative_to(root)).replace("\\", "/"), "sha256": digest, "bytes": len(raw), "delimiter": delimiter, "encoding": encoding}, "plot": {"kind": kind, "title": title, "x_column": x_key, "y_columns": y_keys, "chart_style": style, **summary}, "revision": {"mode": save_mode, "target_manifest_path": target_manifest_relative}, "outputs": outputs, "writes": outputs}
+    source_meta = {"path": str(source.relative_to(root)).replace("\\", "/"), "sha256": digest, "bytes": len(raw), "delimiter": delimiter, "encoding": encoding}
+    if delimiter_source != "extension":
+        source_meta["delimiter_source"] = delimiter_source
+        source_meta["skipped_lines"] = skipped_lines
+        detected = delimiter_source.split(":", 1)[-1]
+        skipped_note = f"; {skipped_lines} leading comment/blank line(s) skipped" if skipped_lines else ""
+        extras += f"- Separator: `{detected}` (auto-detected from this {source.suffix.lower()} export{skipped_note})\n"
+    writes = [*outputs, *([snapshot_relative] if snapshot_relative else [])]
+    manifest = {"skill": "sch-data-plot", "created_at": datetime.now(timezone.utc).isoformat(), "source": source_meta, "plot": {"kind": kind, "title": title, "x_column": x_key, "y_columns": y_keys, "chart_style": style, **summary}, "revision": {"mode": save_mode, "target_manifest_path": target_manifest_relative, "pre_overwrite_manifest_snapshot": snapshot_relative}, "outputs": outputs, "writes": writes}
     report = f"# {title}\n\n- Source: `{manifest['source']['path']}`\n- SHA-256: `{digest}`\n- Plot: `{kind}`\n- X: `{x_key}`\n- Y: `{', '.join(y_keys)}`\n- Theme: `{style['theme']}`\n- Markers: `{style['markers']}`\n- Grid: `{style['show_grid']}`\n- Save mode: `{save_mode}`\n{extras}\n> Reopen this chart from the Material Library to revise it. Choose either a new reproducible version or an explicit overwrite of this selected version. The source dataset is always read-only. Annotations and view ranges are visual only — data processing such as baseline correction must produce derived data with its own record instead.\n\n![[plot.svg]]\n"
+    # Snapshot is written only after all validation/rendering succeeds and
+    # immediately before any target artifact is replaced.
+    if snapshot_path: snapshot_path.write_bytes(previous_bytes)
     if save_mode == "overwrite" or not svg_path.exists(): svg_path.write_text(svg, encoding="utf-8")
     if save_mode == "overwrite" or not report_path.exists(): report_path.write_text(report, encoding="utf-8")
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")

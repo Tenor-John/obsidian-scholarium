@@ -77,7 +77,10 @@
       });
       button.textContent = '生成写入预览…';
       const preview = await bridgeFetch('/v1/drafts/batch', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ base: 'scholarium-vault', items: built.items }),
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+          base: 'scholarium-vault', serverManagedMetadata: true,
+          projectDisplayId: displayId, items: built.items,
+        }),
       });
       const message = `${displayId} 的首圈草案已经生成：\n\n假设 ${built.hypotheses.length} 条\n实验 ${built.experiments.length} 个\n周计划 ${built.week}\n共写入 ${built.items.length} 个 Markdown 文件\n\n这些内容全部保持 AI 草案/提议状态，不会自动确认 Evidence、启动实验或提交博士工作台。是否写入？`;
       if (!window.confirm(message)) return;

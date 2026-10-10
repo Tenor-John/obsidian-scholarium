@@ -9,47 +9,20 @@
 // Same real-Bridge-over-real-HTTP pattern as drafts-batch-endpoint.test.js.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const http = require('node:http');
-const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const root = path.resolve(__dirname, '..');
-const bridgePort = 46900 + (process.pid % 300);
-const TOKEN = 'test-token-' + process.pid;
+const { startBridge } = require('./helpers/bridge-harness.js');
 
-let bridge;
+let harness;
 let workspace;
 let auditDir;
 let configPath;
 
-function request(pathname, options = {}) {
-  return new Promise((resolve, reject) => {
-    const headers = options.body ? { 'content-type': 'application/json' } : {};
-    if (!options.noAuth) headers['x-agent-bridge-token'] = TOKEN;
-    const req = http.request({
-      host: '127.0.0.1', port: bridgePort, path: pathname, method: options.method || 'GET', headers,
-    }, (res) => {
-      let raw = '';
-      res.on('data', (chunk) => { raw += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: raw }));
-    });
-    req.on('error', reject);
-    if (options.body) req.write(options.body);
-    req.end();
-  });
-}
-
-async function waitForBridge() {
-  let lastError;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try { const res = await request('/health', { noAuth: true }); if (res.status === 200) return; }
-    catch (error) { lastError = error; }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw lastError || new Error('bridge did not start');
-}
+const request = (pathname, options = {}) => harness.request(pathname, {
+  method: options.method, body: options.body, auth: options.noAuth ? false : undefined,
+}).then((res) => ({ ...res, body: res.text }));
 
 function auditEvents() {
   if (!fs.existsSync(auditDir)) return [];
@@ -65,27 +38,13 @@ const VALID = () => ({ category: 'fetch_and_attach_pdf', workspace, prompt: '按
 test.before(async () => {
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'full-tasks-workspace-'));
   auditDir = fs.mkdtempSync(path.join(os.tmpdir(), 'full-tasks-audit-'));
-  configPath = path.join(os.tmpdir(), `full-tasks-${process.pid}.config.json`);
-  fs.writeFileSync(configPath, JSON.stringify({
-    token: TOKEN,
-    allowExecution: false,
-    workspaceRoot: workspace,
-    allowedRoots: [workspace],
-    adapters: {},
-    fullTaskAuditDir: auditDir,
-  }, null, 2), 'utf8');
-
-  bridge = spawn(process.execPath, [path.join(root, 'bridge', 'server.js')], {
-    cwd: root,
-    env: { ...process.env, AGENT_BRIDGE_PORT: String(bridgePort), AGENT_BRIDGE_CONFIG_PATH: configPath },
-    stdio: 'ignore', windowsHide: true,
+  harness = await startBridge({
+    config: { workspaceRoot: workspace, allowedRoots: [workspace], adapters: {}, fullTaskAuditDir: auditDir },
   });
-  await waitForBridge();
 });
 
 test.after(() => {
-  if (bridge && !bridge.killed) bridge.kill();
-  if (configPath && fs.existsSync(configPath)) fs.rmSync(configPath);
+  if (harness) harness.stop();
   if (workspace && fs.existsSync(workspace)) fs.rmSync(workspace, { recursive: true, force: true });
   if (auditDir && fs.existsSync(auditDir)) fs.rmSync(auditDir, { recursive: true, force: true });
 });

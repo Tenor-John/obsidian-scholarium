@@ -197,7 +197,7 @@
 
   // 每次侦察恒生成一张 Idea 卡片；勾选的问题/假设作为同一批次一起写入，
   // 整批原子提交——不存在"卡片写了、草稿没写"的中间态。
-  function selectedItems(existingIds) {
+  function selectedItems(existingIds, projectUid) {
     const core = Core();
     const card = core.buildIdeaCard({
       topic: state.topic,
@@ -214,26 +214,34 @@
       hypotheses: state.hypotheses.filter((h) => h.checked),
       existingIds: [...existingIds, card.displayId],
       records: state.records,
+      projectUid,
     });
     return [{ path: card.path, content: card.content }, ...notes];
   }
 
   async function previewNotes() {
-    const items0 = selectedItems(await collectExistingIds());
-    if (!items0.length) { status('<span class="error">没有勾选任何问题或假设。</span>'); return; }
+    const projectDisplayId = String(window.researchWeaver?.activeTopic?.projectId || '').trim();
+    if (!projectDisplayId) {
+      status('<span class="error">候选 Question/Hypothesis 必须绑定正式课题；请先给当前主题绑定 PRJ，再预览。表单内容已保留。</span>');
+      return;
+    }
     busy = true; setPhase('proposal');
     try {
+      const projectData = (await scholariumStateFetch('project.get', { display_id: projectDisplayId })).result;
+      const projectUid = projectData?.project?.uid;
+      if (!projectUid) throw new Error(`未能解析 ${projectDisplayId} 的正式 project uid`);
+      const items0 = selectedItems(await collectExistingIds(), projectUid);
       status('正在生成笔记预览（整批校验，任一冲突即整批拒绝）…');
       let res = await bridgeFetch('/v1/drafts/batch', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ base: 'scholarium-vault', items: items0 }),
+        body: JSON.stringify({ base: 'scholarium-vault', serverManagedMetadata: true, projectDisplayId, items: items0 }),
       }).catch(async (err) => {
         // 编号撞车（409）：重新收集编号再试一次
         if (!/already exists|409/.test(err.message)) throw err;
-        const retry = selectedItems(await collectExistingIds());
+        const retry = selectedItems(await collectExistingIds(), projectUid);
         return bridgeFetch('/v1/drafts/batch', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ base: 'scholarium-vault', items: retry }),
+          body: JSON.stringify({ base: 'scholarium-vault', serverManagedMetadata: true, projectDisplayId, items: retry }),
         });
       });
       state.batchId = res.id;

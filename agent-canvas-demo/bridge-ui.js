@@ -50,8 +50,37 @@ function renderTheoryReply(reply) {
   panel.querySelector('.theory-form').onsubmit = async (event) => { event.preventDefault(); const answers = [...panel.querySelectorAll('textarea')].map((field, i) => `问题 ${i + 1}：${field.value.trim()}`).filter(Boolean).join('\n'); if (!answers) return window.researchWeaver.toast('请先填写回答或实验观察。'); const button = panel.querySelector('button'); button.disabled = true; button.textContent = '科研论正在审计…'; try { const next = await runResearchTheory(answers); panel.remove(); renderTheoryReply(next); } catch (error) { window.researchWeaver.toast(`科研论对话失败：${error.message}`); button.disabled = false; button.textContent = '重试科研论'; } };
   result.appendChild(panel);
 }
-function bridgeStatus() { bridgeDot.classList.toggle('offline', !zhiyanBridge.online); bridgeText.textContent = zhiyanBridge.online ? '本机 Bridge 已连接' : '本机 Bridge 未连接'; bridgeMeta.textContent = zhiyanBridge.online ? `检测到 ${zhiyanBridge.agents.filter((agent) => agent.installed).length} 个可用 CLI · ${zhiyanBridge.agents.some((agent) => agent.executionEnabled) ? '可执行只读任务' : '执行已禁用'}` : '运行 npm start 后会自动连接本机 Agent'; }
+function bridgeStatus() { bridgeDot.classList.toggle('offline', !zhiyanBridge.online); bridgeText.textContent = zhiyanBridge.online ? '本机 Bridge 已连接' : '本机 Bridge 未连接'; bridgeMeta.textContent = zhiyanBridge.online ? `检测到 ${zhiyanBridge.agents.filter((agent) => agent.installed).length} 个可用 CLI · ${zhiyanBridge.agents.some((agent) => agent.executionEnabled) ? '可执行只读任务' : '执行已禁用'}` : '点击连接按钮可在后台启动本机 Bridge'; const button = document.querySelector('#connectBridge'); if (button) button.textContent = zhiyanBridge.online ? '断开 Bridge' : '连接 Bridge'; }
 async function bridgeFetch(path, options = {}) { const response = await fetch(zhiyanBridge.url + path, options); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || `Bridge 请求失败 (${response.status})`); return payload; }
+// The control credential cannot travel by cookie: this page runs in an iframe
+// whose origin (http://127.0.0.1:<port>) differs from Obsidian's own
+// (app://obsidian.md), so the launcher's SameSite=Strict cookie is withheld as
+// cross-site and every 断开 came back 401. Fetch the launcher's control token
+// once instead and send it as a header. Cached per page load, and re-fetched
+// if the launcher restarted and minted a new one.
+let controlToken = null;
+async function bridgeControlToken(force = false) {
+  if (controlToken && !force) return controlToken;
+  const response = await fetch(`${zhiyanBridge.url}/control/token`, { credentials: 'include' });
+  if (!response.ok) throw new Error(`无法取得 Bridge 控制令牌 (${response.status})`);
+  controlToken = (await response.json()).token;
+  return controlToken;
+}
+async function bridgeControl(action, method = 'POST') {
+  const send = async (token) => fetch(`${zhiyanBridge.url}/control/${action}`, {
+    method,
+    credentials: 'include',
+    headers: { 'content-type': 'application/json', 'x-scholarium-control-token': token },
+  });
+  let response = await send(await bridgeControlToken());
+  // 401 here means the launcher restarted since this page loaded; take a fresh
+  // token and retry once rather than reporting a spurious auth failure.
+  if (response.status === 401) response = await send(await bridgeControlToken(true));
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || `Bridge 控制失败 (${response.status})`);
+  return payload;
+}
+async function waitForBridgeHealth(attempts = 40) { let lastError; for (let attempt = 0; attempt < attempts; attempt += 1) { try { return await bridgeFetch('/health'); } catch (error) { lastError = error; await new Promise((resolve) => setTimeout(resolve, 250)); } } throw lastError || new Error('Bridge 启动超时'); }
 function showWorkspace(info) { workspaceRoot = info.root || ''; workspaceInput.value = workspaceRoot; const ready = Boolean(info.isDirectory); workspaceStatus.textContent = ready ? `已授权：${workspaceRoot}` : '课题工作区不可用；请选择存在的本地目录。'; workspaceStatus.className = `workspace-status ${ready ? 'ready' : 'error'}`; }
 async function loadWorkspace() { const info = await bridgeFetch('/v1/workspace'); showWorkspace(info); return info; }
 
@@ -330,11 +359,13 @@ async function createResearchTopicFolder(name, workspace) {
   return created;
 }
 window.createResearchTopicFolder = createResearchTopicFolder;
-async function connectBridge(silent = false) { try { await bridgeFetch('/health'); zhiyanBridge.agents = (await bridgeFetch('/v1/agents')).agents; zhiyanBridge.online = true; await loadWorkspace(); await loadProjectRegistry(); const localSkills = await bridgeFetch('/v1/skills'); window.researchWeaver.importFileSkills(localSkills.skills); bridgeStatus(); window.dispatchEvent(new Event('bridge:agents')); if (!silent) window.researchWeaver.toast(`本机 Bridge 已连接：检测到 ${zhiyanBridge.agents.filter((agent) => agent.installed).length} 个 CLI 与 ${localSkills.skills.length} 个本机 Skill`); } catch (error) { zhiyanBridge.online = false; bridgeStatus(); if (!silent) window.researchWeaver.toast(`连接失败：${error.message}`); } }
+async function connectBridge(silent = false) { try { try { await bridgeFetch('/health'); } catch (_) { await bridgeControl('start'); await waitForBridgeHealth(); } zhiyanBridge.agents = (await bridgeFetch('/v1/agents')).agents; zhiyanBridge.online = true; await loadWorkspace(); await loadProjectRegistry(); const localSkills = await bridgeFetch('/v1/skills'); window.researchWeaver.importFileSkills(localSkills.skills); bridgeStatus(); window.dispatchEvent(new Event('bridge:agents')); if (!silent) window.researchWeaver.toast(`本机 Bridge 已连接：检测到 ${zhiyanBridge.agents.filter((agent) => agent.installed).length} 个 CLI 与 ${localSkills.skills.length} 个本机 Skill`); } catch (error) { zhiyanBridge.online = false; bridgeStatus(); if (!silent) window.researchWeaver.toast(`连接失败：${error.message}`); } }
+async function disconnectBridge(silent = false) { try { await bridgeControl('shutdown'); } catch (error) { if (!silent) window.researchWeaver.toast(`断开失败：${error.message}`); return; } zhiyanBridge.online = false; zhiyanBridge.agents = []; bridgeStatus(); window.dispatchEvent(new Event('bridge:agents')); if (!silent) window.researchWeaver.toast('本机 Bridge 已停止；再次点击“连接 Bridge”即可重新启动。'); }
 function safeHtml(text) { return String(text || '').replace(/[&<>]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[char])); }
 function formatResult(text) { return safeHtml(text).replace(/\n/g, '<br>'); }
-function addStep(title, detail, state = 'pending') { const row = document.createElement('div'); row.className = `run-step ${state === 'pending' ? 'pending' : ''}`; row.dataset.runState = state; row.innerHTML = `<i>${state === 'pending' ? '◌' : state === 'error' ? '!' : state === 'stopped' ? '×' : '✓'}</i><div><b>${safeHtml(title)}</b><br/><small>${safeHtml(detail)}</small></div>`; window.researchWeaver.steps.appendChild(row); schedulePipelineHistoryCheckpoint(); return row; }
-function updateStep(row, detail, state = 'done') { row.classList.toggle('pending', state === 'pending'); row.dataset.runState = state; row.querySelector('i').textContent = state === 'pending' ? '◌' : state === 'error' ? '!' : state === 'stopped' ? '×' : '✓'; row.querySelector('small').textContent = detail; schedulePipelineHistoryCheckpoint(); }
+function stepIcon(state) { return state === 'pending' ? '◌' : state === 'error' ? '!' : state === 'warning' ? '△' : state === 'stopped' ? '×' : '✓'; }
+function addStep(title, detail, state = 'pending') { const row = document.createElement('div'); row.className = `run-step${state === 'pending' ? ' pending' : ''}${state === 'warning' ? ' warning' : ''}${state === 'error' ? ' error' : ''}`; row.dataset.runState = state; row.innerHTML = `<i>${stepIcon(state)}</i><div><b>${safeHtml(title)}</b><br/><small>${safeHtml(detail)}</small></div>`; window.researchWeaver.steps.appendChild(row); schedulePipelineHistoryCheckpoint(); return row; }
+function updateStep(row, detail, state = 'done') { row.classList.toggle('pending', state === 'pending'); row.classList.toggle('warning', state === 'warning'); row.classList.toggle('error', state === 'error'); row.dataset.runState = state; row.querySelector('i').textContent = stepIcon(state); row.querySelector('small').textContent = detail; schedulePipelineHistoryCheckpoint(); }
 
 // Turns window.weaverQueryLoop.runAuto()'s onProgress({phase, cycle, ...})
 // callbacks into a Chinese status line for a step-tracker row.
@@ -342,14 +373,17 @@ function describeQueryLoopProgress(p) {
   const tag = `第 ${p.cycle}/${p.maxCycles} 轮`;
   switch (p.phase) {
     case 'build': return `${tag}：构建者（${p.agent}）正在写检索式…`;
+    case 'builder-repair': return `${tag}：构建者输出未满足查询契约，正在执行唯一一次纯格式修复…`;
     case 'search': return `${tag}：检索式已生成（${p.query}），正在多源并行检索…`;
     case 'critic': return `${tag}：质疑者（${p.agent}${p.shared ? ' · 同 CLI 双角色' : ''}）正在评分（命中 ${p.hits} 条）…`;
+    case 'critic-repair': return `${tag}：质疑者输出未满足评分契约，正在执行唯一一次纯格式修复（不会重新检索）…`;
     case 'scored': {
       const b = p.breakdown || {};
       return `${tag}：${p.score} 分（相关性 ${b.relevance ?? '-'} /40 · 召回 ${b.recall ?? '-'} /25 · 可执行性 ${b.executability ?? '-'} /15 · 简洁度 ${b.simplicity ?? '-'} /20；阈值 ${p.threshold}）。`;
     }
     case 'accept': return `已达标：第 ${p.cycle} 轮 ${p.best.score} 分，循环收敛。检索式：${p.best.query}`;
     case 'exhausted': return `轮数用尽：已取历史最佳（第 ${p.best.cycle} 轮，${p.best.score} 分）。检索式：${p.best.query}`;
+    case 'degraded': return `${tag}：格式修复仍失败；已保留${p.score == null ? '未评分候选' : `此前评分 ${p.score} 分的最佳候选`}，标记为降级结果。`;
     default: return '正在处理…';
   }
 }
@@ -382,15 +416,21 @@ async function runQueryLoopWithStepTicker(row, topic) {
           line.innerHTML = `<b>第 ${p.cycle} 轮</b><span class="ql-score ${pass ? 'pass' : 'revise'}">${p.score} 分</span><span class="wv-mono ql-inline-query">${safeHtml(currentQuery)}</span><small>相关性 ${b.relevance ?? '-'} /40 · 召回 ${b.recall ?? '-'} /25 · 可执行性 ${b.executability ?? '-'} /15 · 简洁度 ${b.simplicity ?? '-'} /20${penalties ? `；复杂度扣分：${safeHtml(penalties)}` : ''}</small>`;
           logEl.appendChild(line);
         }
+        if (p.phase === 'degraded') {
+          const line = document.createElement('div');
+          line.className = 'ql-inline-entry';
+          line.innerHTML = `<b>协议降级</b><span class="ql-score revise">${p.score == null ? '未评分' : `${p.score} 分`}</span><span class="wv-mono ql-inline-query">${safeHtml(p.query || currentQuery)}</span><small>质疑者原回复与格式修复回复均未满足 JSON 契约；该结果不会被伪装成评分通过。</small>`;
+          logEl.appendChild(line);
+        }
       },
     });
   } catch (error) {
-    const phaseLabels = { build: '构建者生成检索式', search: '用真实文献进行多源检索', critic: '质疑者评分', scored: '汇总评分' };
+    const phaseLabels = { build: '构建者生成检索式', 'builder-repair': '修复构建者输出格式', search: '用真实文献进行多源检索', critic: '质疑者评分', 'critic-repair': '修复质疑者输出格式', scored: '汇总评分', degraded: '生成降级候选' };
     const cycle = lastProgress?.cycle ? `第 ${lastProgress.cycle}/${lastProgress.maxCycles} 轮` : '准备阶段';
     const phase = phaseLabels[lastProgress?.phase] || '自动打磨';
     const detail = `${cycle} · ${phase}失败：${error.message}`;
     const wrapped = new Error(detail);
-    wrapped.queryLoopFailure = { cycle: lastProgress?.cycle || null, phase: lastProgress?.phase || 'prepare', query: currentQuery };
+    wrapped.queryLoopFailure = { cycle: lastProgress?.cycle || null, phase: lastProgress?.phase || 'prepare', query: currentQuery, protocol: error.queryLoopProtocol || null };
     throw wrapped;
   }
 }
@@ -408,9 +448,11 @@ function pipelineHistorySteps() {
   }));
 }
 
-async function beginPipelineHistory(title, workspace, parentRunId = null) {
+// operationId：Pipeline 入口的幂等键（契约 §2.3）。只加在这一处入口，不加在每个
+// 阶段——同一张票据第二次投递会在建记录之前被 /v1/pipeline-runs 认出。
+async function beginPipelineHistory(title, workspace, parentRunId = null, operationId = '') {
   const record = await bridgeFetch('/v1/pipeline-runs', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: { 'content-type': 'application/json', ...(operationId ? { 'x-scholarium-operation-id': operationId } : {}) },
     body: JSON.stringify({ title, workspace, parentRunId }),
   });
   activePipelineHistoryId = record.id;
@@ -529,7 +571,7 @@ async function executePlan(plan, title) { await ensurePreflight(plan); if (!conf
   result.innerHTML = `<h3>工作流审计结论</h3>${outputs.map((item, index) => `<section class="agent-result"><b>阶段 ${index + 1} · ${safeHtml(item.name)} / ${safeHtml(item.skill)}</b><p>${formatResult(item.text)}</p></section>`).join('')}<small>所有阶段均为只读执行；未自动写入课题笔记。</small>`; result.classList.remove('hidden'); }
 async function runCurrentAgent() { const active = window.researchWeaver.getSelectedNode?.(); if (!active || active.type !== 'agent') return window.researchWeaver.toast('请先在画布中选择一个 Agent Profile 节点。'); startRunControl('agent', `Agent：${active.name}`); try { await executePlan([active], `运行 Profile：${active.name}`); finishRunControl('done', 'Agent 已结束'); } catch (error) { finishRunControl(activeRunControl?.stopRequested ? 'stopped' : 'error', error.message); window.researchWeaver.toast(error.message); } }
 async function runWorkflow() { startRunControl('workflow', '真实工作流'); try { await executePlan(window.researchWeaver.workflowPlan(), '真实运行整个工作流'); finishRunControl('done', '工作流已结束'); } catch (error) { finishRunControl(activeRunControl?.stopRequested ? 'stopped' : 'error', error.message); window.researchWeaver.toast(error.message); } }
-document.querySelector('#connectBridge').onclick = () => connectBridge(false); document.querySelector('#saveWorkspace').onclick = saveWorkspace; document.querySelector('#runCurrentAgent').onclick = runCurrentAgent; document.querySelector('#runWorkflow').onclick = runWorkflow; bridgeStatus(); connectBridge(true);
+document.querySelector('#connectBridge').onclick = () => zhiyanBridge.online ? disconnectBridge(false) : connectBridge(false); document.querySelector('#saveWorkspace').onclick = saveWorkspace; document.querySelector('#runCurrentAgent').onclick = runCurrentAgent; document.querySelector('#runWorkflow').onclick = runWorkflow; bridgeStatus(); connectBridge(true);
 // Replace the short learner-demo polling window after this script has initialized.
 // A literature synthesis can take several minutes, while the Bridge remains cancellable.
 setTimeout(() => { waitTask = async (id) => { if (activeRunControl) activeRunControl.currentTaskId = id; renderRunControl(); for (let attempt = 0; attempt < 1000; attempt++) { await checkpointRunControl('等待 Agent 返回'); const task = await bridgeFetch(`/v1/tasks/${id}`); if (['completed', 'failed', 'cancelled'].includes(task.status)) { if (activeRunControl?.currentTaskId === id) activeRunControl.currentTaskId = null; renderRunControl(); const final = task.events.filter((event) => event.type === 'result').at(-1); if (task.status !== 'completed') throw new Error(task.events.filter((event) => event.type === 'error').at(-1)?.text || `Agent task ended: ${task.status}`); return final?.text || 'Agent completed without a displayable final message.'; } await new Promise((resolve) => setTimeout(resolve, 900)); } if (activeRunControl?.currentTaskId === id) activeRunControl.currentTaskId = null; renderRunControl(); throw new Error('Agent task exceeded the 15-minute safety window.'); }; }, 0);
@@ -935,14 +977,15 @@ function confirmSearchTopic() {
 
 // OpenAlex supplies discovery metadata; a file is written only after an
 // explicit second confirmation and only when the response validates as a PDF.
-document.querySelector('#searchLiterature').onclick = async () => {
-  try {
+async function runLiteratureSearch(options = {}) {
+  // options.operationId：见 dispatchConversationOperation 的注释（只透传到入口）。
     if (!zhiyanBridge.online) await connectBridge();
     if (!zhiyanBridge.online) throw new Error('本机 Bridge 未连接。');
     const workspace = await loadWorkspace();
     if (!workspace.isDirectory) throw new Error('请先设置存在的课题工作区。');
-    const confirmedTopic = await confirmSearchTopic();
-    if (!confirmedTopic) return;
+    const suppliedTopic = String(options.topic || '').trim();
+    const confirmedTopic = suppliedTopic ? { topic: suppliedTopic } : await confirmSearchTopic();
+    if (!confirmedTopic) return { status: 'cancelled' };
     const topic = confirmedTopic.topic;
     const { dialog, steps, result } = window.researchWeaver;
     dialog.showModal(); document.querySelector('#runTitle').textContent = '开放文献检索';
@@ -957,7 +1000,13 @@ document.querySelector('#searchLiterature').onclick = async () => {
     try {
       const loopResult = await runQueryLoopWithStepTicker(rowQuery, topic);
       query = loopResult.query;
-      updateStep(rowQuery, `第 ${loopResult.cycle} 轮，${loopResult.score} 分，检索式：${query}`);
+      updateStep(
+        rowQuery,
+        loopResult.degraded
+          ? `质疑者格式修复仍失败；继续进行仅元数据检索预览。采用${loopResult.score == null ? '未评分候选' : `此前最佳 ${loopResult.score} 分候选`}：${query}`
+          : `第 ${loopResult.cycle} 轮，${loopResult.score} 分，检索式：${query}`,
+        loopResult.degraded ? 'error' : 'done'
+      );
     } catch (error) {
       updateStep(rowQuery, `自动打磨未完成（${error.message}），改用规则生成的检索式草稿。`, 'error');
       const drafted = await discoveryQuery(topic);
@@ -967,7 +1016,9 @@ document.querySelector('#searchLiterature').onclick = async () => {
     }
 
     const rowSearch = addStep('第 2 步 · 多源元数据检索（OpenAlex / PubMed / Semantic Scholar / Scopus，各源已按自身语法自动改写检索式）', '正在检索…');
-    const runSearch = (value) => bridgeFetch('/v1/literature/search', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspace: workspaceRoot, query: value }) });
+    // 入口写请求：带号之后，同一张票据第二次投递会在 /v1/literature/search 被
+    // 认出（replayed / 409），第二次检索不会真的开始（契约 §2.3，只守入口）。
+    const runSearch = (value) => bridgeFetch('/v1/literature/search', { method: 'POST', headers: { 'content-type': 'application/json', ...(options.operationId ? { 'x-scholarium-operation-id': options.operationId } : {}) }, body: JSON.stringify({ workspace: workspaceRoot, query: value }) });
     let search = await runSearch(query);
     let usedQuery = query;
     if (!(search.manifest.records || []).length) {
@@ -1004,7 +1055,12 @@ document.querySelector('#searchLiterature').onclick = async () => {
       button.textContent = `批量下载结束：成功 ${saved}，未保存 ${failed}`;
       window.researchWeaver.toast(`开放访问批量下载完成：成功 ${saved}，未保存 ${failed}。现在可运行资料盘点与分析流程。`);
     });
-  } catch (error) { window.researchWeaver.toast(`文献检索失败：${error.message}`); }
+    return { status: 'completed', id: search.id || '', topic, query: usedQuery, count: found, sources: search.sources || [] };
+}
+window.runScholariumLiteratureSearch = runLiteratureSearch;
+document.querySelector('#searchLiterature').onclick = async () => {
+  try { await runLiteratureSearch(); }
+  catch (error) { window.researchWeaver.toast(`文献检索失败：${error.message}`); }
 };
 
 // --- One-click literature pipeline (research-pipeline.json) -------------------
@@ -1261,7 +1317,7 @@ function pollDownloadProgress(row, stopSignal, pollMs = 1500) {
   startDownloadProgressPolling();
 }
 const WEBVPN_LOGIN_STATUS_PATH = 'Scholarium/runtime/webvpn-login-status.json';
-async function pollWebvpnLoginStatus(timeoutMs, pollMs = 2000) {
+async function pollWebvpnLoginStatus(timeoutMs, pollMs = 2000, notBefore = 0) {
   const until = Date.now() + timeoutMs;
   let last = { status: 'running', logged_in: false };
   for (;;) {
@@ -1269,8 +1325,14 @@ async function pollWebvpnLoginStatus(timeoutMs, pollMs = 2000) {
       const res = await bridgeFetch(`/v1/workspace-file?path=${encodeURIComponent(WEBVPN_LOGIN_STATUS_PATH)}`);
       if (res?.exists && res.content) {
         const parsed = JSON.parse(res.content);
-        last = parsed;
-        if (parsed.status && parsed.status !== 'running') return parsed;
+        const stamp = Date.parse(parsed.started_at || parsed.run_at || '') || 0;
+        // A detached login process may fail before it can open a browser. Do
+        // not surface the previous auto-login result as if it belonged to the
+        // current manual-login attempt.
+        if (!notBefore || stamp >= notBefore - 5000) {
+          last = parsed;
+          if (parsed.status && parsed.status !== 'running' && parsed.status !== 'starting') return parsed;
+        }
       }
     } catch { /* transient: the Bridge may be mid-request; keep polling */ }
     if (Date.now() >= until) return last;
@@ -1319,10 +1381,14 @@ async function refreshWebvpnSession() {
       window.researchWeaver.toast('WebVPN 自动登录成功，会话已验证并同步给机构通道。');
       return;
     }
-    window.researchWeaver.toast(`自动登录未成功（${autoManifest.status || 'unknown'}），改用手动浏览器登录…`);
+    const autoUnavailable = ['auto_login_unavailable', 'credentials_missing'].includes(String(autoManifest.status || ''));
+    window.researchWeaver.toast(autoUnavailable
+      ? '自动登录未配置，已切换到人工 WebVPN 登录窗口。'
+      : `自动登录未成功（${autoManifest.status || 'unknown'}），改用手动浏览器登录…`);
 
     // Tier 2: manual browser login.
     const waitMs = 180000;
+    const manualStartedAt = Date.now();
     const result = await runPipelineSkill(skills, 'paper-downloader', JSON.stringify({
       mode: 'login',
       url: 'https://wvpn.ustc.edu.cn/',
@@ -1335,7 +1401,7 @@ async function refreshWebvpnSession() {
     // actually signed in. Turning the button green here was the bug: it went
     // green before the CAS form had even rendered, then grey again after the
     // Pipeline failed. Poll the status file the login process writes instead.
-    const login = await pollWebvpnLoginStatus(waitMs + 30000);
+    const login = await pollWebvpnLoginStatus(waitMs + 30000, 2000, manualStartedAt);
     if (!login.logged_in) {
       throw new Error(login.status === 'running'
         ? 'WebVPN 登录未在等待时间内完成；请在弹出的 Chrome 中登录后重试（登录成功后窗口会自动关闭）。'
@@ -1414,16 +1480,42 @@ function buildManualDownloadQueue(records, attempts) {
   });
 }
 
-function publishManualDownloadQueue(items) {
+/* 研究员明确跳过的文献不再进队列。
+ *
+ * 「跳过本篇」如果只在当次生效，下一轮 Pipeline 又会把同一篇塞回待手动下载，
+ * 让人再判断一次——那等于没记住这个决定。跳过清单由 Bridge 落盘
+ * （Scholarium/runtime/manual-download-skips.json），这里按 DOI/URL 过滤。
+ *
+ * 取不到清单时不过滤：宁可多问一次，也不要因为一次读取失败就悄悄吞掉本该
+ * 处理的文献。 */
+async function loadManualSkips() {
+  try {
+    const { status, payload } = await bridgeFetchRaw(`/v1/literature/manual-skips?workspace=${encodeURIComponent(workspaceRoot)}`);
+    if (status !== 200 || !Array.isArray(payload.skips)) return new Set();
+    return new Set(payload.skips
+      .map((item) => normalizeDoiKey(item?.key) || String(item?.key || '').trim())
+      .filter(Boolean));
+  } catch { return new Set(); }
+}
+async function publishManualDownloadQueue(items, options = {}) {
+  const skips = await loadManualSkips();
+  const kept = (Array.isArray(items) ? items : []).filter((item) => {
+    const doi = normalizeDoiKey(item?.doi);
+    if (doi && skips.has(doi)) return false;
+    return !(item?.url && skips.has(String(item.url).trim()));
+  });
   try {
     const pipelineRunId = activePipelineHistoryId || '';
     window.parent.postMessage({
       type: 'scholarium:set-manual-download-queue',
-      items: (Array.isArray(items) ? items : []).map((item) => ({
+      open: options.open === true,
+      append: options.append === true,
+      items: kept.map((item) => ({
         ...item, pipelineRunId, workspace: workspaceRoot,
       })),
     }, '*');
   } catch { /* standalone browser mode has no Obsidian host */ }
+  return kept;
 }
 
 // PDF acquired in the Obsidian literature reader comes back through the host
@@ -1611,16 +1703,27 @@ function scoreRecordRelevance(record, blocks) {
     .replace(/\s+/g, ' ');
   const text = normalize(`${record.title || ''} ${record.abstract || ''}`);
   const compactText = text.replace(/[^a-z0-9]+/g, '');
-  const total = blocks.length || 1;
+  const grouped = window.weaverConceptQuery?.groupBlocks?.(blocks);
+  const dimensions = grouped
+    ? [
+        ...grouped.required.map((block) => [block]),
+        ...grouped.optional.map((block) => [block]),
+        ...[...grouped.alternatives.values()],
+      ]
+    : (blocks || []).map((block) => [block]);
+  const total = dimensions.length || 1;
   let hits = 0;
-  for (const block of blocks) {
-    const terms = (block.terms || []).map((term) => normalize(String(term).replace(/[*?]/g, '')));
-    if (terms.some((term) => {
-      if (!term) return false;
-      if (termAtBoundary(text, term)) return true;
-      const compactTerm = term.replace(/[^a-z0-9]+/g, '');
-      return compactTerm.length >= 3 && compactText.includes(compactTerm);
-    })) hits++;
+  for (const dimension of dimensions) {
+    const matched = dimension.some((block) => {
+      const terms = (block.terms || []).map((term) => normalize(String(term).replace(/[*?]/g, '')));
+      return terms.some((term) => {
+        if (!term) return false;
+        if (termAtBoundary(text, term)) return true;
+        const compactTerm = term.replace(/[^a-z0-9]+/g, '');
+        return compactTerm.length >= 3 && compactText.includes(compactTerm);
+      });
+    });
+    if (matched) hits++;
   }
   return { hits, total, ratio: hits / total };
 }
@@ -1640,31 +1743,60 @@ function recordMatchesTerms(record, terms) {
     return compactTerm.length >= 3 && compactText.includes(compactTerm);
   });
 }
+/* 逐篇相关性的唯一口径。3.5 步的比例门和 3.95 步的终筛都走这里。
+ *
+ * 这两道门以前用的是两套规则，而且互相矛盾：3.5 步调 passesHardRequirements
+ * （把 alternative 组当作"至少命中一个"的硬要求），3.95 步的
+ * classifyRecordTier 则把 alternative 排除在 required 之外。同一批 80 条
+ * Au/TiO2 文献，前者判定 2 条可用、后者判定 64 条可用——Pipeline 死在前一道
+ * 门上，后一道门根本没机会跑。
+ *
+ * 为什么是 alternative 组把结果打成 2/80：Agent 生成的反应支块，词条是
+ * "photocatalytic organic oxidation"、"benzyl alcohol oxidation" 这类长逐字
+ * 短语，而匹配是连续子串比对——论文写"selective oxidation of benzyl alcohol"
+ * 就不算命中。更要命的是那一批里有一半记录（40/80）根本没有摘要，只能拿标题
+ * 去撞这种词组，命中数注定是 0。被毙掉的包括
+ * "Interfacial facet engineering on the Schottky barrier between plasmonic Au
+ * and TiO2…"这种完全对口的论文。
+ *
+ * 所以反应支降级为加分项：它决定 core 还是 peripheral，不再决定去留。真正
+ * 守住证据边界的是 material（Au、TiO2）和 process（photocatalytic）——那两类
+ * 在同一批数据上的命中率是 69/80、74/80、72/80，本来就工作正常。
+ */
+function hardBlocks(blocks) {
+  // 硬门槛只认"必需且非分支"的块。alternative 是研究分支（氧化路线 or 还原
+  // 路线），不是准入条件。
+  return (blocks || []).filter((block) => block.required_in_v0 !== false && block.mode !== 'alternative');
+}
+function alternativeBlocks(blocks) {
+  return (blocks || []).filter((block) => block.mode === 'alternative');
+}
 function passesHardConceptGate(record, blocks) {
-  // Every required concept block must be present in the record. The previous
-  // version only checked four hard-coded block names, which silently turned
-  // the gate into a no-op for topics whose matrix used other names (e.g.
-  // "plasmonic metal" + "ceria support" for Au@CeO2): all four lookups
-  // returned undefined and every record passed.
-  const required = (blocks || []).filter((block) => block.required_in_v0 !== false);
-  if (!required.length) return true;
-  return required.every((block) => recordMatchesTerms(record, block.terms));
+  const normalized = window.weaverConceptQuery?.normalizeConceptBlocks?.(blocks)?.blocks || blocks || [];
+  const required = hardBlocks(normalized);
+  return !required.length || required.every((block) => recordMatchesTerms(record, block.terms));
 }
 function classifyRecordTier(record, blocks) {
-  // core = every required block present; peripheral = all role=material
-  // blocks present but a process/readout block missing (material-true papers
-  // outside the named application — kept as peripheral evidence to protect
-  // recall); background = at least one material block missing (dropped before
-  // download). Without role-tagged material blocks this degrades to the binary
-  // all-required-blocks gate.
-  const required = (blocks || []).filter((block) => block.required_in_v0 !== false);
-  if (!required.length) return 'core';
+  // core       = 硬门槛全中，且（若存在反应支）至少命中一个反应支；
+  // peripheral = 材料块全中，但缺了 process/readout 或没命中任何反应支——
+  //              课题材料确实对得上、只是不在指定反应体系里，保留为外围证据；
+  // background = 有材料块没命中，下载前被隔离。
+  //
+  // 反应支在这里只影响 core/peripheral 的分档，不影响去留。它以前是硬门槛，
+  // 见 passesHardConceptGate 上方那段说明。
+  const normalized = window.weaverConceptQuery?.normalizeConceptBlocks?.(blocks)?.blocks || blocks || [];
+  const required = hardBlocks(normalized);
+  const branches = alternativeBlocks(normalized);
+  const branchHit = !branches.length || branches.some((block) => recordMatchesTerms(record, block.terms));
+  if (!required.length) return branchHit ? 'core' : 'peripheral';
   const materials = required.filter((block) => block.role === 'material');
   if (!materials.length) {
-    return required.every((block) => recordMatchesTerms(record, block.terms)) ? 'core' : 'background';
+    if (!required.every((block) => recordMatchesTerms(record, block.terms))) return 'background';
+    return branchHit ? 'core' : 'peripheral';
   }
   if (!materials.every((block) => recordMatchesTerms(record, block.terms))) return 'background';
-  return required.every((block) => recordMatchesTerms(record, block.terms)) ? 'core' : 'peripheral';
+  if (!required.every((block) => recordMatchesTerms(record, block.terms))) return 'peripheral';
+  return branchHit ? 'core' : 'peripheral';
 }
 // --- Generic concept-matrix generation (topic-agnostic) ---------------------
 // The deterministic keyword bank in build_query.py cannot cover arbitrary
@@ -1788,6 +1920,62 @@ function ensureFormulaCoverage(blocks, question) {
   }
   return { blocks: out, added };
 }
+/* 复合材料块在元素块已覆盖时降为 optional。
+ *
+ * Agent 常会生成一个「体系」块，例如 Au/TiO2 课题里的
+ *   block: "Au–TiO2 photocatalyst system"
+ *   terms: ["Au/TiO2", "Au–TiO2", "Au TiO2", "gold-titania", …]
+ * 而 ensureFormulaCoverage 又会为课题里的每个化学式各补一个必需材料块
+ * （material-Au、material-TiO2）。于是同一个约束被要了两遍，第二遍还额外要求
+ * 论文把化合物写成**连续词**。
+ *
+ * 代价在真实数据上是可量化的：Au/TiO2 那次运行的 80 条里，带上复合块通过 56
+ * 条，去掉它通过 61 条。被多拦下的 5 篇恰恰是
+ *   · "Synthesis of Au–CuS–TiO2 nanobelts…"（三元体系）
+ *   · "…between plasmonic Au and TiO2…"（Au 与 TiO2 分开写）
+ * ——正是 Au/TiO2/X 这类「基础体系 + 第三组分」课题最需要的那部分文献。连写
+ * 匹配天然歧视三元体系，因为第三个组分插在中间就断了。
+ *
+ * 所以：当一个材料块提到 2 个以上化学式，且其中**每一个**都已经有自己独立的
+ * 必需材料块时，把这个复合块降为 optional——它仍然参与打分（命中它的论文
+ * 相关度更高），但不再决定去留。
+ *
+ * 若复合块是唯一的材料来源（没有对应的元素块），则不降级：那种情况下它就是
+ * ensureFormulaCoverage 的安全网本身，降了会让课题材料彻底失去约束。
+ */
+function compositeFormulasOf(block) {
+  const text = [block?.block || '', ...(block?.terms || [])].join(' ');
+  return new Set(extractMaterialBlocks(text).map((material) => material.formula));
+}
+function demoteRedundantCompositeBlocks(blocks) {
+  const list = [...(blocks || [])];
+  const materialBlocks = list.filter((block) => block?.role === 'material' && block?.required_in_v0 !== false);
+  // 原子块 = 只提到一个化学式的必需材料块。它们是真正的准入条件。
+  const atomic = new Map();
+  for (const block of materialBlocks) {
+    const formulas = compositeFormulasOf(block);
+    if (formulas.size === 1) atomic.set([...formulas][0], block);
+  }
+  const demoted = [];
+  const out = list.map((block) => {
+    if (block?.role !== 'material' || block?.required_in_v0 === false) return block;
+    const formulas = compositeFormulasOf(block);
+    if (formulas.size < 2) return block;
+    const everyPartCovered = [...formulas].every((formula) => {
+      const owner = atomic.get(formula);
+      return owner && owner !== block;
+    });
+    if (!everyPartCovered) return block;
+    demoted.push({ block: block.block, formulas: [...formulas] });
+    return {
+      ...block,
+      required_in_v0: false,
+      mode: 'optional',
+      notes: `${block.notes || ''} 复合体系块，其组成（${[...formulas].join('、')}）已由各自的必需材料块覆盖；降为加分项以免连写形式排除三元体系与分写形式。`.trim(),
+    };
+  });
+  return { blocks: out, demoted };
+}
 function formulaQueryClause(material) {
   return '(' + material.terms.map((term) => (String(term).includes(' ') ? `"${term}"` : term)).join(' OR ') + ')';
 }
@@ -1803,13 +1991,16 @@ function applyFormulaGuards(query, question) {
   return { query: query ? `${query} AND ${extra}` : extra, injected: missing.map((m) => m.formula) };
 }
 function buildBooleanFromBlocks(blocks) {
+  const planned = window.weaverConceptQuery?.buildBooleanPlan?.(blocks);
+  if (planned) return planned;
   const clause = (terms) => '(' + terms.map((term) => (String(term).includes(' ') ? `"${term}"` : term)).join(' OR ') + ')';
   const usable = (blocks || []).filter((block) => (block?.terms || []).length);
   const required = usable.filter((block) => block.required_in_v0 !== false);
   const optional = usable.filter((block) => block.required_in_v0 === false);
   return {
     v0: required.map((block) => clause(block.terms)).join(' AND '),
-    v1: [...required, ...optional].map((block) => clause(block.terms)).join(' AND ')
+    v1: [...required, ...optional].map((block) => clause(block.terms)).join(' AND '),
+    variants: []
   };
 }
 function parseConceptMatrixReply(raw) {
@@ -1828,18 +2019,22 @@ function parseConceptMatrixReply(raw) {
     if (parsed) break;
   }
   if (!parsed || !Array.isArray(parsed.blocks) || !parsed.blocks.length) return null;
-  const ROLES = new Set(['material', 'process', 'refinement']);
+  const ROLES = new Set(['material', 'process', 'refinement', 'reaction_branch', 'application_branch']);
+  const MODES = new Set(['required', 'alternative', 'optional']);
   const blocks = [];
   for (const item of parsed.blocks.slice(0, 10)) {
     const name = String(item?.block || '').trim().slice(0, 60);
     const role = ROLES.has(item?.role) ? item.role : null;
+    const mode = MODES.has(item?.mode) ? item.mode : null;
+    const alternativeGroup = String(item?.alternative_group || '').trim().slice(0, 60);
     const terms = Array.isArray(item?.terms)
       ? item.terms.map((term) => String(term || '').trim()).filter(Boolean).map((term) => term.slice(0, 60)).slice(0, 24)
       : [];
-    if (!name || !role || !terms.length) return null;
-    blocks.push({ block: name, role, required_in_v0: item.required_in_v0 !== false, terms, notes: 'Agent-generated concept matrix' });
+    if (!name || !role || !mode || !terms.length) return null;
+    if (mode === 'alternative' && !alternativeGroup) return null;
+    blocks.push({ block: name, role, mode, alternative_group: alternativeGroup, required_in_v0: mode !== 'optional', terms, notes: 'Agent-generated relationship-aware concept matrix' });
   }
-  return blocks.length ? blocks : null;
+  return blocks.length ? (window.weaverConceptQuery?.normalizeConceptBlocks?.(blocks)?.blocks || blocks) : null;
 }
 async function requestAgentConceptMatrix(question) {
   const profile = pipelineAgentProfile();
@@ -1849,14 +2044,16 @@ async function requestAgentConceptMatrix(question) {
 研究问题：${question}
 
 规则：
-1. 课题中的每一种核心材料/物质必须单独成一个块——两种材料组成的复合物/异质结/核壳结构必须拆成两个块。材料块 role 填 "material"，required_in_v0 填 true。
-2. 反应/过程/机理条件（如光催化、可见光、析氢、CO2 还原）单独成块，role 填 "process"，required_in_v0 填 true。
-3. 形貌、结构表征、性能读数等细化概念 role 填 "refinement"，required_in_v0 填 false。
-4. 每块给 4–12 个英文检索词：化学式、缩写、英文命名、常见同义词都要覆盖（例如 CeO2 / ceria / cerium oxide；g-C3N4 / graphitic carbon nitride）。
-5. 只输出一个 JSON 对象，不要输出任何其他文字、解释或 Markdown 代码块。格式：
-{"blocks":[{"block":"<块的英文名>","role":"material","required_in_v0":true,"terms":["..."]}]}
+1. 先识别概念之间的逻辑关系，而不是把名词平铺后全部 AND。每块必须给 mode：required / alternative / optional。
+2. 只有催化剂、载体、功能材料等研究体系的核心材料才使用 role="material", mode="required"。反应底物、试剂和产物不是核心材料，禁止仅因它是化学物质就标成 material。
+3. 多个并列的反应、应用或研究路线是可替代分支：每条完整路线各建一个 role="reaction_branch", mode="alternative" 的块，并填写相同 alternative_group。程序会在分支之间使用 OR；一个分支内部的底物与转化必须成对出现，例如用完整短语表达，不能把两个分支的底物拆成两个必选块。
+4. 所有分支共同需要的反应条件或机理使用 role="process", mode="required"。
+5. 未指定的变量/占位组分（如 X、任意第三组分）、形貌、拓扑、界面、电荷、表征和性能读数使用 role="refinement", mode="optional"，绝不能设为 required。
+6. 每块给 4–12 个英文检索词，覆盖化学式、缩写、英文名和常见同义词。备选分支的 terms 应尽量使用同时包含对象与转化的完整短语。
+7. 只输出一个 JSON 对象，不要输出解释或 Markdown。格式：
+{"blocks":[{"block":"core catalyst","role":"material","mode":"required","alternative_group":"","terms":["..."]},{"block":"route A","role":"reaction_branch","mode":"alternative","alternative_group":"application-route","terms":["..."]},{"block":"interface descriptors","role":"refinement","mode":"optional","alternative_group":"","terms":["..."]}]}
 
-JSON 要求：blocks 为数组；每个元素必须有 block（非空字符串）、role（material/process/refinement 之一）、required_in_v0（布尔）、terms（非空字符串数组）。`;
+JSON 要求：blocks 为数组；每项必须包含 block、role（material/process/refinement/reaction_branch/application_branch）、mode（required/alternative/optional）、alternative_group（alternative 时非空）和非空 terms。`;
   const created = await bridgeFetch('/v1/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentId: profile.adapterId, cwd: workspaceRoot, prompt, permission: 'read', execute: true }) });
   const raw = await waitTask(created.id);
   return parseConceptMatrixReply(raw);
@@ -1870,8 +2067,60 @@ function assessRelevance(records, blocks) {
     ratio: low.length / scored.length, lowCount: low.length, total: scored.length,
     lowTitles: low.slice(0, 15).map((item) => item.record.title).filter(Boolean),
     highTitles: high.slice(0, 5).map((item) => item.record.title).filter(Boolean),
-    highRecords: high.map((item) => item.record)
+    highRecords: high.map((item) => item.record),
+    ...conceptBlockStats(records, blocks),
   };
+}
+
+/* 每个概念块的逐条命中率 + 缺摘要条数。
+ *
+ * 加这个是因为上一次真实故障里，"98% 低相关"这一个数字完全无法定位原因——
+ * 要把状态包捞出来、把匹配规则重写一遍跑一次，才能看出是某一个块把结果打成
+ * 了 2/80。这些数字本来就在判定过程里，直接报出来即可。
+ *
+ * 缺摘要条数是同等重要的一项：匹配的语料是 title + abstract，没有摘要就只剩
+ * 标题，长词组类的块必然全灭——那一次 80 条里有 40 条没摘要。 */
+function conceptBlockStats(records, blocks) {
+  const normalized = window.weaverConceptQuery?.normalizeConceptBlocks?.(blocks)?.blocks || blocks || [];
+  const list = Array.isArray(records) ? records : [];
+  const blockHits = normalized.map((block) => ({
+    block: block.block,
+    role: block.role || '',
+    kind: block.mode === 'alternative' ? 'branch' : (block.required_in_v0 === false ? 'optional' : 'hard'),
+    hits: list.filter((record) => recordMatchesTerms(record, block.terms)).length,
+  }));
+  return {
+    blockHits,
+    missingAbstracts: list.filter((record) => !String(record.abstract || '').trim()).length,
+  };
+}
+
+/* 把命中率翻译成一句可执行的诊断。
+ *
+ * 替代原来那句硬编码的"建议把问题写成 BiVO4 hydrothermal urea…"——那是另一个
+ * 课题的残留例子，出现在任何课题的停止文案里都只会误导。 */
+function relevanceDiagnosis(relevance) {
+  const hits = relevance?.blockHits || [];
+  const total = relevance?.total || 0;
+  if (!hits.length || !total) return '';
+  const hard = hits.filter((item) => item.kind === 'hard').sort((a, b) => a.hits - b.hits);
+  const branches = hits.filter((item) => item.kind === 'branch');
+  const notes = [];
+  const worst = hard[0];
+  if (worst && worst.hits / total < 0.5) {
+    notes.push(`必需块「${worst.block}」只命中 ${worst.hits}/${total} 条，是当前最主要的拦截点；它的同义词可能没覆盖这批文献的写法。`);
+  }
+  if (branches.length) {
+    const best = Math.max(...branches.map((item) => item.hits));
+    if (best / total < 0.2) {
+      notes.push(`反应支（${branches.map((item) => item.block).join('、')}）最高只命中 ${best}/${total} 条。反应支现在只用于区分核心/外围，不再拦截记录；若你希望它更常命中，把词条从长短语拆成词组会更有效。`);
+    }
+  }
+  const missing = relevance?.missingAbstracts || 0;
+  if (missing) {
+    notes.push(`本批 ${missing}/${total} 条没有摘要，只能用标题参与匹配——长词组类的概念块对这部分记录几乎必然不命中。`);
+  }
+  return notes.join(' ');
 }
 function screenedRelevanceRecords(relevance, minCount = 3) {
   const records = relevance?.highRecords || [];
@@ -2056,6 +2305,54 @@ function confirmPipelineTopic() {
   });
 }
 
+/* --- Pipeline 断点续跑机制 ------------------------------------------------
+ *
+ * 见 pipeline-steps-core.js 文件头：为什么原来全流程只有一个续跑点。这里是
+ * 那份分析的落地部分，三个约束决定了它长成现在这样。
+ *
+ * 1) 步骤体一行不改。下面的 stage() 是包在原有代码外面的壳，不是重写。原来
+ *    660 行直线逻辑里每一个 addStep/updateStep/质量门判断都保持原样、原顺序，
+ *    局部变量照旧在闭包里自然流转——重写这段逻辑的回归风险远大于它能带来的
+ *    整洁度。
+ *
+ * 2) 质量门的 return 必须变成 throw。原来的写法是
+ *       result.innerHTML = ...; finishRunControl('stopped', ...); return;
+ *    包进 stage 闭包之后，return 只会退出闭包、让 Pipeline 继续往下跑——这正
+ *    是最危险的失败模式（跳过「本轮下载 0 篇」的证据安全门，让 reader 去读
+ *    上一个课题的旧 PDF）。所以每一处质量门都改成 stopPipeline()，靠抛出
+ *    带 __pipelineStop 标记的异常来终止整轮，语义和原来完全一致。
+ *
+ * 3) 状态包在每个 stage 结束后整包落盘。syncState() 一次性快照全部流转变量，
+ *    而不是让每个 stage 各自声明 produces——后者一旦漏写一个字段，续跑时会
+ *    带着 undefined 往下跑，比不能续跑更难排查。
+ */
+const PIPELINE_STOP = '__pipelineStop';
+function stopPipeline(reason, html) {
+  const error = new Error(reason);
+  error[PIPELINE_STOP] = { reason, html };
+  throw error;
+}
+function isPipelineStop(error) { return Boolean(error && error[PIPELINE_STOP]); }
+
+/* 把状态包写进 Bridge 的 sidecar。失败只提示不中断：状态包存不下是「这次
+ * 不能续跑」，不该让一次已经跑到一半的 Pipeline 因此整轮作废。 */
+async function savePipelineState(historyId, state) {
+  if (!historyId) return;
+  const core = window.weaverPipelineSteps;
+  const fitted = core ? core.fitStateToBudget(state) : { state, dropped: [], truncated: false };
+  try {
+    await bridgeFetch(`/v1/pipeline-runs/${historyId}/state`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ state: fitted.state }),
+    });
+    if (fitted.truncated) {
+      window.researchWeaver.toast(`状态包超出体积上限，已省略 ${fitted.dropped.join('、')}；续跑仍可用，但这些字段不会恢复。`);
+    }
+  } catch (error) {
+    window.researchWeaver.toast(`断点状态保存失败：${error.message}；本次仍会继续，但中断后不能从这一步续跑。`);
+  }
+}
+
 async function runResearchPipeline(options = {}) {
   if (!zhiyanBridge.online) { await connectBridge(); if (!zhiyanBridge.online) throw new Error('本机 Bridge 未连接。'); }
   const question = String(options.topic || '').trim() || await confirmPipelineTopic();
@@ -2066,32 +2363,132 @@ async function runResearchPipeline(options = {}) {
   const pipelineConfirmation = options.stopAfterGraph
     ? '将运行 M3 的 P1–P2：检索式生成→检索与去重→PDF 获取与证据卡片→文献笔记→知识图谱。建议运行前先点“登录/刷新 WebVPN”。本次严格停在 P2：不生成 P3–P5 假设/实验/周计划草案，也不生成证据综述、手稿或润色稿。写入仅限本课题工作区的 literature/、Literature/、Canvases/、Research/ 子目录；运行结束后会列出本次产出清单，可选择保留或整批撤销。是否继续？'
     : '将按 research-pipeline.json 自动运行完整文献流程：检索式生成→精排检索→广召回检索→（若相关性过低，自动深化检索式并重新检索）→去重导出→复用 WebVPN/CARSI 浏览器会话下载→PDF 转证据卡片→文献笔记→知识图谱画布→证据综述→手稿初稿→润色。建议运行前先点“登录/刷新 WebVPN”。全部只读本机课题目录，写入仅限 literature/、Literature/、Canvases/、Research/、Manuscript/ 子目录；运行结束后会列出本次产出清单，可选择保留或整批撤销。质量门阈值、是否下载等参数可在“更多 › Pipeline 设置”里调整。是否继续？';
-  if (!confirm(pipelineConfirmation)) return;
-  startRunControl('pipeline', '文献 Pipeline');
+  const stepsCore = window.weaverPipelineSteps;
+  const resumeState = options.resumeState || null;
+  const startIndex = resumeState && options.startStepId && stepsCore ? stepsCore.stepIndex(options.startStepId) : 0;
+  if (!resumeState && !options.confirmedFromChat && !confirm(pipelineConfirmation)) return;
+  startRunControl('pipeline', resumeState ? (options.restartMode ? 'Pipeline 步骤重跑' : 'Pipeline 断点续跑') : '文献 Pipeline');
   const { dialog, steps, result } = window.researchWeaver;
-  dialog.showModal(); document.querySelector('#runTitle').textContent = '一键运行科研文献 Pipeline'; steps.innerHTML = ''; result.classList.add('hidden');
-  try { await beginPipelineHistory(question, workspaceRoot); }
+  dialog.showModal();
+  document.querySelector('#runTitle').textContent = resumeState
+    ? `Pipeline ${options.restartMode ? '步骤重跑' : '断点续跑'} · 从「${stepsCore.stepById(options.startStepId)?.title || options.startStepId}」开始`
+    : '一键运行科研文献 Pipeline';
+  steps.innerHTML = ''; result.classList.add('hidden');
+  try { await beginPipelineHistory(question, workspaceRoot, options.parentRunId || null, options.operationId || ''); }
   catch (error) { window.researchWeaver.toast(`Pipeline 历史记录未能建立：${error.message}；本次仍会继续，但不能断点恢复。`); }
+  const historyId = activePipelineHistoryId;
   const skills = (await bridgeFetch('/v1/skills')).skills;
   const settings = loadPipelineSettings();
 
+  /* --- 状态包与 stage 驱动 -------------------------------------------------
+   *
+   * 所有跨步骤流转的值在这里一次性声明并从状态包恢复。原来它们散落在函数各处
+   * （一半是 const），续跑时无从注入——这是把 const 提升成 let 的唯一目的，
+   * 每个变量的赋值点、赋值内容都和原来完全一样。 */
+  // 原来这是函数末尾的一个 const，但 options.stopAfterGraph 分支（在它之前）
+  // 已经引用了它——那条 M3 P1–P2 路径每次都会撞上 TDZ ReferenceError。提到
+  // 这里是修这个既有缺陷，值本身没变。
+  const exportsBase = 'literature/exports';
+  const S = resumeState ? { ...resumeState } : { question, workspace: workspaceRoot };
+  let step1 = S.step1 || null;
+  let query = S.query || '';
+  let conceptBlocks = S.conceptBlocks || [];
+  let queryLoopDegradation = S.queryLoopDegradation || null;
+  let records2 = S.records2 || [], records3 = S.records3 || [];
+  let combined = S.combined || [];
+  let usedQuery = S.usedQuery || '';
+  let queryV1Executed = S.queryV1Executed || '';
+  let queryV1Audit = S.queryV1Audit || null;
+  let relevance = S.relevance || null;
+  let step4 = S.step4 || null;
+  let results5 = S.results5 || [], downloadedPaths = S.downloadedPaths || [];
+  let downloadedCount = S.downloadedCount || 0, blockedCount = S.blockedCount || 0;
+  let sessionPolicy = S.sessionPolicy || 'skipped_by_setting', downloadDiagnosticNote = S.downloadDiagnosticNote || '';
+  let step6 = S.step6 || null, cards6 = S.cards6 || [], needsReview = S.needsReview || 0;
+  let step8 = S.step8 || null, step9 = S.step9 || null, warningCount9 = S.warningCount9 || 0;
+  let step10 = S.step10 || null, step11 = S.step11 || null, step12 = S.step12 || null;
+  const doParallel = typeof options.parallel === 'boolean'
+    ? options.parallel
+    : Boolean(window.weaverOrchestrator?.isParallel?.());
+  const runOpenAlexPair = async (searchQuery) => {
+    const tasks = [
+      () => runPipelineSkillWithRetry(skills, 'nature-academic-search', searchQuery),
+      () => runPipelineSkillWithRetry(skills, 'pop8-scholar-search', searchQuery),
+    ];
+    if (!doParallel) return [await tasks[0](), await tasks[1]()];
+    const settled = window.weaverOrchestrator?.parallel
+      ? await window.weaverOrchestrator.parallel(tasks)
+      : (await Promise.allSettled(tasks.map((task) => task()))).map((entry) => ({
+          status: entry.status === 'fulfilled' ? 'done' : 'error',
+          result: entry.status === 'fulfilled' ? entry.value : undefined,
+          error: entry.status === 'rejected' ? entry.reason?.message || String(entry.reason) : undefined,
+        }));
+    return settled.map((entry) => entry.status === 'done'
+      ? entry.result
+      : { manifest: { error: entry.error || 'parallel search failed', records: [] } });
+  };
+  const searchPairAudit = (pair, searchQuery, queryLabel = 'query_v1') => {
+    const labels = ['精排 OpenAlex', '广召回 OpenAlex'];
+    const statuses = pair.map((output, index) => {
+      const error = output?.manifest?.error;
+      const count = Array.isArray(output?.manifest?.records) ? output.manifest.records.length : 0;
+      return error ? `${labels[index]}：请求失败（${error}）` : `${labels[index]}：请求成功，${count} 条`;
+    });
+    return { failed: pair.some((output) => Boolean(output?.manifest?.error)), text: `${statuses.join('；')}。实际执行 ${queryLabel}：${searchQuery}` };
+  };
+
+  /* 整包快照。逐字段列出而不是遍历闭包，是为了让「哪些值决定了续跑能力」
+   * 在代码里显式可读——漏一个字段的代价是续跑时静默拿到 undefined。 */
+  const syncState = () => Object.assign(S, {
+    question, workspace: workspaceRoot, step1,
+    step1Manifest: step1 ? step1.manifest : null,
+    query, conceptBlocks, queryLoopDegradation, records2, records3,
+    combined, usedQuery, queryV1Executed, queryV1Audit, relevance, step4,
+    dedupe: step4 ? step4.manifest : null,
+    results5, downloadedPaths, downloadedCount, blockedCount, sessionPolicy, downloadDiagnosticNote,
+    step6, cards6, needsReview, notes8: step8 ? step8.manifest : null,
+    step8, step9, warningCount9, graph9: step9 ? step9.manifest : null,
+    step10, step11, step12,
+    synthesis10: step10 ? step10.manifest : null,
+    draft11: step11 ? step11.manifest : null,
+    polished12: step12 ? step12.manifest : null,
+  });
+
+  /* 一个 stage = 步骤表里的一格。续跑时 index < startIndex 的直接跳过（它们的
+   * 产出已经在状态包里）；跑完一格就把整包状态和「下一次该从哪重入」一起落盘。
+   * 注意重入点记的是**本步自己**，不是下一步：一步跑完落盘后若在下一步中断，
+   * 下一轮 checkpoint 会把重入点推进到下一步；中途崩溃则停在本步，重跑本步是
+   * 幂等的（Skill 的产出按路径覆盖）。 */
+  const stage = async (id, fn) => {
+    if (!stepsCore) return fn();
+    const index = stepsCore.stepIndex(id);
+    if (index >= 0 && index < startIndex) return undefined;
+    const outcome = await fn();
+    syncState();
+    await savePipelineState(historyId, S);
+    await checkpointPipelineHistory({ status: 'running', resumeStepId: id, resumeStepIndex: index }).catch(() => {});
+    return outcome;
+  };
+  if (resumeState) {
+    addStep(`${options.restartMode ? '步骤重跑' : '断点续跑'} · 已恢复上一轮状态`,
+      `${options.restartMode ? '仅复用所选步骤之前' : '复用'} ${stepsCore.stepIndex(options.startStepId)} 个已完成步骤的产出，从「${stepsCore.stepById(options.startStepId)?.title || ''}」重新开始。${options.restartMode ? '所选步骤及其下游旧产物已从状态包清除。' : ''}`,
+      'done');
+  }
+
+  await stage('query-builder', async () => {
   const row1 = addStep('第 1 步 · literature-search-query-builder', '生成保守的检索式草案（确定性规则，供质量门检查用）');
-  const step1 = await runPipelineSkill(skills, 'literature-search-query-builder', question);
-  let query = String(step1.manifest?.query_v0 || '').trim();
+  step1 = await runPipelineSkill(skills, 'literature-search-query-builder', question);
+  query = String(step1.manifest?.query_v0 || '').trim();
   if (!query) {
     updateStep(row1, '检索式为空，Pipeline 已停止（research-pipeline.json stop_rule：query manifest 为空）。', 'error');
-    result.innerHTML = '<h3>Pipeline 已停止</h3><p>未能从任务目标生成检索式；请把研究问题写得更具体（例如包含材料、体系、反应或现象关键词）后重试。</p>';
-    result.classList.remove('hidden');
-    finishRunControl('stopped', '检索式为空，已停止');
-    return;
+    stopPipeline('检索式为空，已停止',
+      '<h3>Pipeline 已停止</h3><p>未能从任务目标生成检索式；请把研究问题写得更具体（例如包含材料、体系、反应或现象关键词）后重试。</p>');
   }
   updateStep(row1, `检索式 v0：${query}`);
   if (looksLikeMojibake(query)) {
     updateStep(row1, `检索式包含乱码：${query}；Pipeline 已停止（质量门：编码损坏）。`, 'error');
-    result.innerHTML = `<h3>Pipeline 已停止：检索式乱码</h3><p>生成的检索式包含编码损坏字符，说明课题主题在进入检索器前已经被错误解码。继续检索只会得到虚假的 0 条结果，并可能让后续步骤误用旧 PDF。</p><p><b>已拦截的检索式：</b><code>${safeHtml(query)}</code></p><p>请重新输入/修改 Pipeline 主题；如果仍然乱码，需要检查主题保存、读取和 Skill 调用的 UTF-8 编码链路。</p>`;
-    result.classList.remove('hidden');
-    finishRunControl('stopped', '质量门停止：检索式乱码');
-    return;
+    stopPipeline('质量门停止：检索式乱码',
+      `<h3>Pipeline 已停止：检索式乱码</h3><p>生成的检索式包含编码损坏字符，说明课题主题在进入检索器前已经被错误解码。继续检索只会得到虚假的 0 条结果，并可能让后续步骤误用旧 PDF。</p><p><b>已拦截的检索式：</b><code>${safeHtml(query)}</code></p><p>请重新输入/修改 Pipeline 主题；如果仍然乱码，需要检查主题保存、读取和 Skill 调用的 UTF-8 编码链路。</p>`);
   }
 
   // Defense-in-depth backstop for build_query.py's keyword bank: even after
@@ -2125,11 +2522,10 @@ async function runResearchPipeline(options = {}) {
     .map((group) => group.label);
   if (droppedConcepts.length) {
     updateStep(row1, `检索式 v0：${query}；但任务目标中提到的核心概念未进入 v0：${droppedConcepts.join('、')}。Pipeline 已停止（质量门：检索意图解析遗漏核心概念）。`, 'error');
-    result.innerHTML = `<h3>Pipeline 已停止：检索式缺少核心概念</h3><p>任务目标中提到「${droppedConcepts.map(safeHtml).join('、')}」这一概念，但生成的检索式 v0 里找不到对应的英文检索词。继续检索会系统性跑偏——例如把电催化 CO2RR 文献当成光催化文献，正是此前一次真实运行发生的情况（67 条结果里约 60 条方向不对）。</p><p>请检查 <code>literature-search-query-builder/scripts/build_query.py</code> 的关键词识别规则是否覆盖了这个说法，或把「任务目标」改写得更贴近其内置词表后重试。</p><p><b>已生成的 v0：</b>${safeHtml(query)}</p>`;
-    result.classList.remove('hidden');
-    finishRunControl('stopped', '质量门停止：检索式缺少核心概念');
-    return;
+    stopPipeline('质量门停止：检索式缺少核心概念',
+      `<h3>Pipeline 已停止：检索式缺少核心概念</h3><p>任务目标中提到「${droppedConcepts.map(safeHtml).join('、')}」这一概念，但生成的检索式 v0 里找不到对应的英文检索词。继续检索会系统性跑偏——例如把电催化 CO2RR 文献当成光催化文献，正是此前一次真实运行发生的情况（67 条结果里约 60 条方向不对）。</p><p>请检查 <code>literature-search-query-builder/scripts/build_query.py</code> 的关键词识别规则是否覆盖了这个说法，或把「任务目标」改写得更贴近其内置词表后重试。</p><p><b>已生成的 v0：</b>${safeHtml(query)}</p>`);
   }
+  });
 
   // --- Step 1.2 · topic-agnostic concept matrix -------------------------
   // build_query.py's keyword bank is inherently topic-specific (it had no
@@ -2146,8 +2542,9 @@ async function runResearchPipeline(options = {}) {
   // Downstream relevance assessment, the 3.5-3.8 refinement gates and the
   // 3.95 final screen all consume this matrix, so a core material can no
   // longer silently drop out of the search for any topic.
+  await stage('concept-matrix', async () => {
   const rowMatrix = addStep('第 1.2 步 · 概念矩阵生成（课题无关）', '把课题分解为概念块，供检索式与逐篇相关性门槛共用');
-  let conceptBlocks = Array.isArray(step1.manifest?.concept_matrix) ? step1.manifest.concept_matrix : [];
+  conceptBlocks = Array.isArray(step1.manifest?.concept_matrix) ? step1.manifest.concept_matrix : [];
   let matrixSource = '确定性词库';
   let matrixNote = '';
   if (settings.agentConceptMatrix) {
@@ -2166,17 +2563,31 @@ async function runResearchPipeline(options = {}) {
   const coverage = ensureFormulaCoverage(conceptBlocks, question);
   conceptBlocks = coverage.blocks;
   if (coverage.added.length) matrixSource += `＋化学式兜底补块（${coverage.added.join('、')}）`;
+  /* 兜底补块之后立刻做这一步：补块正是复合块变成冗余约束的原因，两者必须
+   * 成对出现，否则「Au/TiO2 体系」和「Au」「TiO2」会同时作为硬门槛。 */
+  const demotion = demoteRedundantCompositeBlocks(conceptBlocks);
+  conceptBlocks = demotion.blocks;
+  if (demotion.demoted.length) {
+    matrixSource += `；复合体系块已降为加分项（${demotion.demoted.map((item) => item.block).join('、')}）`;
+  }
+  const normalizedMatrix = window.weaverConceptQuery?.normalizeConceptBlocks?.(conceptBlocks);
+  if (normalizedMatrix) {
+    conceptBlocks = normalizedMatrix.blocks;
+    if (normalizedMatrix.warnings.length) matrixNote += `${matrixNote ? ' ' : ''}${normalizedMatrix.warnings.join(' ')}`;
+  }
   step1.manifest.concept_matrix = conceptBlocks;
   if (matrixSource.startsWith('Agent')) {
-    // query_v1 and the diagnostic variants in the manifest were produced for
-    // the OLD keyword-bank matrix; rebuild v1 from the adopted matrix so the
-    // 3.6 fallback re-search stays consistent, and drop the stale variants.
+    // The Agent matrix carries required / alternative / optional relations.
+    // Rebuild v1 from that adopted matrix so alternative research routes are
+    // ORed and optional refinements are never flattened into an all-AND query.
     const rebuilt = buildBooleanFromBlocks(conceptBlocks);
     step1.manifest.query_v1_after_record_sampling = rebuilt.v1;
-    step1.manifest.query_variants_after_record_sampling = [];
+    step1.manifest.query_variants_after_record_sampling = rebuilt.variants || [];
   }
-  const materialNames = conceptBlocks.filter((block) => block?.role === 'material').map((block) => block.block);
+  const materialNames = conceptBlocks.filter((block) => block?.role === 'material' && block.mode !== 'optional').map((block) => block.block);
   updateStep(rowMatrix, `${conceptBlocks.length} 个概念块（材料：${materialNames.join('、') || '无'}），来源：${matrixSource}。${matrixNote}`);
+  S.matrixSource = matrixSource;
+  });
 
   // --- Automatic dual-agent query refinement -------------------------
   // v0 above is a fast, free, deterministic draft — good enough to run the
@@ -2186,63 +2597,71 @@ async function runResearchPipeline(options = {}) {
   // instead of a separate manual "打磨检索式" window: a builder agent writes
   // a candidate query, a critic agent scores it against real search hits,
   // and the loop revises up to 3 rounds, one diagnosed change per round
-  // (score ≥ 75 or best-of-3). If no Agent CLI
-  // is installed at all, this step is skipped and v0 is used as-is so the
-  // Pipeline still runs without any CLI installed.
+  // (score ≥ 75 or best-of-3). If no Agent CLI is installed, an adapter is
+  // unavailable, or both critic-format attempts fail, deterministic v0 / the
+  // last valid candidate may continue through metadata preview only. A second
+  // explicit gate below is mandatory before dedupe, downloads or evidence work.
+  await stage('query-refine', async () => {
   const rowRefine = addStep('第 1.5 步 · 自动打磨检索式（双 Agent：构建者 + 质疑者）', '正在准备…');
+  queryLoopDegradation = null;
   if (window.weaverQueryLoop?.runAuto) {
     try {
       const loopResult = await runQueryLoopWithStepTicker(rowRefine, question);
       query = loopResult.query;
+      queryLoopDegradation = loopResult.degraded ? loopResult.degradation : null;
       const guarded = applyFormulaGuards(query, question);
       if (guarded.injected.length) {
         query = guarded.query;
-        updateStep(rowRefine, `第 ${loopResult.cycle} 轮，${loopResult.score} 分，检索式：${query}（质量门：课题中的 ${guarded.injected.join('、')} 未出现在 Agent 检索式中，已自动 AND 回去）`);
+        updateStep(
+          rowRefine,
+          `${loopResult.degraded ? '降级候选（未宣称评分通过）' : `第 ${loopResult.cycle} 轮，${loopResult.score} 分`}，检索式：${query}（质量门：课题中的 ${guarded.injected.join('、')} 未出现在 Agent 检索式中，已自动 AND 回去）`,
+          loopResult.degraded ? 'error' : 'done'
+        );
       } else {
-        updateStep(rowRefine, `第 ${loopResult.cycle} 轮，${loopResult.score} 分，检索式：${query}`);
+        updateStep(
+          rowRefine,
+          loopResult.degraded
+            ? `质疑者经过一次格式修复仍未满足契约；检索式仅作为降级候选继续元数据检索：${query}`
+            : `第 ${loopResult.cycle} 轮，${loopResult.score} 分，检索式：${query}`,
+          loopResult.degraded ? 'error' : 'done'
+        );
       }
     } catch (error) {
       const failure = error.queryLoopFailure || {};
-      updateStep(rowRefine, `自动打磨已停止：${error.message}。未执行宽泛 v0，也未进入下载。`, 'error');
-      result.innerHTML = `<h3>Pipeline 已安全停止：自动打磨未完成</h3><p><b>失败位置：</b>${safeHtml(failure.cycle ? `第 ${failure.cycle} 轮 · ${failure.phase}` : failure.phase || '准备阶段')}</p><p><b>具体原因：</b>${safeHtml(error.message)}</p>${failure.query ? `<p><b>失败前正在测试的检索式：</b><code>${safeHtml(failure.query)}</code></p>` : ''}<p>请确认本机 Bridge 和所选 Agent 可用后重新运行。本次不会退回静态 v0，不会继续检索、去重或下载。</p>`;
-      result.classList.remove('hidden');
-      finishRunControl('stopped', `自动打磨失败：${error.message}`);
-      return;
+      queryLoopDegradation = {
+        phase: failure.phase || 'query-loop-unavailable',
+        cycle: failure.cycle || null,
+        candidate_query: failure.query || '',
+        used_query_source: 'deterministic-v0',
+        error: error.message,
+        protocol: failure.protocol || { status: 'degraded-unscored', repair_attempted: false, attempts: [] },
+      };
+      updateStep(rowRefine, `自动打磨不可用（${error.message}）；保留确定性 v0 仅继续元数据检索与相关性筛选，下载前必须再次确认。检索式：${query}`, 'error');
     }
   } else {
-    updateStep(rowRefine, '自动打磨功能不可用：query-loop.js 未加载。Pipeline 已停止，未执行宽泛 v0。', 'error');
-    result.innerHTML = '<h3>Pipeline 已安全停止：自动打磨模块未加载</h3><p>请重载 Scholarium 面板后重试。本次未继续检索或下载。</p>';
-    result.classList.remove('hidden');
-    finishRunControl('stopped', '自动打磨模块未加载');
-    return;
+    queryLoopDegradation = {
+      phase: 'module-unavailable', cycle: null, candidate_query: '',
+      used_query_source: 'deterministic-v0', error: 'query-loop.js 未加载',
+      protocol: { status: 'degraded-unscored', repair_attempted: false, attempts: [] },
+    };
+    updateStep(rowRefine, `自动打磨模块未加载；保留确定性 v0 仅继续元数据检索与相关性筛选，下载前必须再次确认。检索式：${query}`, 'error');
   }
+  });
 
+  await stage('search', async () => {
   /* --- Steps 2 & 3: parallel-capable search ------------------------ */
-  const doParallel = false; // OpenAlex searches are intentionally sequential: concurrent Bridge calls have caused transient proxy failures.
-
   const row2 = addStep('\u7B2C 2 \u6B65 \u00B7 nature-academic-search', doParallel ? '\u7CBE\u6392\u68C0\u7D22\uFF08\u4E0E\u5E7F\u53EC\u56DE\u5E76\u884C\u6267\u884C\uFF09' : 'OpenAlex \u7CBE\u6392\u68C0\u7D22\uFF08\u6309\u88AB\u5F15\u6392\u5E8F\uFF09');
   const row3 = addStep('\u7B2C 3 \u6B65 \u00B7 pop8-scholar-search', doParallel ? '\u5E7F\u53EC\u56DE\u68C0\u7D22\uFF08\u4E0E\u7CBE\u6392\u5E76\u884C\u6267\u884C\uFF09' : 'OpenAlex \u5E7F\u53EC\u56DE\u68C0\u7D22');
 
-  let step2, step3;
-  if (doParallel && window.weaverOrchestrator?.parallel) {
-    const parResults = await window.weaverOrchestrator.parallel([
-      () => runPipelineSkillWithRetry(skills, 'nature-academic-search', query),
-      () => runPipelineSkillWithRetry(skills, 'pop8-scholar-search', query)
-    ]);
-    step2 = parResults[0].status === 'done' ? parResults[0].result : { manifest: { error: parResults[0].error, records: [] } };
-    step3 = parResults[1].status === 'done' ? parResults[1].result : { manifest: { error: parResults[1].error, records: [] } };
-  } else {
-    step2 = await runPipelineSkillWithRetry(skills, 'nature-academic-search', query);
-    step3 = await runPipelineSkillWithRetry(skills, 'pop8-scholar-search', query);
-  }
+  const [step2, step3] = await runOpenAlexPair(query);
 
-  const records2 = step2.manifest?.records || [];
+  records2 = step2.manifest?.records || [];
   if (step2.manifest?.error) {
     updateStep(row2, `OpenAlex \u8BF7\u6C42\u5931\u8D25\uFF08\u5DF2\u91CD\u8BD5\u4E00\u6B21\uFF09\uFF1A${step2.manifest.error}\uFF1B\u672C\u6B65 0 \u6761\uFF0CPipeline \u4F1A\u7EE7\u7EED\u7528\u73B0\u6709\u7ED3\u679C\u5F80\u4E0B\u8DD1\u3002`, 'error');
   } else {
     updateStep(row2, `\u547D\u4E2D ${records2.length} \u6761\uFF1B\u6570\u636E\u5E93\u62A5\u544A\u7EA6 ${step2.manifest?.result_count_reported ?? '\u672A\u77E5'} \u6761\u5019\u9009\u3002`);
   }
-  const records3 = step3.manifest?.records || [];
+  records3 = step3.manifest?.records || [];
   if (step3.manifest?.error) {
     updateStep(row3, `OpenAlex \u8BF7\u6C42\u5931\u8D25\uFF08\u5DF2\u91CD\u8BD5\u4E00\u6B21\uFF09\uFF1A${step3.manifest.error}\uFF1B\u672C\u6B65 0 \u6761\u3002`, 'error');
   } else {
@@ -2252,35 +2671,56 @@ async function runResearchPipeline(options = {}) {
   if (!records2.length && !records3.length) {
     const row0 = addStep('质量门 · 检索结果为空', '精排检索与广召回均为 0 条。');
     updateStep(row0, 'Pipeline 已停止：没有任何新文献记录，不再继续下载、读旧 PDF、生成综述或手稿。', 'error');
-    result.innerHTML = `<h3>Pipeline 已停止：检索结果为 0</h3><p>第 2 步和第 3 步都没有检索到文献。此时继续运行会把工作区里已有的旧 PDF 当成本次主题的证据，导致后续证据卡片、知识图谱、综述和手稿全部被污染。</p><p><b>本次检索式：</b><code>${safeHtml(query)}</code></p><p>建议先修改 Pipeline 主题或检索式，再重新运行。只有检索到至少 1 条新文献记录后，才允许进入去重、下载和证据抽取。</p>`;
-    result.classList.remove('hidden');
-    finishRunControl('stopped', '质量门停止：检索结果为 0');
-    return;
+    stopPipeline('质量门停止：检索结果为 0',
+      `<h3>Pipeline 已停止：检索结果为 0</h3><p>第 2 步和第 3 步都没有检索到文献。此时继续运行会把工作区里已有的旧 PDF 当成本次主题的证据，导致后续证据卡片、知识图谱、综述和手稿全部被污染。</p><p><b>本次检索式：</b><code>${safeHtml(query)}</code></p><p>建议先修改 Pipeline 主题或检索式，再重新运行。只有检索到至少 1 条新文献记录后，才允许进入去重、下载和证据抽取。</p>`);
   }
 
-  let combined = compactPipelineRecords([...records2, ...records3], settings.compactRecordsLimit);
+  combined = compactPipelineRecords([...records2, ...records3], settings.compactRecordsLimit);
   conceptBlocks = step1.manifest?.concept_matrix || conceptBlocks;
-  let usedQuery = query;
-  let relevance = assessRelevance(combined, conceptBlocks);
+  usedQuery = query;
+  relevance = assessRelevance(combined, conceptBlocks);
+  });
+
+  await stage('quality-gate', async () => {
   if (settings.relevanceGateEnabled && conceptBlocks.length > 1 && combined.length >= settings.minRecordsForGate && relevance.ratio > settings.lowRelevanceRatio) {
     const rowQ = addStep('第 3.5 步 · 检索质量评估', '按检索式的概念矩阵评估已召回记录的相关性');
     updateStep(rowQ, `${combined.length} 条中约 ${relevance.lowCount} 条（${Math.round(relevance.ratio * 100)}%）与概念矩阵匹配度低；开始自动深化检索式。`, 'pending');
     let query1 = String(step1.manifest?.query_v1_after_record_sampling || '').trim();
     if (query1) query1 = applyFormulaGuards(query1, question).query;
+    /* OpenAlex 的 search 参数上限 1500 字符，超了直接 400。v1 是"v0 AND 所有
+     * optional 块"，块一多必然超——真实运行里拼到 1938，两次重检索双双失败，
+     * 而 UI 只报了"请求失败"。这里在发出去之前就压到上限内，并把降级动作写进
+     * 步骤描述，让"检索式太长"不再伪装成"数据源故障"。 */
+    let query1Note = '';
+    const limit = window.weaverConceptQuery?.SOURCE_QUERY_LIMITS?.openalex || 1500;
+    if (query1.length > limit) {
+      const fitted = window.weaverConceptQuery?.fitQueryToLimit?.(conceptBlocks, limit);
+      if (fitted?.ok) {
+        query1Note = `（原 v1 ${query1.length} 字符超出 OpenAlex ${limit} 上限，已自动降级：${fitted.dropped.join('、')}）`;
+        query1 = applyFormulaGuards(fitted.query, question).query;
+      } else {
+        query1Note = `（v1 ${query1.length} 字符超出 OpenAlex ${limit} 上限，且概念矩阵过大无法压缩到上限内，已跳过 query_v1 重检索）`;
+        query1 = '';
+      }
+    }
     if (settings.tryQueryV1 && query1 && query1 !== query) {
-      const row3b = addStep('第 3.6 步 · 用 query_v1 重新检索', '使用检索式生成器已给出但此前未用到的收紧版 v1 重新检索');
-      const step2b = await runPipelineSkillWithRetry(skills, 'nature-academic-search', query1);
-      const step3b = await runPipelineSkillWithRetry(skills, 'pop8-scholar-search', query1);
+      queryV1Executed = query1;
+      const row3b = addStep('第 3.6 步 · 用 query_v1 重新检索', `准备执行 query_v1${query1Note}：${query1}`);
+      const [step2b, step3b] = await runOpenAlexPair(query1);
+      const audit1 = searchPairAudit([step2b, step3b], query1);
+      queryV1Audit = audit1;
       const additions1 = [...(step2b.manifest?.records || []), ...(step3b.manifest?.records || [])];
       const candidate1 = compactPipelineRecords(additions1, settings.compactRecordsLimit);
       const relevance1 = assessRelevance(candidate1, conceptBlocks);
-      if (candidate1.length && relevance1.ratio < relevance.ratio) {
+      if (audit1.failed) {
+        updateStep(row3b, `query_v1 请求失败，未替换原结果集。${audit1.text}`, 'error');
+      } else if (candidate1.length && relevance1.ratio < relevance.ratio) {
         combined = candidate1; usedQuery = query1; relevance = relevance1;
-        updateStep(row3b, `替换为 query_v1 结果集：${combined.length} 条，低相关比例降至 ${Math.round(relevance.ratio * 100)}%。`);
+        updateStep(row3b, `替换为 query_v1 结果集：${combined.length} 条，低相关比例降至 ${Math.round(relevance.ratio * 100)}%。${audit1.text}`);
+      } else if (!candidate1.length) {
+        updateStep(row3b, `query_v1 请求成功但返回 0 条，未替换原结果集；这不是 API 异常。${audit1.text}`, 'warning');
       } else {
-        updateStep(row3b, candidate1.length
-          ? `query_v1 未能改善相关性（候选 ${candidate1.length} 条，低相关约 ${Math.round(relevance1.ratio * 100)}%），继续尝试多检索式候选。`
-          : 'query_v1 返回 0 条，不能替换原结果集；继续尝试多检索式候选。', 'error');
+        updateStep(row3b, `query_v1 请求成功并返回 ${candidate1.length} 条，但低相关比例 ${Math.round(relevance1.ratio * 100)}% 未优于当前结果；未替换。${audit1.text}`, 'warning');
       }
     }
     const variants = Array.isArray(step1.manifest?.query_variants_after_record_sampling)
@@ -2293,8 +2733,7 @@ async function runResearchPipeline(options = {}) {
         let variantQuery = String(variant?.query || '').trim();
         if (!variantQuery || variantQuery === query || variantQuery === usedQuery) continue;
         variantQuery = applyFormulaGuards(variantQuery, question).query;
-        const step2v = await runPipelineSkillWithRetry(skills, 'nature-academic-search', variantQuery);
-        const step3v = await runPipelineSkillWithRetry(skills, 'pop8-scholar-search', variantQuery);
+        const [step2v, step3v] = await runOpenAlexPair(variantQuery);
         const candidateRecords = compactPipelineRecords([...(step2v.manifest?.records || []), ...(step3v.manifest?.records || [])], settings.compactRecordsLimit);
         const candidateRelevance = assessRelevance(candidateRecords, conceptBlocks);
         if (!candidateRecords.length) continue;
@@ -2306,39 +2745,56 @@ async function runResearchPipeline(options = {}) {
         combined = best.records; usedQuery = best.query; relevance = best.relevance;
         updateStep(row3v, `采用 ${best.variant.label || 'variant'}：${combined.length} 条，低相关比例降至 ${Math.round(relevance.ratio * 100)}%。检索式：${best.query}`);
       } else {
-        updateStep(row3v, '所有诊断式检索变体均未产生更好的非空结果集，继续尝试 Agent 深化。', 'error');
+        updateStep(row3v, '所有诊断式检索变体均已正常评估，但没有产生更好的非空结果集。', 'warning');
       }
     }
     if (settings.tryAgentRefinement && relevance.ratio > settings.lowRelevanceRatio) {
-      const agentProfile = pipelineAgentProfile();
-      if (agentProfile) {
-        const row3c = addStep('第 3.7 步 · Agent 深化检索式', `${agentProfile.name}（只读，与顶部 Agent 选择器一致）根据低/高相关样本标题提出更精确的检索式`);
-        try {
-          let refinedQuery = await requestAgentRefinedQuery(question, conceptBlocks, query, query1, relevance.lowTitles, relevance.highTitles);
-          if (refinedQuery) refinedQuery = applyFormulaGuards(refinedQuery, question).query;
-          if (refinedQuery) {
-            const step2c = await runPipelineSkillWithRetry(skills, 'nature-academic-search', refinedQuery);
-            const step3c = await runPipelineSkillWithRetry(skills, 'pop8-scholar-search', refinedQuery);
-            const additions2 = [...(step2c.manifest?.records || []), ...(step3c.manifest?.records || [])];
-            const candidate2 = compactPipelineRecords(additions2, settings.compactRecordsLimit);
-            const relevance2 = assessRelevance(candidate2, conceptBlocks);
-            if (candidate2.length && relevance2.ratio < relevance.ratio) {
-              combined = candidate2; usedQuery = refinedQuery; relevance = relevance2;
-              updateStep(row3c, `Agent 检索式：${refinedQuery}；合并后 ${combined.length} 条，低相关比例降至 ${Math.round(relevance.ratio * 100)}%。`);
-            } else {
-              updateStep(row3c, 'Agent 提出的检索式未能进一步改善相关性。', 'error');
-            }
-          } else {
-            updateStep(row3c, `Agent 未返回可用的检索式（可能是 ${agentProfile.name} 未登录或输出解析失败），保留此前结果集。`, 'error');
-          }
-        } catch (error) {
-          updateStep(row3c, `Agent 深化检索失败：${error.message}；保留此前结果集，继续往下跑。`, 'error');
-        }
+      if (!queryLoopDegradation) {
+        addStep('第 3.7 步 · Agent 深化检索式（已跳过）', '第 1.5 步已成功完成“构建者→真实检索→质疑者”闭环；不重复调用 Agent。', 'done');
+      } else if ((relevance.highTitles || []).length < 3) {
+        addStep('第 3.7 步 · Agent 深化检索式（已跳过）', `第 1.5 步虽已降级，但当前只有 ${(relevance.highTitles || []).length} 条高相关正例（至少需要 3 条）；仅凭负例继续改写不可靠。`, 'warning');
       } else {
-        addStep('第 3.7 步 · Agent 深化检索式（已跳过）', '顶部选择的 Agent 与 Codex 均未安装/不可用，跳过 Agent 深化，继续使用现有结果集。');
+        const agentProfile = pipelineAgentProfile();
+        if (agentProfile) {
+          const row3c = addStep('第 3.7 步 · Agent 深化检索式（降级补救）', `${agentProfile.name} 根据正负样本提出一次补救检索式`);
+          try {
+            let refinedQuery = await requestAgentRefinedQuery(question, conceptBlocks, query, query1, relevance.lowTitles, relevance.highTitles);
+            if (refinedQuery) refinedQuery = applyFormulaGuards(refinedQuery, question).query;
+            if (refinedQuery) {
+              const [step2c, step3c] = await runOpenAlexPair(refinedQuery);
+              const audit2 = searchPairAudit([step2c, step3c], refinedQuery, 'Agent 补救检索式');
+              const additions2 = [...(step2c.manifest?.records || []), ...(step3c.manifest?.records || [])];
+              const candidate2 = compactPipelineRecords(additions2, settings.compactRecordsLimit);
+              const relevance2 = assessRelevance(candidate2, conceptBlocks);
+              if (audit2.failed) {
+                updateStep(row3c, `Agent 已生成检索式，但后续检索请求失败；保留此前结果集。${audit2.text}`, 'error');
+              } else if (!candidate2.length) {
+                updateStep(row3c, `Agent 检索式执行成功但返回 0 条；保留此前结果集。${audit2.text}`, 'warning');
+              } else if (relevance2.ratio < relevance.ratio) {
+                combined = candidate2; usedQuery = refinedQuery; relevance = relevance2;
+                updateStep(row3c, `Agent 补救成功：${combined.length} 条，低相关比例降至 ${Math.round(relevance.ratio * 100)}%。${audit2.text}`);
+              } else {
+                updateStep(row3c, `Agent 检索式执行成功并返回 ${candidate2.length} 条，但相关性未改善；保留此前结果集。${audit2.text}`, 'warning');
+              }
+            } else {
+              updateStep(row3c, `${agentProfile.name} 已完成调用，但没有按 REFINED_QUERY 契约返回可解析检索式；保留此前结果集。`, 'error');
+            }
+          } catch (error) {
+            updateStep(row3c, `Agent 调用失败：${error.message}；保留此前结果集。`, 'error');
+          }
+        } else {
+          addStep('第 3.7 步 · Agent 深化检索式（无法执行）', '第 1.5 步已降级，但顶部 Agent 与 Codex 均不可用。', 'error');
+        }
       }
     }
-    updateStep(rowQ, `质量评估结束：最终 ${combined.length} 条，低相关比例 ${Math.round(relevance.ratio * 100)}%${usedQuery !== query ? `（检索式已深化）` : '（未能改善，仍建议人工检查检索式）'}。`, relevance.ratio > settings.lowRelevanceRatio ? 'error' : 'done');
+    // 概念块命中率直接写进步骤行：出问题时「是哪一块卡死的」必须一眼可见，
+    // 而不是只给一个无法定位的百分比。
+    const hitLine = (relevance.blockHits || [])
+      .map((item) => `${item.block} ${item.hits}/${relevance.total}${item.kind === 'branch' ? '（分支）' : item.kind === 'optional' ? '（非必需）' : ''}`)
+      .join('；');
+    updateStep(rowQ, `质量评估结束：最终 ${combined.length} 条，低相关比例 ${Math.round(relevance.ratio * 100)}%${usedQuery !== query ? `（检索式已深化）` : '（未能改善，仍建议人工检查检索式）'}。`
+      + `${relevance.missingAbstracts ? ` 其中 ${relevance.missingAbstracts} 条无摘要，仅按标题判定。` : ''}`
+      + `${hitLine ? ` 概念块命中：${hitLine}。` : ''}`, relevance.ratio > settings.lowRelevanceRatio ? 'warning' : 'done');
     if (relevance.ratio > settings.lowRelevanceRatio) {
       const screened = screenedRelevanceRecords(relevance, 3);
       if (screened.length) {
@@ -2348,13 +2804,24 @@ async function runResearchPipeline(options = {}) {
       }
     }
     if (relevance.ratio > settings.lowRelevanceRatio) {
-      result.innerHTML = `<h3>Pipeline 已停止：检索相关性未过质量门</h3><p>当前候选文献中仍有约 ${Math.round(relevance.ratio * 100)}% 与概念矩阵匹配度低。继续去重、下载和写作会把低相关文献带入证据库。</p><p><b>当前检索式：</b><code>${safeHtml(usedQuery)}</code></p><p>请先修改检索主题或检索式，再重新运行。建议把问题写成：<code>BiVO4 hydrothermal urea morphology facet crystal growth</code>，或在主题中明确“尿素作为结构导向/矿化剂对 BiVO4 晶面和形貌的影响”。</p>`;
-      result.classList.remove('hidden');
-      finishRunControl('stopped', '质量门停止：检索相关性不足');
-      return;
+      // 诊断基于本次实际命中数据。原来这里硬编码了一句「建议把问题写成
+      // BiVO4 hydrothermal urea…」——那是另一个课题的残留例子，出现在任何
+      // 课题的停止文案里都只会误导。
+      const blockRows = (relevance.blockHits || [])
+        .map((item) => `<li>${safeHtml(item.block)}：<b>${item.hits}/${relevance.total}</b>${item.kind === 'branch' ? '（反应分支，不拦截记录）' : item.kind === 'optional' ? '（非必需）' : '（必需）'}</li>`)
+        .join('');
+      stopPipeline('质量门停止：检索相关性不足',
+        `<h3>Pipeline 已停止：检索相关性未过质量门</h3>`
+        + `<p>当前候选文献中仍有约 ${Math.round(relevance.ratio * 100)}% 与概念矩阵匹配度低。继续去重、下载和写作会把低相关文献带入证据库。</p>`
+        + `<p><b>当前检索式：</b><code>${safeHtml(usedQuery)}</code></p>`
+        + (blockRows ? `<details open><summary>各概念块在本批 ${relevance.total} 条上的命中数</summary><ul>${blockRows}</ul></details>` : '')
+        + `<p><b>诊断：</b>${safeHtml(relevanceDiagnosis(relevance) || '未能定位到单一拦截点，建议人工抽查上面命中数最低的块。')}</p>`
+        + `<p>下一步：放宽命中数最低的那个<b>必需</b>块的同义词（在“更多 › Pipeline 设置”里调整概念矩阵来源），或改写课题描述让它更贴近文献的实际措辞，然后重新运行。</p>`);
     }
   }
+  });
 
+  await stage('extra-providers', async () => {
   if (settings.extraSearchProviders) {
     // Each of these three sources has different query syntax from OpenAlex
     // (see query-adapt.js for the full rationale): PubMed needs uppercase
@@ -2378,14 +2845,18 @@ async function runResearchPipeline(options = {}) {
       combined = compactPipelineRecords([...combined, ...records2d, ...records2e, ...records2f], settings.compactRecordsLimit);
     }
     const providerNote = (name, list, manifest) => manifest?.error ? `${name} 失败：${manifest.error}` : `${name} ${list.length} 条`;
+    const providerFailed = [step2d, step2e, step2f].some((step) => Boolean(step.manifest?.error));
     updateStep(
       row39,
       `${providerNote('PubMed', records2d, step2d.manifest)}；${providerNote('Semantic Scholar', records2e, step2e.manifest)}；${providerNote('Scopus', records2f, step2f.manifest)}；合并后共 ${combined.length} 条（去重前，含跨源重复）。`,
-      extraTotal ? 'done' : 'error'
+      providerFailed ? 'error' : extraTotal ? 'done' : 'warning'
     );
   } else {
     addStep('第 3.9 步 · 补充数据源检索（已按设置跳过）', 'Pipeline 设置中关闭了 PubMed/Semantic Scholar/Scopus 补充检索，继续只用 OpenAlex 的结果集。');
   }
+  });
+
+  await stage('final-screen', async () => {
 
   /* Final per-record relevance gate. The ratio-based quality gate above only
      inspects the two OpenAlex result sets, and step 3.9 then merges
@@ -2402,10 +2873,8 @@ async function runResearchPipeline(options = {}) {
     if (!keptItems.length) {
       const rowGate = addStep('第 3.95 步 · 下载前相关性终筛', '没有任何记录通过概念矩阵硬门槛');
       updateStep(rowGate, `${combined.length} 条候选记录全部缺少核心材料块，判定为背景噪声。Pipeline 已停止，不进入去重和下载。`, 'error');
-      result.innerHTML = `<h3>Pipeline 已停止：终筛后无相关文献</h3><p>合并后的 ${combined.length} 条候选记录没有一条同时命中概念矩阵的核心材料块。继续下载只会得到与课题无关的文献。</p><p><b>当前检索式：</b><code>${safeHtml(usedQuery)}</code></p><p>建议检查课题描述是否覆盖了核心材料（例如复合材料的每种材料都写进了检索式），再重新运行。</p>`;
-      result.classList.remove('hidden');
-      finishRunControl('stopped', '质量门停止：终筛后无相关文献');
-      return;
+      stopPipeline('质量门停止：终筛后无相关文献',
+        `<h3>Pipeline 已停止：终筛后无相关文献</h3><p>合并后的 ${combined.length} 条候选记录没有一条同时命中概念矩阵的核心材料块。继续下载只会得到与课题无关的文献。</p><p><b>当前检索式：</b><code>${safeHtml(usedQuery)}</code></p><p>建议检查课题描述是否覆盖了核心材料（例如复合材料的每种材料都写进了检索式），再重新运行。</p>`);
     }
     if (droppedItems.length) {
       const droppedNoAbstract = droppedItems.filter((item) => !String(item.record.abstract || '').trim()).length;
@@ -2419,12 +2888,49 @@ async function runResearchPipeline(options = {}) {
       combined = compactPipelineRecords(keptItems.map((item) => item.record), settings.compactRecordsLimit);
     }
   }
+  });
 
+  await stage('degraded-gate', async () => {
+
+  // A malformed critic response must not erase useful metadata discovery, but
+  // it also must not silently authorize the expensive/write-heavy half of the
+  // Pipeline. By this point the user can judge the actual result count after
+  // cross-source retrieval and relevance filtering; only an explicit second
+  // confirmation allows dedupe exports, downloads and evidence generation.
+  if (queryLoopDegradation) {
+    const attempts = queryLoopDegradation.protocol?.attempts || [];
+    const taskIds = attempts.map((item) => item.task_id).filter(Boolean);
+    const errors = [queryLoopDegradation.error, ...attempts.map((item) => item.parse_error)].filter(Boolean);
+    const confirmed = window.confirm(
+      `检索式质疑者的原回复与一次格式修复回复都未满足机器契约。\n\n` +
+      `元数据检索与相关性筛选已完成，当前保留 ${combined.length} 条候选；检索式没有被标记为评分通过。\n` +
+      `实际检索式：${usedQuery}\n` +
+      `${errors.length ? `格式错误：${errors.join('；')}\n` : ''}` +
+      `${taskIds.length ? `可追溯任务：${taskIds.join('、')}\n` : ''}\n` +
+      `继续将写出去重清单，并可能按 Pipeline 设置下载 PDF、生成证据卡片、知识图谱和文稿。是否接受这次降级结果并继续？`
+    );
+    if (!confirmed) {
+      const diagnostics = attempts.map((item, index) =>
+        `<li>尝试 ${index + 1}：${safeHtml(item.parse_error || '无解析错误')}；指纹 ${safeHtml(item.reply_fingerprint || '无')}；任务 ${safeHtml(item.task_id || '未提供')}</li>`
+      ).join('');
+      const rowGate = addStep('第 3.99 步 · 降级检索人工闸门', '研究员未授权用未通过评分契约的检索式进入下载与证据生成');
+      updateStep(rowGate, `已安全停止；保留 ${combined.length} 条元数据候选供审查，未进入去重、下载或证据生成。`, 'stopped');
+      stopPipeline('降级检索结果未获人工确认',
+        `<h3>Pipeline 已停止：降级检索结果未获确认</h3><p>已完成元数据检索和相关性筛选，但质疑者评分协议未恢复，因此没有把候选集推进到下载或证据链。</p><p><b>候选记录：</b>${combined.length} 条</p><p><b>实际检索式：</b><code>${safeHtml(usedQuery)}</code></p>${diagnostics ? `<details><summary>协议诊断</summary><ul>${diagnostics}</ul></details>` : ''}`);
+    }
+    const rowGate = addStep('第 3.99 步 · 降级检索人工闸门', `研究员已明确确认使用 ${combined.length} 条元数据候选继续`);
+    updateStep(rowGate, '已确认；允许进入去重、下载和证据生成。质疑者协议异常仍保留在本次审计记录中。');
+    S.degradedConfirmed = true;
+  }
+  });
+
+  await stage('dedupe', async () => {
   const row4 = addStep('第 4 步 · reference-export-dedupe', '合并去重并导出 RIS/BibTeX/DOI 列表');
-  const step4 = await runPipelineSkill(skills, 'reference-export-dedupe', JSON.stringify({ records: combined }));
+  step4 = await runPipelineSkill(skills, 'reference-export-dedupe', JSON.stringify({ records: combined }));
   updateStep(row4, `输入 ${step4.manifest?.input_records ?? combined.length} 条 → 去重后 ${step4.manifest?.deduped_records ?? '未知'} 条，已导出到 ${step4.manifest?.output_dir || 'literature/exports'}${usedQuery !== query ? `（检索式已深化为：${usedQuery}）` : ''}。`);
+  });
 
-  let results5 = [], downloadedCount = 0, blockedCount = 0, sessionPolicy = 'skipped_by_setting', downloadDiagnosticNote = '', downloadedPaths = [];
+  await stage('download', async () => {
   if (settings.runDownloadStep) {
     const dedupedPath = pipelineWorkspacePath('literature', 'exports', 'deduped-records.json');
 
@@ -2563,8 +3069,8 @@ async function runResearchPipeline(options = {}) {
         try { sessionStorage.setItem('weaver.webvpn', 'ok'); } catch {}
       }
     }
-    const manualQueue = buildManualDownloadQueue(combined, results5);
-    publishManualDownloadQueue(manualQueue);
+    // 过滤掉研究员此前明确跳过的文献，步骤描述里也只报真正待处理的条数。
+    const manualQueue = await publishManualDownloadQueue(buildManualDownloadQueue(combined, results5));
     if (manualQueue.length) {
       addStep(
         '第 5.5 步 · 转入文献订阅手动下载',
@@ -2586,7 +3092,7 @@ async function runResearchPipeline(options = {}) {
         .filter((item) => item.status === 'anti_bot_challenge' && item.screenshot)
         .slice(0, 3)
         .map((item) => `<li>反爬截图：<code>${safeHtml(item.screenshot)}</code></li>`);
-      result.innerHTML = [
+      stopPipeline('证据安全停止：本轮 PDF 下载为 0', [
         '<h3>Pipeline 已停止：本轮没有成功下载 PDF</h3>',
         '<p>这是证据安全停止。第 5 步没有下载到任何本轮 PDF；如果继续运行，reader 会读取历史 PDF，导致证据卡片、知识图谱、综述和手稿被旧文献污染。</p>',
         '<ul>',
@@ -2600,43 +3106,45 @@ async function runResearchPipeline(options = {}) {
         '</ul>',
         `<p><b>下一步：</b>${safeHtml(nextAction)}</p>`,
         '<p><b>本次不会继续生成证据卡片、综述或手稿；也不会反复自动重试同一批失败项。</b></p>'
-      ].join('');
-      result.classList.remove('hidden');
-      finishRunControl('stopped', '证据安全停止：本轮 PDF 下载为 0');
-      return;
+      ].join(''));
     }
   } else {
     addStep('第 5 步 · paper-downloader（已按设置跳过）', 'Pipeline 设置中关闭了下载步骤；后续证据卡片/笔记/综述会基于现有 literature/downloaded-pdfs/ 中已有的文件（如果有），本次不新增下载。');
   }
+  });
 
+  await stage('nature-reader', async () => {
   const row6 = addStep('第 6 步 · nature-reader', '将已下载 PDF 转为证据卡片');
   if (!downloadedPaths.length) {
-    result.innerHTML = '<h3>Pipeline stopped: no current-run PDFs</h3><p>Evidence safety gate: nature-reader will not scan historical PDF folders. Enable paper-downloader, refresh WebVPN/CARSI login, or provide a current-run PDF list before continuing.</p>';
-    result.classList.remove('hidden');
-    finishRunControl('stopped', 'evidence safety stop: no current-run PDFs');
-    return;
+    stopPipeline('evidence safety stop: no current-run PDFs',
+      '<h3>Pipeline stopped: no current-run PDFs</h3><p>Evidence safety gate: nature-reader will not scan historical PDF folders. Enable paper-downloader, refresh WebVPN/CARSI login, or provide a current-run PDF list before continuing.</p>');
   }
-  const step6 = await runPipelineSkill(skills, 'nature-reader', JSON.stringify({ pdf_paths: downloadedPaths }), { row: row6 });
-  const cards6 = step6.manifest?.cards || [];
-  const needsReview = cards6.filter((card) => card.evidence_tier === 'needs_manual_review').length;
+  step6 = await runPipelineSkill(skills, 'nature-reader', JSON.stringify({ pdf_paths: downloadedPaths }), { row: row6 });
+  cards6 = step6.manifest?.cards || [];
+  needsReview = cards6.filter((card) => card.evidence_tier === 'needs_manual_review').length;
   updateStep(row6, `PDF ${step6.manifest?.pdf_count ?? 0} 篇 → 证据卡片 ${step6.manifest?.card_count ?? 0} 张${needsReview ? `，其中 ${needsReview} 张读取失败已标记 needs_manual_review（stop_rule 已生效）` : ''}。`);
 
   addStep('第 7 步 · pdf（别名，已跳过）', 'research-pipeline.json 中 pdf 是 nature-reader 的可执行别名，产出完全相同；跳过以避免重复覆盖同一批证据卡片文件。');
+  });
 
+  await stage('obsidian-bases', async () => {
   const row8 = addStep('第 8 步 · obsidian-bases', '为去重后的文献生成 Obsidian 笔记');
-  const step8 = await runPipelineSkill(skills, 'obsidian-bases', '');
+  step8 = await runPipelineSkill(skills, 'obsidian-bases', '');
   updateStep(row8, `已生成 ${step8.manifest?.notes_created ?? 0} 篇文献笔记（Literature/）。`);
+  });
 
   // literature/evidence-cards/ is shared across runs and the cards carry no DOI,
   // so both consumers below are scoped by the PDFs this run actually downloaded.
   // Without it a new topic synthesises over the previous topic's leftovers.
   const cardScope = JSON.stringify({ card_source_paths: downloadedPaths });
 
+  await stage('knowledge-graph', async () => {
   const row9 = addStep('第 9 步 · zrl-knowledge-graph', 'Agent 抽取语义实体/关系，并生成可交互 HTML 知识图谱');
-  const step9 = await generateSemanticKnowledgeGraph(question, cards6, downloadedPaths);
+  step9 = await generateSemanticKnowledgeGraph(question, cards6, downloadedPaths);
   const skipped9 = step9.manifest?.cards_skipped_out_of_scope || 0;
-  const warningCount9 = step9.manifest?.warnings?.length || 0;
+  warningCount9 = step9.manifest?.warnings?.length || 0;
   updateStep(row9, `语义实体 ${step9.manifest?.nodes ?? 0} 个、关系 ${step9.manifest?.edges ?? 0} 条（本轮证据卡片 ${step9.manifest?.cards ?? 0} 张${skipped9 ? `，已排除 ${skipped9} 张往期卡片` : ''}${warningCount9 ? `，质量警告 ${warningCount9} 条` : ''}）：${step9.manifest?.html || 'knowledge-graph/knowledge_graph.html'}。`);
+  });
 
   // M3's manual first loop deliberately stops at P2. The legacy one-click
   // Pipeline continues into deep-research/manuscript generation, but doing
@@ -2654,23 +3162,30 @@ async function runResearchPipeline(options = {}) {
     };
     result.innerHTML = `<h3>M3 · P1–P2 已完成</h3><p>文献建档、证据卡片和知识图谱已生成；本次按课题模式边界停在 P2，没有提前生成手稿。</p><ul><li>去重文献 ${completion.counts.records} 条</li><li>PDF ${completion.counts.pdfs} 篇</li><li>证据卡片 ${completion.counts.evidence_cards} 张</li><li>图谱节点 ${completion.counts.graph_nodes} 个</li></ul><p class="wv-faint">下一步：在课题注册表中点击“生成 P3–P5 首圈草案”。</p>`;
     result.classList.remove('hidden');
+    await checkpointPipelineHistory({ status: 'completed', outcome: 'completed' }).catch(() => {});
     finishRunControl('done', 'M3 P1–P2 已完成');
     window.dispatchEvent(new CustomEvent('scholarium:pipeline-completed', { detail: completion }));
     return completion;
   }
 
+  await stage('deep-research', async () => {
   const row10 = addStep('第 10 步 · deep-research', '汇总已确立证据与缺口');
-  const step10 = await runPipelineSkill(skills, 'deep-research', cardScope);
+  step10 = await runPipelineSkill(skills, 'deep-research', cardScope);
   updateStep(row10, `综述已写入 ${step10.manifest?.synthesis || 'Research/deep-research-synthesis.json'}（已确立证据 ${(step10.manifest?.established_evidence || []).length} 条）。`);
+  });
 
+  await stage('nature-writing', async () => {
   const row11 = addStep('第 11 步 · nature-writing', '生成证据边界内的手稿初稿');
-  const step11 = await runPipelineSkill(skills, 'nature-writing', '');
+  step11 = await runPipelineSkill(skills, 'nature-writing', '');
   updateStep(row11, `初稿已写入 ${step11.manifest?.draft || 'Manuscript/manuscript-draft.md'}。`);
+  });
 
+  await stage('nature-polishing', async () => {
   const row12 = addStep('第 12 步 · nature-polishing', '弱化过强主张措辞');
-  const step12 = await runPipelineSkill(skills, 'nature-polishing', '');
+  step12 = await runPipelineSkill(skills, 'nature-polishing', '');
   const changes12 = step12.manifest?.claim_strength_changes || [];
   updateStep(row12, `润色稿已写入 ${step12.manifest?.output || 'Manuscript/manuscript-polished.md'}${changes12.length ? `，弱化了 ${changes12.length} 处过强表述（如 ${changes12.slice(0, 3).map((item) => `${item.from}→${item.to}`).join('、')}）` : ''}。`);
+  });
 
   // Every Skill above writes straight to disk as it runs (no /v1/drafts staging,
   // unlike the older executePlan()/proposalActions() report flow) — that's
@@ -2679,7 +3194,6 @@ async function runResearchPipeline(options = {}) {
   // researcher to actually look at what got written and decide whether to keep
   // it. Track every relative path this run touched so a real keep/discard
   // choice can be offered below, backed by a real delete (not just a UI note).
-  const exportsBase = 'literature/exports';
   const notesList = step8.manifest?.notes || [];
   const notesFolder = notesList.length ? notesList[0].split('/').slice(0, -1).join('/') : '';
   const trackedOutputs = {
@@ -2707,6 +3221,7 @@ async function runResearchPipeline(options = {}) {
     <p class="pipeline-review-actions"><button type="button" class="button primary pipeline-keep">确认保留本次结果</button> <button type="button" class="button ghost pipeline-discard">不满意，撤销本次全部产出</button></p>
   </div>`;
   result.classList.remove('hidden');
+  await checkpointPipelineHistory({ status: 'completed', outcome: 'completed' }).catch(() => {});
   finishRunControl('done', 'Pipeline 已完成，等待确认保留或撤销');
   const reviewBox = result.querySelector('.pipeline-review');
   reviewBox.querySelector('.pipeline-keep').onclick = () => {
@@ -2730,26 +3245,58 @@ async function runResearchPipeline(options = {}) {
   return completion;
 }
 window.runScholariumResearchPipeline = runResearchPipeline;
+// 聊天确认卡的唯一执行入口。它只接受 chat-actions-core 校验后的三种窄操作，
+// 不接受任意函数名或任意脚本。
+window.runScholariumConversationOperation = runConversationOperation;
 // M3 Project mode may offer an explicitly confirmed, hash/path-bound P2
 // recovery instead of treating an established local corpus as a fresh search.
 // The recovery function itself reads only the parent run's recorded PDF list.
 window.resumeScholariumPipelineFromHistory = resumePipelineFromHistory;
+// 通用断点续跑：从任意一步重入（宿主/其他面板也可调用）。
+window.resumeScholariumPipelineFromStep = resumePipelineFromRecordId;
 document.querySelector('#refreshWebvpn').onclick = async () => {
   try { await refreshWebvpnSession(); }
   catch (error) { window.researchWeaver.toast(`WebVPN 会话刷新失败：${error.message}`); }
 };
+/* Pipeline 的三种收场，处理方式完全不同——这是断点续跑的判定源头。
+ *
+ *   质量门停机（isPipelineStop）：把原来那段 result.innerHTML 渲染出来，记
+ *     outcome='stop'。这类记录永远不给续跑入口，理由见 pipeline-steps-core.js。
+ *   用户取消：记 cancelled，也不算可续跑的失败。
+ *   其他异常：记 outcome='fail' + 失败步骤，这才是能长出「从这步继续」的那种。
+ *
+ * 注意顺序：必须先判 isPipelineStop 再判 stopRequested，否则一次质量门停机会
+ * 被误当成用户取消，丢掉给用户看的停止原因。 */
+async function handlePipelineOutcome(error) {
+  const dialogEl = document.querySelector('#runDialog');
+  const { result } = window.researchWeaver;
+  if (isPipelineStop(error)) {
+    const stop = error[PIPELINE_STOP];
+    result.innerHTML = stop.html;
+    result.classList.remove('hidden');
+    await checkpointPipelineHistory({ status: 'stopped', outcome: 'stop', stopReason: stop.reason }).catch(() => {});
+    finishRunControl('stopped', stop.reason);
+    return;
+  }
+  const cancelled = Boolean(activeRunControl?.stopRequested);
+  const pending = [...document.querySelectorAll('#runSteps .run-step.pending')].at(-1);
+  if (cancelled) {
+    if (pending) updateStep(pending, '已由用户取消；该步骤和后续步骤均未继续执行。', 'stopped');
+    await checkpointPipelineHistory({ status: 'cancelled', outcome: 'fail', failureMessage: '用户取消' }).catch(() => {});
+    finishRunControl('stopped', '已取消');
+    window.researchWeaver.toast('Pipeline 已取消。');
+    dialogEl.close();
+    return;
+  }
+  if (pending) updateStep(pending, `本步失败：${error.message}。已保存断点，可从这一步继续。`, 'error');
+  await checkpointPipelineHistory({ status: 'failed', outcome: 'fail', failureMessage: error.message }).catch(() => {});
+  finishRunControl('error', error.message);
+  renderInlineResumeButtons();
+  window.researchWeaver.toast(`Pipeline 运行失败：${error.message}；已保存断点，可从失败的那一步继续。`);
+}
 document.querySelector('#runPipeline').onclick = async () => {
   try { await runResearchPipeline(); }
-  catch (error) {
-    const stopped = Boolean(activeRunControl?.stopRequested);
-    if (stopped) {
-      const pending = [...document.querySelectorAll('#runSteps .run-step.pending')].at(-1);
-      if (pending) updateStep(pending, '已由用户取消；该步骤和后续步骤均未继续执行。', 'stopped');
-    }
-    finishRunControl(stopped ? 'stopped' : 'error', stopped ? '已取消' : error.message);
-    window.researchWeaver.toast(stopped ? 'Pipeline 已取消。' : `Pipeline 运行失败：${error.message}`);
-    document.querySelector('#runDialog').close();
-  }
+  catch (error) { await handlePipelineOutcome(error); }
 };
 
 /* ---------------------------------------------------------------------------
@@ -3413,9 +3960,16 @@ async function loadRunHistory() {
   if (!rows.length) { listEl.innerHTML = '<p class="wv-faint">还没有历史任务。</p>'; return data; }
   listEl.innerHTML = rows.map((row) => {
     if (row.kind === 'pipeline') {
-      return `<button type="button" class="wv-history-row" data-kind="pipeline" data-id="${safeHtml(row.id)}">`
-        + `<span class="lit-tag">流程</span><span class="wv-history-title">${safeHtml(row.title || '文献 Pipeline')}</span>`
-        + `<span class="wv-history-meta">${historyTime(row.time)} · ${safeHtml(HISTORY_STATUS_TEXT[row.status] || row.status || '')} · ${row.completedSteps}/${row.stepCount} 步${row.pdfCount ? ` · PDF ${row.pdfCount}` : ''}</span></button>`;
+      // 第三个续跑入口：不必先打开记录就能续。resumable 由 Bridge 判定
+      // （质量门的安全停止在那里已被排除），这里只负责画。
+      const resume = row.resumable
+        ? `<button type="button" class="button ghost wv-history-resume" data-id="${safeHtml(row.id)}" title="复用已完成步骤的产出，从中断处继续">续跑</button>`
+        : '';
+      const stopBadge = row.outcome === 'stop'
+        ? `<span class="lit-tag" title="${safeHtml(row.stopReason || '质量门安全停止')}">安全停止</span>` : '';
+      return `<div class="wv-history-rowwrap"><button type="button" class="wv-history-row" data-kind="pipeline" data-id="${safeHtml(row.id)}">`
+        + `<span class="lit-tag">流程</span><span class="wv-history-title">${safeHtml(row.title || '文献 Pipeline')}</span>${stopBadge}`
+        + `<span class="wv-history-meta">${historyTime(row.time)} · ${safeHtml(HISTORY_STATUS_TEXT[row.status] || row.status || '')} · ${row.completedSteps}/${row.stepCount} 步${row.pdfCount ? ` · PDF ${row.pdfCount}` : ''}</span></button>${resume}</div>`;
     }
     if (row.kind === 'full-task') {
       return `<button type="button" class="wv-history-row" data-kind="full-task" data-id="${safeHtml(row.id)}">`
@@ -3428,6 +3982,14 @@ async function loadRunHistory() {
   }).join('');
   listEl.querySelectorAll('.wv-history-row').forEach((btn) => {
     btn.onclick = () => (btn.dataset.kind === 'pipeline' ? openHistoryPipeline(btn.dataset.id) : btn.dataset.kind === 'full-task' ? openHistoryFullTask(btn.dataset.id) : openHistorySearch(btn.dataset.id));
+  });
+  listEl.querySelectorAll('.wv-history-resume').forEach((btn) => {
+    btn.onclick = async (event) => {
+      event.stopPropagation();
+      btn.disabled = true;
+      try { await resumePipelineFromRecordId(btn.dataset.id); }
+      catch (error) { btn.disabled = false; window.researchWeaver.toast(`续跑失败：${error.message}`); }
+    };
   });
   return data;
 }
@@ -3448,6 +4010,105 @@ async function restoreLatestPipelineRun(history) {
   await openHistoryPipeline(candidate.id, { automaticRestore: true });
 }
 
+function renderPipelineRestartControls(host, record) {
+  const core = window.weaverPipelineSteps;
+  if (!host || !core || record.status === 'running') return;
+  const section = document.createElement('section');
+  section.className = 'wv-pipeline-restart';
+  const heading = document.createElement('h4');
+  heading.textContent = '修改并从指定步骤重新运行';
+  const intro = document.createElement('p');
+  intro.className = 'wv-faint';
+  intro.textContent = '重跑与“继续”不同：会保留所选步骤之前的有效状态，并清除该步骤及其下游旧产物。未通过质量门之后的步骤会被禁用。';
+
+  const stepLabel = document.createElement('label');
+  stepLabel.textContent = '起始步骤';
+  const select = document.createElement('select');
+  let firstRunnable = '';
+  for (const step of core.PIPELINE_STEPS) {
+    const plan = record.state
+      ? core.restartPlan(record, step.id)
+      : { runnable: step.id === 'query-builder', reason: step.id === 'query-builder' ? 'ok' : 'no-state' };
+    const option = document.createElement('option');
+    option.value = step.id;
+    option.disabled = !plan.runnable;
+    option.textContent = `${step.title}${plan.runnable ? '' : plan.reason === 'unsafe-skip' ? '（上游尚未通过）' : plan.reason === 'no-state' ? '（记录无断点状态包）' : '（状态不足）'}`;
+    if (plan.runnable && !firstRunnable) firstRunnable = step.id;
+    select.appendChild(option);
+  }
+  const searchPlan = record.state ? core.restartPlan(record, 'search') : { runnable: false };
+  const qualityStop = /检索|相关性|query/i.test(`${record.stopReason || ''} ${record.failureMessage || ''}`);
+  select.value = qualityStop && searchPlan.runnable ? 'search' : firstRunnable;
+  stepLabel.appendChild(select);
+  if (!record.state) {
+    const noStateNote = document.createElement('p');
+    noStateNote.className = 'wv-faint';
+    noStateNote.textContent = '这条记录没有保存断点状态包（产生于状态包功能之前，或当时保存失败），只存了步骤文字，没有检索式/检索结果/已下载 PDF 等重跑所需的输入，因此只能从第 1 步重跑。新的运行会在每一步结束后自动落盘状态包，中断后可从任意已完成步骤重跑。';
+    stepLabel.appendChild(noStateNote);
+  }
+
+  const topicLabel = document.createElement('label');
+  topicLabel.textContent = '课题主题（修改后自动从第 1 步重建）';
+  const topic = document.createElement('textarea');
+  topic.rows = 2;
+  topic.value = String(record.state?.question || record.title || '');
+  topicLabel.appendChild(topic);
+
+  const queryLabel = document.createElement('label');
+  queryLabel.textContent = '检索式（可选；修改后最晚从检索步骤开始）';
+  const query = document.createElement('textarea');
+  query.rows = 4;
+  query.value = String(record.state?.query || record.state?.usedQuery || '');
+  query.placeholder = '可直接粘贴修正后的 Boolean 检索式；留空则沿用状态包中的检索式。';
+  queryLabel.appendChild(query);
+
+  const hint = document.createElement('p');
+  hint.className = 'wv-pipeline-restart-hint';
+  const originalTopic = String(record.state?.question || record.title || '').trim();
+  const originalQuery = String(record.state?.query || record.state?.usedQuery || '').trim();
+  const effectiveStart = () => {
+    if (topic.value.trim() && topic.value.trim() !== originalTopic) return 'query-builder';
+    if (query.value.trim() && query.value.trim() !== originalQuery && core.stepIndex(select.value) > core.stepIndex('search')) return 'search';
+    return select.value;
+  };
+  const refreshHint = () => {
+    const effective = effectiveStart();
+    const adjusted = effective !== select.value;
+    hint.textContent = `${adjusted ? '为保证状态一致，系统将自动调整为：' : '实际将从：'}${core.stepById(effective)?.title || effective}。`;
+  };
+  select.addEventListener('change', refreshHint);
+  topic.addEventListener('input', refreshHint);
+  query.addEventListener('input', refreshHint);
+  refreshHint();
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'button primary wv-pipeline-restart-run';
+  button.textContent = '按此设置重新运行';
+  button.disabled = !firstRunnable;
+  button.addEventListener('click', async () => {
+    const fromId = effectiveStart();
+    const step = core.stepById(fromId);
+    if (!confirm(`将基于历史任务 ${record.id} 从「${step?.title || fromId}」重新运行。\n\n所选步骤及其下游旧状态将被清除；新运行会建立独立历史记录。是否继续？`)) return;
+    button.disabled = true;
+    button.textContent = '正在启动…';
+    try {
+      const outcome = await runConversationOperation({
+        operation: 'pipeline.rerun', run_id: record.id, from_step: select.value,
+        topic: topic.value.trim(), query: query.value.trim(), reason: '历史任务详情中人工确认重跑',
+      });
+      window.researchWeaver.toast(outcome?.status === 'stopped' ? `Pipeline 已安全停止：${outcome.detail || ''}` : 'Pipeline 重跑已完成。');
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = '按此设置重新运行';
+      window.researchWeaver.toast(`Pipeline 重跑失败：${error.message}`);
+    }
+  });
+
+  section.append(heading, intro, stepLabel, topicLabel, queryLabel, hint, button);
+  host.appendChild(section);
+}
+
 async function openHistoryPipeline(id, options = {}) {
   if (activePipelineHistoryId) { window.researchWeaver.toast('当前 Pipeline 仍在运行，请先完成或取消后再打开历史记录。'); return; }
   const { status, payload } = await bridgeFetchRaw(`/v1/pipeline-runs/${id}`);
@@ -3455,26 +4116,251 @@ async function openHistoryPipeline(id, options = {}) {
   const { dialog, steps, result } = window.researchWeaver;
   dialog.showModal();
   const interrupted = payload.status === 'interrupted';
-  document.querySelector('#runTitle').textContent = interrupted
+  document.querySelector('#runTitle').textContent = payload.outcome === 'stop'
+    ? 'Pipeline 安全停止 · 可修改并重跑'
+    : interrupted
     ? 'Pipeline 已中断 · 已恢复进度'
     : payload.status === 'running' ? 'Pipeline 运行中 · 已恢复进度' : '历史 Pipeline · 可恢复运行';
   steps.innerHTML = ''; result.classList.add('hidden'); result.innerHTML = '';
   for (const step of payload.steps || []) addStep(step.title, step.detail, step.state);
   const pdfPaths = Array.isArray(payload.artifacts?.downloadedPaths) ? payload.artifacts.downloadedPaths : [];
-  const canResume = pdfPaths.length > 0 && payload.resumeFrom === 'nature-reader';
+  /* 续跑判定统一交给 pipeline-steps-core：它同时覆盖新的状态包记录和只存了
+   * PDF 清单的旧记录，并且会把质量门的安全停止排除在外。 */
+  const stepsCore = window.weaverPipelineSteps;
+  const verdict = stepsCore ? stepsCore.isResumable(payload) : { resumable: false, reason: 'no-core' };
+  const resumeNote = stepsCore ? stepsCore.describeResume(payload) : '';
+  const canResume = verdict.resumable;
   result.innerHTML = `<h3>${safeHtml(payload.title || '文献 Pipeline')}</h3>
     <p>状态：${safeHtml(HISTORY_STATUS_TEXT[payload.status] || payload.status || '')}；已恢复 ${(payload.steps || []).filter((step) => step.state !== 'pending').length}/${(payload.steps || []).length} 个步骤状态；已保存本批次 PDF ${pdfPaths.length} 篇。</p>
     ${interrupted ? '<p class="quality-gate warning"><b>为什么停下：</b>切换页面时旧版宿主卸载了织研者工作区，浏览器侧 Pipeline 编排随之停止。已完成的文件和步骤记录没有丢失。</p>' : ''}
-    ${canResume ? '<p>可以复用这批 PDF，跳过检索和下载，从第 6 步证据卡片继续。系统只读取本记录中的文件，不会扫描其他课题的历史 PDF。</p><button type="button" class="button primary pipeline-resume">从已下载 PDF 继续</button>' : '<p class="wv-faint">该记录没有保存可恢复的 PDF 清单，不能安全地从下游继续。旧版本记录需要重新运行一次下载阶段。</p>'}`;
+    ${payload.failureMessage ? `<p class="quality-gate warning"><b>失败原因：</b>${safeHtml(payload.failureMessage)}</p>` : ''}
+    ${canResume
+      ? `<p>${safeHtml(resumeNote)}系统只读取本记录保存的状态，不会扫描其他课题的历史文件。</p>`
+        + `<button type="button" class="button primary pipeline-resume">${verdict.legacy ? '从已下载 PDF 继续' : `从「${safeHtml(stepsCore.stepById(verdict.fromId)?.title || '')}」继续`}</button>`
+      : `<p class="wv-faint">${safeHtml(resumeNote)}</p>`}`;
+  renderPipelineRestartControls(result, payload);
   result.classList.remove('hidden');
   result.querySelector('.pipeline-resume')?.addEventListener('click', async () => {
-    if (!confirm(`将复用这次记录中的 ${pdfPaths.length} 篇 PDF，从 nature-reader 继续；不会重新检索或下载。是否继续？`)) return;
-    try { await resumePipelineFromHistory(payload); }
-    catch (error) {
+    try {
+      if (verdict.legacy) {
+        if (!confirm(`将复用这次记录中的 ${pdfPaths.length} 篇 PDF，从 nature-reader 继续；不会重新检索或下载。是否继续？`)) return;
+        await resumePipelineFromHistory(payload);
+      } else {
+        await resumePipelineFromStep(payload, verdict.fromId);
+      }
+    } catch (error) {
       finishRunControl(activeRunControl?.stopRequested ? 'stopped' : 'error', error.message);
       window.researchWeaver.toast(activeRunControl?.stopRequested ? 'Pipeline 续跑已取消。' : `Pipeline 续跑失败：${error.message}`);
     }
   });
+}
+
+/* --- 续跑入口 ------------------------------------------------------------
+ *
+ * 三个入口都汇到 resumePipelineFromStep()：失败步骤行内联、中断记录面板顶部、
+ * 历史任务列表行。三处都先问 isResumable()，所以质量门的安全停止在任何一个
+ * 入口都长不出按钮——判定只有一份，不会出现「这里能点、那里不能点」。 */
+function renderInlineResumeButtons() {
+  const core = window.weaverPipelineSteps;
+  if (!core || !activePipelineHistoryId) return;
+  const failed = [...document.querySelectorAll('#runSteps .run-step')]
+    .filter((row) => row.dataset.runState === 'error');
+  const last = failed.at(-1);
+  if (!last || last.querySelector('.wv-step-resume')) return;
+  const runId = activePipelineHistoryId;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'button ghost wv-step-resume';
+  button.textContent = '从这步继续';
+  button.onclick = async () => {
+    button.disabled = true;
+    try { await resumePipelineFromRecordId(runId); }
+    catch (error) { button.disabled = false; window.researchWeaver.toast(`续跑失败：${error.message}`); }
+  };
+  last.appendChild(button);
+}
+
+/* 按记录 id 取回完整记录（含状态包）再续。入口只传 id，是为了让「能不能续、
+ * 从哪续」这两个判断永远基于 Bridge 上的落盘事实，而不是 UI 上的残留状态。 */
+async function resumePipelineFromRecordId(id) {
+  const core = window.weaverPipelineSteps;
+  const { status, payload } = await bridgeFetchRaw(`/v1/pipeline-runs/${id}`);
+  if (status !== 200) throw new Error(payload.error || `无法读取运行记录 (${status})`);
+  const verdict = core.isResumable(payload);
+  if (!verdict.resumable) throw new Error(core.describeResume(payload));
+  if (verdict.legacy) return resumePipelineFromHistory(payload);
+  return resumePipelineFromStep(payload, verdict.fromId);
+}
+
+async function resumePipelineFromStep(record, fromId) {
+  const core = window.weaverPipelineSteps;
+  const step = core.stepById(fromId);
+  const plan = core.resumePlan(record.state, fromId);
+  if (!confirm(
+    `将从「${step.title}」继续这次 Pipeline。\n\n`
+    + `复用上一轮已完成的 ${plan.skipped.length} 步产出（不重新检索、不重新下载），还需执行 ${plan.remaining.length} 步。\n`
+    + `只读取本条记录保存的状态，不会扫描其他课题的历史文件。\n\n是否继续？`
+  )) return;
+  if (activePipelineHistoryId) { window.researchWeaver.toast('当前有 Pipeline 正在运行，请先完成或取消。'); return; }
+  workspaceRoot = record.workspace || workspaceRoot;
+  if (workspaceInput) workspaceInput.value = workspaceRoot;
+  try {
+    return await runResearchPipeline({
+      topic: record.state.question || record.title,
+      resumeState: record.state,
+      startStepId: fromId,
+      parentRunId: record.id,
+    });
+  } catch (error) {
+    await handlePipelineOutcome(error);
+    return undefined;
+  }
+}
+
+async function conversationPipelineRecord(requestedId) {
+  let id = String(requestedId || 'latest').trim();
+  if (id === 'latest') {
+    const { status, payload } = await bridgeFetchRaw('/v1/history');
+    if (status !== 200) throw new Error(payload.error || `无法读取 Pipeline 历史 (${status})`);
+    const currentWorkspace = String(workspaceRoot || workspaceInput?.value || '').toLowerCase();
+    const candidates = (payload.pipelines || []).filter((item) => item?.id);
+    const scoped = currentWorkspace
+      ? candidates.filter((item) => String(item.workspace || '').toLowerCase() === currentWorkspace)
+      : [];
+    const latest = (scoped.length ? scoped : candidates)
+      .sort((a, b) => String(b.updatedAt || b.startedAt || '').localeCompare(String(a.updatedAt || a.startedAt || '')))[0];
+    if (!latest?.id) throw new Error('还没有可供重跑的 Pipeline 历史记录。请先运行一次完整 Pipeline。');
+    id = latest.id;
+  }
+  const { status, payload } = await bridgeFetchRaw(`/v1/pipeline-runs/${encodeURIComponent(id)}`);
+  if (status !== 200) throw new Error(payload.error || `无法读取 Pipeline 运行记录 (${status})`);
+  return payload;
+}
+
+async function rerunPipelineFromConversation(request) {
+  const core = window.weaverPipelineSteps;
+  if (!core) throw new Error('Pipeline 步骤协议未加载，请重载 Scholarium 后重试。');
+  let fromId = String(request.from_step || '').trim();
+  let step = core.stepById(fromId);
+  if (!step) throw new Error(`无法识别步骤 ${fromId}。请选择 Pipeline 步骤表中的真实步骤。`);
+  const record = await conversationPipelineRecord(request.run_id);
+  const originalTopic = String(record.state?.question || record.title || '').trim();
+  const originalQuery = String(record.state?.query || record.state?.usedQuery || '').trim();
+  const topicOverride = String(request.topic || '').trim();
+  const queryOverride = String(request.query || '').trim();
+  const topicChanged = Boolean(topicOverride && topicOverride !== originalTopic);
+  const queryChanged = Boolean(queryOverride && queryOverride !== originalQuery);
+
+  // 主题变化会让概念矩阵、检索式和所有下游证据一起失效，必须从第 1 步重建。
+  // 只改 Boolean query 时，至少要重跑 search，不能把新 query 配上旧结果集。
+  if (topicChanged) fromId = 'query-builder';
+  else if (queryChanged && core.stepIndex(fromId) > core.stepIndex('search')) fromId = 'search';
+  step = core.stepById(fromId);
+
+  // 旧版本只保存了“步骤文字”，没有可复用的数据状态。它不能假装从中间续跑；
+  // 但从第 1 步重跑不依赖旧状态，可以安全地复用历史标题作为主题。
+  if (!record.state) {
+    if (fromId !== 'query-builder') throw new Error(core.describeRestart(record, fromId));
+    const topic = topicOverride || String(record.title || '').trim();
+    if (!topic) throw new Error('旧记录没有状态包，也没有可恢复的原始主题；请在对话里明确主题后运行完整 Pipeline。');
+    let completion;
+    try { completion = await runResearchPipeline({ topic, confirmedFromChat: true, parentRunId: record.id, operationId: request.operationId || '' }); }
+    catch (error) { error.conversationPipelineStarted = true; throw error; }
+    return { ...(completion || {}), status: 'completed', runId: record.id, detail: '旧记录没有状态包，已按其原始主题从第 1 步重新运行。' };
+  }
+
+  const plan = core.restartPlan(record, fromId);
+  if (!plan.runnable) throw new Error(core.describeRestart(record, fromId));
+  const restartState = core.restartStateForStep(record.state, fromId);
+  if (topicOverride) restartState.question = topicOverride;
+  if (queryOverride && fromId !== 'query-builder') restartState.query = queryOverride;
+  workspaceRoot = record.workspace || workspaceRoot;
+  if (workspaceInput) workspaceInput.value = workspaceRoot;
+  let completion;
+  try {
+    completion = await runResearchPipeline({
+      topic: topicOverride || record.state.question || record.title,
+      resumeState: restartState,
+      startStepId: fromId,
+      parentRunId: record.id,
+      restartMode: true,
+      confirmedFromChat: true,
+      operationId: request.operationId || '',
+    });
+  } catch (error) { error.conversationPipelineStarted = true; throw error; }
+  return {
+    ...(completion || {}), status: 'completed', runId: record.id,
+    detail: `已基于历史任务 ${record.id} 从「${step.title}」重跑；该步骤及其下游旧状态已清除${topicChanged ? '（因主题已修改，已自动回到第 1 步）' : queryChanged && fromId === 'search' ? '（新检索式已从检索步骤生效）' : ''}。`,
+  };
+}
+
+let conversationOperationActive = false;
+async function runConversationOperation(request) {
+  if (conversationOperationActive) throw new Error('已有一条对话运行请求正在执行，请等待它结束或先取消当前任务。');
+  if (activeRunControl?.status === 'running' && request?.operation !== 'literature.queue') throw new Error('当前已有 Pipeline/工作流正在运行，请先完成或取消，再执行新的对话请求。');
+  conversationOperationActive = true;
+  try { return await dispatchConversationOperation(request); }
+  finally { conversationOperationActive = false; }
+}
+
+async function dispatchConversationOperation(request) {
+  const operation = String(request?.operation || '');
+  /* 契约 §2.3：`run` 这张确认的 operationId 由 shell 放进 request，这里只做透传。
+   *
+   * 边界必须说清楚（不要在别处宣称 run 有执行端幂等）：
+   *   - literature.search / pipeline.rerun：号会一路传到 runResearchPipeline →
+   *     beginPipelineHistory → POST /v1/pipeline-runs 的请求头里。**只有入口**幂等：
+   *     同一张票据第二次投递会在建记录之前被认出来（replayed / 409），所以第二次
+   *     pipeline 不会启动；阶段内部的写入不受它保护。
+   *   - literature.queue：**盖不到**。它没有任何 HTTP 调用，写是通过
+   *     postMessage 交给宿主 main.js 的（宿主按条目 id 做的合并只是基础去重，
+   *     不算端点幂等）。
+   *   - 因此 run 在 P0 的实际保护是 claimed 锁（会话文件里的 claimed 挡住双击，
+   *     服务端也会拒绝 claimed → claimed），不是执行端幂等。
+   * 完整的 host / 多阶段 Pipeline 幂等留给 P1。 */
+  const operationId = String(request?.operationId || '');
+  if (operation === 'literature.queue') {
+    const items = (Array.isArray(request?.items) ? request.items : []).slice(0, 100).map((item) => {
+      const doi = normalizeDoiKey(item?.doi);
+      const title = String(item?.title || doi || '待下载论文').trim();
+      const url = String(item?.url || (doi ? `https://doi.org/${doi}` : '')).trim();
+      return {
+        id: doi ? `doi:${doi}` : `title:${title.toLowerCase().replace(/\s+/g, ' ')}`,
+        doi, title, url,
+        reason: String(item?.reason || '织研者筛选后加入').trim(),
+      };
+    }).filter((item) => item.doi && /^https?:\/\/\S+$/i.test(item.url));
+    if (!items.length) throw new Error('论文队列为空，或 DOI/URL 格式无效。');
+    const queued = await publishManualDownloadQueue(items, { open: request.open !== false, append: true });
+    return {
+      status: 'completed', count: queued.length,
+      detail: `已加入文献订阅 → Pipeline 待处理 ${queued.length} 篇${request.open === false ? '' : '，并已打开该列表'}。`,
+    };
+  }
+  if (operation === 'literature.search') {
+    return runLiteratureSearch({ topic: request.topic, confirmedFromChat: true, operationId });
+  }
+  if (operation === 'pipeline.rerun') {
+    try { return await rerunPipelineFromConversation({ ...request, operationId }); }
+    catch (error) {
+      // Pipeline 运行阶段抛出的安全停止也要照常写入 outcome/停止原因；纯预检
+      // 错误发生在 active history 建立前，不需要走运行收口。
+      if (error.conversationPipelineStarted || isPipelineStop(error)) await handlePipelineOutcome(error);
+      if (isPipelineStop(error)) return { status: 'stopped', detail: error[PIPELINE_STOP]?.reason || error.message };
+      throw error;
+    }
+  }
+  if (operation === 'pipeline.run') {
+    try {
+      const completion = await runResearchPipeline({ topic: request.topic, confirmedFromChat: true });
+      return { ...(completion || {}), status: 'completed', detail: '完整文献 Pipeline 已完成。' };
+    } catch (error) {
+      await handlePipelineOutcome(error);
+      if (isPipelineStop(error)) return { status: 'stopped', detail: error[PIPELINE_STOP]?.reason || error.message };
+      throw error;
+    }
+  }
+  throw new Error(`不支持的对话运行操作：${operation}`);
 }
 
 async function resumePipelineFromHistory(parent) {

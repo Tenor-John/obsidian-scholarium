@@ -13,6 +13,8 @@ const WA = require("./workspace-actions");
 const MA = require("./material-actions");
 const TDA = require("./timeblock-drift-audit");
 const PRS = require("./pending-review-scan");
+const CH = require("./chem-actions");
+const PI = require("./provenance-invalidation");
 const hash = (s) => crypto.createHash("sha256").update(String(s), "utf8").digest("hex");
 // The policy names all four autonomy levels even though this release only
 // ships L0 and L1 actions. L2/L3 are deliberately unavailable until a future
@@ -135,6 +137,19 @@ const ACTIONS = {
   // 不走生命周期门槛；by 默认 "agent"。同步 handler（纯磁盘读写），与
   // experiment.transition 相同，可经 run() 也可经 runAsync()。
   "experiment.append_note": { level: "L1", risk: "reversible", requires_confirmation: true, handler: (v, input, o) => W.appendNote(v, input.experiment_uid, input.text, o) },
+  // Exceptional audit transaction. It is not an ordinary lifecycle transition:
+  // one confirmed call invalidates the Experiment, demotes every Evidence
+  // sourced from it, unlinks the corresponding Hypothesis relations, and
+  // writes a full recovery snapshot before touching any object.
+  "experiment.invalidate_provenance": { level: "L1", risk: "reversible_with_recovery", requires_confirmation: true, handler: (v, input, o) => PI.invalidate(v, input, o) },
+  // 往实验记录正文追加一个 scholarium-chem 化学结构块（可用 Ketcher 打开继续
+  // 画）。和 append_note 一样：不改状态、不走生命周期门槛、同步 handler。
+  // 刻意只认 experiment_uid，不接受任意笔记路径——写入仍然经过
+  // experiment-store 的 saveExisting，frontmatter 的结构化字段和校验一个都
+  // 不绕过。frontmatter 的 smiles/reaction_smiles 只在为空时补写，见
+  // tools/chem-actions.js 的 frontmatterPatch。
+  "experiment.validate_chem": { level: "L0", risk: "read_only", requires_confirmation: false, handler: (v, input, o) => CH.validateChem(v, input, o) },
+  "experiment.insert_chem": { level: "L1", risk: "reversible", requires_confirmation: true, handler: (v, input, o) => CH.insertChem(v, input, o) },
 };
 function describe(name) { const a = ACTIONS[name]; if (!a) throw new Error("unknown_action:" + name); return { name, level: a.level, risk: a.risk, requires_confirmation: a.requires_confirmation, async: !!a.async, policy: LEVELS[a.level] }; }
 function checkAndPrepare(name, options) {

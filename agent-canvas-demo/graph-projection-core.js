@@ -34,8 +34,12 @@
     const sourcePath = text(exp.__vault_path || exp.path, 500);
     const execId = `exec-${slug(exp.display_id, exp.uid.slice(0, 8))}`;
     const isSimulated = exp.data_origin === "simulated";
+    const isInvalidated = exp.status === "invalidated";
+    const isUnverifiable = exp.data_origin === "unverifiable";
     const execDescriptionParts = [`来自 ${exp.display_id}（status: ${text(exp.status, 40) || "未知"}）`];
     if (isSimulated) execDescriptionParts.push("模拟数据，非真实测量执行");
+    if (isUnverifiable) execDescriptionParts.push("来源追溯已完成但无法核实");
+    if (isInvalidated) execDescriptionParts.push("该实验记录已失效，不得进入结论链");
     nodes.push({
       id: execId, label: text(exp.title, 200), type: "execution",
       description: execDescriptionParts.join("；"),
@@ -47,7 +51,7 @@
       const obsId = `obs-${slug(exp.display_id, exp.uid.slice(0, 8))}`;
       nodes.push({
         id: obsId, label: result.slice(0, 60), type: "observation",
-        description: isSimulated ? `模拟数据：${result}` : result,
+        description: isInvalidated ? `已失效历史记录：${result}` : (isSimulated ? `模拟数据：${result}` : result),
         source_refs: sourcePath ? [sourcePath] : [],
       });
       edges.push({

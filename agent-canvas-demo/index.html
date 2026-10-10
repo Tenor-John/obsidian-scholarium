@@ -184,8 +184,14 @@
              compact status summary — NOT a 1:1 mirror of the tracker rail. -->
         <div class="wv-chat-topic-row">
           <div class="wv-chat-topic" id="chatTopicLabel">课题对话</div>
+          <!-- 正文存储的可访问状态文案：读不到、没保存、保存了多少条，都由这里
+               说出来，而不是让人从"对话变空了"去猜。 -->
+          <span class="wv-chat-storage-status wv-mono" id="chatStorageStatus" role="status" aria-live="polite"></span>
+          <button type="button" class="wv-btn" id="chatHistoryBtn" title="打开/归档/恢复/改名本课题的历史会话；会话列表" >历史会话</button>
+          <button type="button" class="wv-btn" id="chatArchiveBtn" title="归档本会话：只追加一条状态事件，正文不会被移动或删除，可随时恢复">归档/恢复</button>
           <button type="button" class="wv-btn" id="chatLegacyArchiveBtn" hidden title="查看&quot;每个课题独立对话&quot;功能上线前的旧版对话记录（只读，不会自动合并进任何课题）">旧版对话归档</button>
         </div>
+        <div id="chatNotice" class="wv-faint wv-chat-notice" role="status" hidden></div>
         <div id="chatNarrative" class="wv-narrative"></div>
         <div class="wv-composer">
           <div class="wv-composer-actions">
@@ -416,13 +422,24 @@
       <h3>Agent 接入</h3>
       <p class="wv-faint">织研者调用你本机已登录的 Agent CLI 执行任务。状态由 Bridge 实时探测。</p>
       <div id="settingsAgentList" class="registry-list"></div>
-      <div class="wv-action-row">
-        <button id="detectLocalAgents" type="button">检测本机 Agent</button>
-        <span id="settingsAgentDiscoverStatus" class="wv-faint"></span>
-      </div>
-      <div id="settingsAgentDiscoverList" class="registry-list"></div>
       <h3>API 钥匙串</h3>
       <div id="settingsCredentialList" class="registry-list"></div>
+      <h3>论文 RAG</h3>
+      <p id="settingsRagStatus" class="wv-faint">正在读取索引状态…</p>
+      <div class="wv-action-row">
+        <button id="refreshRagStatus" class="button ghost">刷新状态</button>
+        <button id="reindexRag" class="button primary" title="使用当前 Hugging Face 模型为旧 chunks 补算或重算向量">向量化现有语料</button>
+        <button id="previewRagGraph" class="button ghost" title="只生成知识图谱 dry-run，不写入 Vault">预演知识图谱</button>
+      </div>
+      <h4>图谱关键词</h4>
+      <p id="graphKeywordSource" class="wv-faint">正在读取…</p>
+      <textarea id="graphKeywordList" rows="3" class="wv-input" placeholder="每行或逗号分隔一个词；留空并保存＝退回仅用内置领域正则"></textarea>
+      <p id="graphKeywordSuggestions" class="wv-faint"></p>
+      <div class="wv-action-row">
+        <button id="saveGraphKeywords" class="button primary" title="保存为固定关键词">保存关键词</button>
+        <button id="adoptGraphSuggestions" class="button ghost" title="把语料里挖出的候选词填入上方，可再手工删改">采纳语料建议</button>
+        <button id="resetGraphKeywords" class="button ghost" title="清除固定关键词，改为每次预演时自动从语料推导">恢复自动推导</button>
+      </div>
       <div class="wv-action-bar">
         <button id="migrateLegacySecrets" class="button ghost" title="把 bridge.config.json 里遗留的明文密钥搬进 bridge/.env 并从配置中清除">迁移遗留明文密钥</button>
         <span id="settingsCenterStatus" class="wv-faint"></span>
@@ -486,6 +503,8 @@
   <script src="./orchestrator.js"></script>
   <script src="./p7-rehearsal.js"></script>
   <script src="./app.js"></script>
+  <script src="./concept-query-core.js"></script>
+  <script src="./pipeline-steps-core.js"></script>
   <script src="./bridge-ui.js"></script>
   <script src="./idea-mode-core.js"></script>
   <script src="./project-mode-core.js"></script>
@@ -495,6 +514,7 @@
   <script src="./full-lane-ui-core.js"></script>
   <script src="./query-adapt.js"></script>
   <script src="./chat-actions-core.js"></script>
+  <script src="./chat-markdown-core.js"></script>
   <script src="./research-chat-core.js"></script>
   <script src="./settings-core.js"></script>
   <script src="./settings-ui.js"></script>

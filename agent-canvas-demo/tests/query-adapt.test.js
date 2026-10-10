@@ -5,9 +5,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Adapt = require('../query-adapt.js');
 
-test('openalex and scopus pass the canonical query through unchanged', () => {
+test('openalex and scopus preserve portable canonical Boolean syntax', () => {
   const q = 'BiVO4 AND (photocatalysis OR "visible light") NOT electrocatalysis';
   assert.equal(Adapt.adaptQueryForSource(q, 'openalex'), q);
+  assert.equal(Adapt.adaptQueryForSource(q, 'scopus'), q);
+});
+
+test('unsupported wildcards are removed only for sources that do not reliably support them', () => {
+  const q = 'photocatal* AND nano?star';
+  assert.equal(Adapt.adaptQueryForSource(q, 'openalex'), 'photocatal AND nanostar');
+  assert.equal(Adapt.adaptQueryForSource(q, 'semantic-scholar'), 'photocatal nanostar');
+  assert.equal(Adapt.adaptQueryForSource(q, 'pubmed'), 'photocatal* AND nano?star');
   assert.equal(Adapt.adaptQueryForSource(q, 'scopus'), q);
 });
 

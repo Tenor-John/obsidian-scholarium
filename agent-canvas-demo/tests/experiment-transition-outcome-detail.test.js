@@ -6,8 +6,9 @@
 // （`${from} → ${to}`，或并发去重时的 `${from} 未变化（已经是该状态）`），
 // 被同一条规则一起吞掉，导致一次真实推进和一次因为状态已被别的操作提前
 // 推进而产生的 noop，在聊天里长得一模一样，都只显示"✔ 已生效
-// experiment.transition"。这份测试锁定修复：只放行这一个动作的 detail，
-// 不改变其它动作（如 workspace.timeblock_add）completed 时的展示方式。
+// experiment.transition"。Provenance 失效事务随后也加入同一窄白名单，
+// 因为它的 detail 是整条级联实际撤出了多少对象的人类可读回执；队列动作的
+// 原始 JSON 仍不展示。
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -26,14 +27,14 @@ test('completed experiment.transition outcomes show their detail (from→to, or 
   assert.doesNotMatch(block, /o\.status === 'completed' \? '' :/);
 });
 
-test('other completed actions (e.g. queue-based ones) still suppress their raw-JSON detail by default', () => {
+test('only direct edit actions expose human-readable detail; queue actions still suppress raw JSON', () => {
   const start = source.indexOf("message.actionsState = 'settled';");
   const block = source.slice(start, start + 1200);
-  // The Set only names experiment.transition; no other action name is added
-  // to the allow-list, so e.g. workspace.timeblock_add stays suppressed.
+  // Only the two direct /v1/edits transactions are named; queue actions such
+  // as workspace.timeblock_add remain suppressed.
   const setMatch = /showCompletedDetail\s*=\s*new Set\(\[([^\]]*)\]\)/.exec(block);
   assert.ok(setMatch, 'showCompletedDetail must be defined as a Set literal');
-  assert.equal(setMatch[1].trim(), "'experiment.transition'");
+  assert.equal(setMatch[1].trim(), "'experiment.transition', 'experiment.invalidate_provenance'");
 });
 
 // 2026-08-28 发布冲刺项4 P1（交付清单第4类第2项）：the "Obsidian 未打开/

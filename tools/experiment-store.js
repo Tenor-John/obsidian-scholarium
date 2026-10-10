@@ -25,20 +25,75 @@ function objectPath(vault, object) {
   return path.join(vault, ...DIR.split("/"), `${object.display_id} ${slug(object.title)}.md`);
 }
 
-function bodyFor(object) {
+const CANONICAL_BODY_VERSION = 1;
+const RESERVED_BODY_SECTIONS = new Set(["数据来源", "结果", "实验结果", "结论"]);
+
+function planFromBody(body) {
+  let text = String(body || "").replace(/\r\n/g, "\n").trim();
+  if (!text) return "";
+  text = text.replace(/^#[ \t]+[^\n]+\n*/, "").trim();
+  text = text.replace(/^<!--[ \t]*scholarium-experiment-template:v\d+[ \t]*-->\n*/, "").trim();
+  if (!text) return "";
+  const matches = [...text.matchAll(/^##[ \t]+([^\n]+)[ \t]*$/gm)];
+  if (!matches.length) return text;
+  const parts = [];
+  const prefix = text.slice(0, matches[0].index).trim();
+  if (prefix) parts.push(prefix);
+  for (let index = 0; index < matches.length; index++) {
+    const title = normalize(matches[index][1]);
+    const start = matches[index].index + matches[index][0].length;
+    const end = index + 1 < matches.length ? matches[index + 1].index : text.length;
+    const content = text.slice(start, end).trim();
+    if (RESERVED_BODY_SECTIONS.has(title)) continue;
+    if (title === "实验方案与过程") {
+      if (content) parts.push(content);
+      continue;
+    }
+    parts.push(`### ${title}${content ? `\n\n${content}` : ""}`);
+  }
+  return parts.join("\n\n").trim();
+}
+
+function bodyFor(object, sourceBody = "") {
   const originLabels = {
     planned: "尚未产生数据（计划）",
     measured: "实测数据",
     simulated: "模拟 / 流程演示数据",
     imported: "导入数据",
+    demonstration: "验收演示数据",
+    unknown: "来源尚未判定",
+    unverifiable: "已追溯但无法核实来源",
   };
   const origin = object.data_origin;
-  const source = origin === undefined ? "遗留记录：未声明数据来源" : (originLabels[origin] || origin);
+  const source = origin === undefined ? "未由研究者声明（当前不可作为实测证据）" : (originLabels[origin] || origin);
   const refs = Array.isArray(object.raw_data_refs) && object.raw_data_refs.length
     ? object.raw_data_refs.map((ref) => `- ${String(ref)}`).join("\n")
     : "- 未登记";
   const note = String(object.data_provenance_note || "").trim() || "未补充说明";
-  return `# ${String(object.title || object.display_id)}\n\n## 数据来源\n- 类型：${source}\n- 声明者：${String(object.data_recorded_by || "未声明")}\n- 声明时间：${String(object.data_recorded_at || "未声明")}\n\n### 原始数据入口\n${refs}\n\n### 说明\n${note}\n\n## 结果\n${String(object.result || "").trim()}\n\n## 结论\n${String(object.conclusion || "").trim()}\n`;
+  const plan = planFromBody(sourceBody) || "待研究者补充。";
+  const title = `${String(object.display_id || "EXP")} · ${String(object.title || "未命名实验")}`;
+  return `# ${title}\n\n<!-- scholarium-experiment-template:v${CANONICAL_BODY_VERSION} -->\n\n## 实验方案与过程\n\n${plan}\n\n## 数据来源\n\n- 类型：${source}\n- 声明者：${String(object.data_recorded_by || "未声明")}\n- 声明时间：${String(object.data_recorded_at || "未声明")}\n\n### 原始数据入口\n\n${refs}\n\n### 说明\n\n${note}\n\n## 结果\n\n${String(object.result || "").trim()}\n\n## 结论\n\n${String(object.conclusion || "").trim()}\n`;
+}
+
+function canonicalizeBody(object, sourceBody) {
+  if (!object || object.type !== "experiment") throw new Error("canonical_experiment_body_requires_experiment");
+  return bodyFor(object, sourceBody);
+}
+
+function replacePlanSection(body, planMarkdown) {
+  const text = String(body || "");
+  if (!/<!--[ \t]*scholarium-experiment-template:v\d+[ \t]*-->/.test(text))
+    throw new Error("experiment_plan_edit_requires_canonical_body");
+  const planHeading = /^##[ \t]+实验方案与过程[ \t]*$/m.exec(text);
+  if (!planHeading) throw new Error("experiment_plan_section_missing");
+  const suffixPattern = /^##[ \t]+数据来源[ \t]*$/gm;
+  suffixPattern.lastIndex = planHeading.index + planHeading[0].length;
+  const sourceHeading = suffixPattern.exec(text);
+  if (!sourceHeading) throw new Error("experiment_provenance_section_missing");
+  const plan = String(planMarkdown || "").replace(/\r\n/g, "\n").trim() || "待研究者补充。";
+  if (/^##[ \t]+(?:数据来源|结果|实验结果|结论)[ \t]*$/m.test(plan))
+    throw new Error("experiment_plan_contains_reserved_section");
+  return `${text.slice(0, planHeading.index + planHeading[0].length)}\n\n${plan}\n\n${text.slice(sourceHeading.index)}`;
 }
 
 function writeAt(vault, file, object, body) {
@@ -55,11 +110,21 @@ function loadAll(vault) {
   return S.readVaultObjects(vault).filter((entry) => entry.object.type === "experiment");
 }
 
-function nextDisplayId(vault) {
-  return S.nextDisplayId(loadAll(vault).map((entry) => entry.object.display_id), "experiment");
+function reservedDisplayIds(vault) {
+  const ids = [];
+  for (const entry of S.readVaultObjects(vault)) {
+    if (entry.object.type === "experiment" && entry.object.display_id) ids.push(entry.object.display_id);
+    for (const displayId of Array.isArray(entry.object.retired_display_ids) ? entry.object.retired_display_ids : [])
+      if (/^EXP-\d+$/.test(String(displayId))) ids.push(String(displayId));
+  }
+  return [...new Set(ids)];
 }
 
-function saveNew(vault, fields, options = {}) {
+function nextDisplayId(vault) {
+  return S.nextDisplayId(reservedDisplayIds(vault), "experiment");
+}
+
+function prepareNew(vault, fields, options = {}) {
   const recordedAt = fields.data_recorded_at || options.now || new Date().toISOString();
   const object = S.createObject("experiment", {
     title: String(fields.title || "").trim(),
@@ -77,10 +142,27 @@ function saveNew(vault, fields, options = {}) {
     ...(fields.method_uid ? { method_uid: fields.method_uid } : {}),
     ...(fields.protocol_uid ? { protocol_uid: fields.protocol_uid } : {}),
   }, {
-    existingDisplayIds: loadAll(vault).map((entry) => entry.object.display_id),
+    existingDisplayIds: reservedDisplayIds(vault),
     now: options.now,
   });
-  return { object, path: writeAt(vault, objectPath(vault, object), object, bodyFor(object)) };
+  const errors = S.validateObject(object);
+  if (errors.length) throw new Error("拒绝写入不合法 Experiment：" + errors.join("；"));
+  const file = objectPath(vault, object);
+  const body = bodyFor(object, fields.plan || "");
+  return {
+    object,
+    path: path.relative(vault, file).split(path.sep).join("/"),
+    content: S.serializeObject(object, body),
+    body,
+  };
+}
+
+function saveNew(vault, fields, options = {}) {
+  const prepared = prepareNew(vault, fields, options);
+  return {
+    object: prepared.object,
+    path: writeAt(vault, objectPath(vault, prepared.object), prepared.object, prepared.body),
+  };
 }
 
 function saveExisting(vault, relativePath, object, options = {}) {
@@ -117,7 +199,13 @@ function readRecord(vault, entry) {
 
 function bodySection(body, heading) {
   const text = String(body || "").replace(/\r\n/g, "\n");
-  const match = new RegExp("(?:^|\\n)##\\s*" + heading + "\\s*\\n([\\s\\S]*?)(?=\\n##\\s|$)").exec(text);
+  // `\s*` around the heading used to be able to run across blank lines, so an
+  // EMPTY section swallowed the rest of the note: on a freshly created record
+  // (whose "## 结果" section is blank) recoverStructuredFields read result back
+  // as "## 结论…" and the next save wrote that heading into frontmatter as if it
+  // were the experiment's result. Only horizontal whitespace belongs on a
+  // heading line; the terminator is likewise a heading line, not any whitespace.
+  const match = new RegExp("(?:^|\\n)##[ \\t]*" + heading + "[ \\t]*\\n([\\s\\S]*?)(?=\\n##[ \\t]|$)").exec(text);
   return match ? match[1].trim() : "";
 }
 
@@ -263,6 +351,6 @@ function removeProducedEvidence(vault, experimentUid, evidenceUid, options = {})
 }
 
 module.exports = {
-  DIR, normalize, sha256, blockHash, bodyFor, objectPath, loadAll, nextDisplayId,
-  saveNew, saveExisting, saveRecord, readRecord, recoverStructuredFields, resultBlocks, buildLocator, verifyEvidenceSource, addProducedEvidence, removeProducedEvidence,
+  DIR, CANONICAL_BODY_VERSION, normalize, sha256, blockHash, planFromBody, bodyFor, canonicalizeBody, replacePlanSection, objectPath, loadAll, reservedDisplayIds, nextDisplayId,
+  prepareNew, saveNew, saveExisting, saveRecord, readRecord, recoverStructuredFields, resultBlocks, buildLocator, verifyEvidenceSource, addProducedEvidence, removeProducedEvidence,
 };

@@ -35,6 +35,7 @@ const EXCERPT = 280; // characters, for statement/conclusion excerpts
 // result the researcher has written down that has not yet been turned into
 // evidence and settled against its hypotheses.
 const SETTLED_STATUS = new Set(["integrated"]);
+const INVALIDATED_STATUS = new Set(["invalidated"]);
 const RESULT_READY_STATUS = new Set(["concluded"]);
 const IN_PROGRESS_STATUS = new Set(["running", "data_pending", "analyzing"]);
 
@@ -258,7 +259,7 @@ function scanExperimentOutcomes(vault, input = {}) {
   const experiments = idx.byType.experiment.filter((e) => !scope || e.object.project_uid === scope);
   const awaitingIntegration = [];
   const inProgress = [];
-  let planned = 0, settled = 0;
+  let planned = 0, settled = 0, invalidated = 0;
   for (const entry of experiments) {
     const status = entry.object.status || "";
     if (RESULT_READY_STATUS.has(status)) awaitingIntegration.push(experimentSummary(entry, idx));
@@ -269,6 +270,7 @@ function scanExperimentOutcomes(vault, input = {}) {
         updated_at: exp.updated_at || null, path: entry.path,
       });
     } else if (SETTLED_STATUS.has(status)) settled++;
+    else if (INVALIDATED_STATUS.has(status)) invalidated++;
     else planned++; // idea / designed / ready / undeclared
   }
   const order = (a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || ""));
@@ -282,6 +284,7 @@ function scanExperimentOutcomes(vault, input = {}) {
       awaiting_integration: awaitingIntegration.length,
       in_progress: inProgress.length,
       settled,
+      invalidated,
       planned,
       total: experiments.length,
     },

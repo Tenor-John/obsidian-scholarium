@@ -38,6 +38,17 @@ test('research prompt requires contextual revision, targeted search and explicit
   assert.match(prompt, /只读能力清单/);
 });
 
+test('chemistry prompt distinguishes a drawable structure from a validated equation', () => {
+  const prompt = buildResearchChatPrompt({ message: '请把这条电解反应写入实验记录', capabilities: '' });
+  assert.match(prompt, /结构表示/);
+  assert.match(prompt, /逐元素核对原子数/);
+  assert.match(prompt, /核对净电荷/);
+  assert.match(prompt, /最小整数比/);
+  assert.match(prompt, /Ketcher.*重复物种/);
+  assert.match(prompt, /待核验/);
+  assert.match(prompt, /不得把未验证结构写成最终化学结论/);
+});
+
 test('capabilities precede large contextual blocks and are retained in full', () => {
   const capabilities = `CAPABILITY-START\n${'c'.repeat(6000)}\nCAPABILITY-END\nGET http://127.0.0.1/v1/scholarium/rescan-checkpoint-mark`;
   const projectBlock = `PROJECT-START\n${'p'.repeat(30000)}\nPROJECT-END`;
@@ -75,6 +86,22 @@ test('authoritative project context is injected, while an unbound or failed look
   assert.match(projectContextBlock('PRJ-002', null, null, 'Bridge offline'), /不得断言任何记录不存在/);
 });
 
+test('a project block dropped by history pressure leaves an explicit non-existence guard', () => {
+  const messages = Array.from({ length: 20 }, (_, index) => ({
+    role: index % 2 ? 'assistant' : 'user',
+    text: `${index} ${'历史上下文'.repeat(500)}`,
+  }));
+  const prompt = buildResearchChatPrompt({
+    message: '继续',
+    messages,
+    capabilities: `能力清单\n${'C'.repeat(100000)}`,
+    projectBlock: `【项目状态（Bridge L0 实读）】\n${'EXP-009 '.repeat(1200)}`,
+  });
+  assert.match(prompt, /项目状态：本轮因长度预算未加载/);
+  assert.match(prompt, /不得据此断言任何 PRJ\/HYP\/EXP 不存在/);
+  assert.ok(prompt.length <= 120000);
+});
+
 // 2026-08-28 发布冲刺项3实测发现的 P0（真实根因是 /v1/drafts/batch 里由
 // AI 起草的 EXP 记录，不是 main.js 原生"新建实验"弹窗——后者的
 // tools/experiment-store.js saveNew() 早就有防御性默认值，见
@@ -86,11 +113,13 @@ test('authoritative project context is injected, while an unbound or failed look
 // 或者更早的、没有该校验的 Bridge 进程上会先写入成功、直到下一次
 // experiment.transition 才因为同一批 validateObject 规则炸掉——两种情况
 // 研究员看到的都是一次跟"我刚才明明保存成功了"矛盾的莫名失败。
-test('prompt forbids the model from ever setting data_origin/data_recorded_by/data_recorded_at on an EXP draft', () => {
+test('prompt delegates identity and human-only metadata to the Bridge', () => {
   const prompt = buildResearchChatPrompt({ message: '帮我把这个实验设计保存成正式记录', capabilities: '' });
-  assert.match(prompt, /绝不要自己填 data_origin \/ data_recorded_by \/ data_recorded_at/);
-  assert.match(prompt, /只能由研究员本人通过原生"补充数据来源"编辑器逐条确认/);
-  assert.match(prompt, /data_recorded_by 必须等于 "user"/);
+  assert.match(prompt, /uid、display_id、schema_version、project_uid.*均由 Bridge/);
+  assert.match(prompt, /data_origin\/data_recorded_by\/data_recorded_at 属于研究员声明/);
+  assert.match(prompt, /Bridge 会从 AI 草稿中强制移除/);
+  assert.match(prompt, /"ref":"hyp-1"/);
+  assert.match(prompt, /"draft:hyp-1"/);
 });
 
 // 2026-08-26: 时间块 ↔ 实验正式关联——排期规则必须要求 experiment_uid，
@@ -143,7 +172,7 @@ test('prompt tells the model to default to append_note (not transition) when uns
 test('prompt tells the model how to persist a finalized decision as a scholarium-draft', () => {
   const prompt = buildResearchChatPrompt({ message: '这个实验这周先不排了，记一条决策', capabilities: '' });
   assert.match(prompt, /type: decision/);
-  assert.match(prompt, /DEC-NNN/);
+  assert.match(prompt, /身份、编号、课题关联与审计字段全部交给 Bridge/);
   assert.match(prompt, /rationale（依据/);
   assert.match(prompt, /relates_to/);
   assert.match(prompt, /不得编造/);
@@ -208,11 +237,11 @@ test('prompt requires independent, multi-source evidence before drafting a lesso
 test('prompt spells out the lesson draft frontmatter: type, evidence_refs (real uids only), source_types, scope', () => {
   const prompt = buildResearchChatPrompt({ message: '有没有什么规律', capabilities: '' });
   assert.match(prompt, /type: lesson/);
-  assert.match(prompt, /LES-NNN/);
-  assert.match(prompt, /evidence_refs（真实 uid 数组/);
-  assert.match(prompt, /source_types（数组，只能是 execution_backfill \/ drift_audit \/ decision/);
-  assert.match(prompt, /scope（适用范围/);
-  assert.match(prompt, /不确定边界多宽时宁可写窄一点，不要默认普适/);
+  assert.match(prompt, /身份、编号与审计字段交给 Bridge/);
+  assert.match(prompt, /evidence_refs（真实对象 uid 数组/);
+  assert.match(prompt, /source_types（只能取 execution_backfill \/ drift_audit \/ decision/);
+  assert.match(prompt, /scope（适用边界/);
+  assert.match(prompt, /不确定时宁可写窄/);
 });
 
 test('prompt forbids treating a just-confirmed lesson as an unquestioned premise in later turns', () => {

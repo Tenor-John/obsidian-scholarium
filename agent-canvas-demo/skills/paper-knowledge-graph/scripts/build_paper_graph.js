@@ -1,9 +1,11 @@
 "use strict";
 
-// A deterministic, sidecar-first implementation of PaperGraph. It produces a
+// A deterministic, provenance-first implementation of PaperGraph. It produces a
 // rebuildable navigation view, not a second research database. LLMs may later
 // propose labels, but this runner deliberately makes only source-located
 // MENTIONS edges so no unreviewed assertion becomes a scientific conclusion.
+// It accepts either PDF anchor sidecars or the RAG chunk index; both preserve a
+// source hash and stable text locator.
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -23,6 +25,25 @@ function listSidecars(vault) {
   const dir = path.join(vault, ".scholarium", "pdf-sidecars");
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir).filter((name) => name.endsWith(".json")).sort().map((name) => ({ file: path.join(dir, name), relative: posix(path.relative(vault, path.join(dir, name))) }));
+}
+function listRagSources(vault) {
+  const file = path.join(vault, "Scholarium", "runtime", "rag-index", "chunks.jsonl");
+  if (!fs.existsSync(file)) return [];
+  const groups = new Map();
+  const rejected = [];
+  fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean).forEach((line, index) => {
+    let chunk;
+    try { chunk = JSON.parse(line); } catch { rejected.push({ path: `${posix(path.relative(vault, file))}#L${index + 1}`, reason: "invalid_json" }); return; }
+    const sourceHash = String(chunk.source_hash || "");
+    const sourcePath = String(chunk.source_path || "");
+    if (!/^[a-f0-9]{64}$/i.test(sourceHash) || !sourcePath || !String(chunk.id || "") || !String(chunk.text || "").trim()) {
+      rejected.push({ path: `${posix(path.relative(vault, file))}#L${index + 1}`, reason: "invalid_rag_chunk" }); return;
+    }
+    const key = `${sourceHash}|${sourcePath}`;
+    if (!groups.has(key)) groups.set(key, { source_sha256: sourceHash, source_path: sourcePath, title: String(chunk.title || path.basename(sourcePath)), chunks: [] });
+    groups.get(key).chunks.push(chunk);
+  });
+  return { file: posix(path.relative(vault, file)), sources: [...groups.values()], rejected };
 }
 function validSidecar(sidecar) {
   if (!sidecar || sidecar.kind !== "scholarium-pdf-anchor-sidecar") return "wrong_kind";
@@ -57,11 +78,15 @@ function isLikelyReferenceBlock(text) {
   return doiCount >= 2 || (doiCount >= 1 && yearCount >= 3 && /\b(?:references|bibliography)\b/i.test(value));
 }
 function parseInput(input) {
-  if (!input) return { limit: 10, keywords: [] };
+  if (!input) return { limit: 10, keywords: [], source: "sidecars", source_paths: [] };
   const value = typeof input === "string" ? JSON.parse(input) : input;
   const limit = Math.max(1, Math.min(50, Number(value.limit || 10) || 10));
   const keywords = Array.isArray(value.keywords) ? value.keywords.map((x) => compact(x, 80)).filter(Boolean).slice(0, 30) : [];
-  return { limit, keywords };
+  const source_paths = Array.isArray(value.source_paths)
+    ? [...new Set(value.source_paths.map((x) => String(x || "").replace(/\\/g, "/").replace(/^\.\//, "")).filter(Boolean))].slice(0, 50)
+    : [];
+  const source = new Set(["sidecars", "rag", "both"]).has(String(value.source || "sidecars")) ? String(value.source || "sidecars") : "sidecars";
+  return { limit, keywords, source, source_paths };
 }
 function buildPlan(vault, input = {}) {
   const options = parseInput(input);
@@ -69,34 +94,73 @@ function buildPlan(vault, input = {}) {
   const papers = [];
   const entities = new Map();
   const edges = [];
+  const paperHashes = new Set();
   let skippedReferenceAnchors = 0;
-  for (const entry of listSidecars(vault)) {
+  const addPaper = ({ paper, anchors, terminalPath, sourceKind }) => {
+    if (paperHashes.has(paper.source_sha256)) { terminal.push({ path: terminalPath, source: sourceKind, status: "deferred", reason: "duplicate_source_hash" }); return; }
+    if (papers.length >= options.limit) { terminal.push({ path: terminalPath, source: sourceKind, status: "deferred", reason: "limit" }); return; }
+    papers.push(paper); paperHashes.add(paper.source_sha256);
+    let edgeCount = 0;
+    for (const anchor of anchors) {
+      if (!anchor || !String(anchor.id || "").trim() || !String(anchor.quote_hash || anchor.text_hash || "").trim()) continue;
+      if (isLikelyReferenceBlock(anchor.text)) { skippedReferenceAnchors++; continue; }
+      const locator = {
+        source_sha256: paper.source_sha256,
+        anchor: String(anchor.id),
+        quote_hash: String(anchor.quote_hash || anchor.text_hash),
+        original_url: String(paper.original_url || paper.source_path),
+        source_type: sourceKind,
+      };
+      if (anchor.heading) locator.heading = String(anchor.heading);
+      if (Number.isInteger(anchor.start_index)) locator.start_index = anchor.start_index;
+      if (Number.isInteger(anchor.end_index)) locator.end_index = anchor.end_index;
+      for (const entity of extractEntities(anchor.text, options.keywords)) {
+        const entityId = `${entity.kind.toLowerCase()}:${safe(entity.label)}`;
+        if (!entities.has(entityId)) entities.set(entityId, { id: entityId, type: entity.kind, label: entity.label });
+        edges.push({ from: paper.id, to: entityId, relation: "MENTIONS", locator, evidence_text: compact(anchor.text, 260) });
+        edgeCount++;
+      }
+    }
+    terminal.push({ path: terminalPath, source: sourceKind, status: "accepted", papers: 1, edges: edgeCount });
+  };
+
+  const sidecarEntries = options.source === "rag" ? [] : listSidecars(vault);
+  for (const entry of sidecarEntries) {
     let sidecar;
     try { sidecar = readJson(entry.file); } catch (error) { terminal.push({ path: entry.relative, status: "rejected", reason: "invalid_json" }); continue; }
     const reason = validSidecar(sidecar);
     if (reason) { terminal.push({ path: entry.relative, status: "rejected", reason }); continue; }
-    if (papers.length >= options.limit) { terminal.push({ path: entry.relative, status: "deferred", reason: "limit" }); continue; }
     const paperId = `pdf:${sidecar.source_sha256.slice(0, 16)}`;
     const paper = { id: paperId, type: "Paper", label: compact(sidecar.doi || path.basename(sidecar.source_path || entry.file), 120), doi: String(sidecar.doi || ""), source_path: sidecar.source_path, source_sha256: sidecar.source_sha256, original_url: sidecar.original_url };
-    papers.push(paper);
-    let edgeCount = 0;
-    for (const anchor of sidecar.anchors) {
-      if (!anchor || !String(anchor.id || "").trim() || !String(anchor.text_hash || anchor.quote_hash || "").trim()) continue;
-      if (isLikelyReferenceBlock(anchor.text)) { skippedReferenceAnchors++; continue; }
-      const locator = { source_sha256: sidecar.source_sha256, anchor: String(anchor.id), quote_hash: String(anchor.quote_hash || anchor.text_hash), original_url: sidecar.original_url };
-      for (const entity of extractEntities(anchor.text, options.keywords)) {
-        const entityId = `${entity.kind.toLowerCase()}:${safe(entity.label)}`;
-        if (!entities.has(entityId)) entities.set(entityId, { id: entityId, type: entity.kind, label: entity.label });
-        edges.push({ from: paperId, to: entityId, relation: "MENTIONS", locator, evidence_text: compact(anchor.text, 260) });
-        edgeCount++;
-      }
-    }
-    terminal.push({ path: entry.relative, status: "accepted", papers: 1, edges: edgeCount });
+    addPaper({ paper, anchors: sidecar.anchors, terminalPath: entry.relative, sourceKind: "pdf_sidecar" });
+  }
+
+  const rag = options.source === "sidecars" ? { file: "Scholarium/runtime/rag-index/chunks.jsonl", sources: [], rejected: [] } : listRagSources(vault);
+  for (const item of rag.rejected || []) terminal.push({ ...item, source: "rag_index", status: "rejected" });
+  for (const source of (rag.sources || []).filter((entry) => !options.source_paths.length || options.source_paths.includes(String(entry.source_path).replace(/\\/g, "/")))) {
+    const paper = {
+      id: `rag:${source.source_sha256.slice(0, 16)}`,
+      type: "Paper",
+      label: compact(source.title || path.basename(source.source_path), 120),
+      doi: "",
+      source_path: source.source_path,
+      source_sha256: source.source_sha256,
+      original_url: source.source_path,
+    };
+    const anchors = source.chunks.map((chunk) => ({
+      id: chunk.id,
+      text: chunk.text,
+      quote_hash: chunk.content_hash || sha(`${chunk.heading || ""}\n${chunk.text}`),
+      heading: chunk.heading,
+      start_index: Number.isInteger(chunk.start_index) ? chunk.start_index : undefined,
+      end_index: Number.isInteger(chunk.end_index) ? chunk.end_index : undefined,
+    }));
+    addPaper({ paper, anchors, terminalPath: `${rag.file}#${source.source_path}`, sourceKind: "rag_chunk" });
   }
   const accepted = terminal.filter((x) => x.status === "accepted").length;
   const rejected = terminal.filter((x) => x.status === "rejected").length;
   const deferred = terminal.filter((x) => x.status === "deferred").length;
-  const plan = { artifact: "paper_knowledge_graph_plan", version: 1, generated_at: new Date().toISOString(), vault, write_mode: "dry_run", input: options, source: { sidecar_directory: ".scholarium/pdf-sidecars", scanned: terminal.length, accepted, rejected, deferred, skipped_reference_anchors: skippedReferenceAnchors, terminal }, graph: { papers, entities: [...entities.values()], edges }, invariants: { every_input_has_terminal_state: accepted + rejected + deferred === terminal.length, edges_are_mentions_only: edges.every((edge) => edge.relation === "MENTIONS"), every_edge_has_locator: edges.every((edge) => Object.values(edge.locator).every(Boolean)), creates_no_schema_objects: true, overwrites_no_existing_files: true } };
+  const plan = { artifact: "paper_knowledge_graph_plan", version: 2, generated_at: new Date().toISOString(), vault, write_mode: "dry_run", input: options, source: { mode: options.source, sidecar_directory: ".scholarium/pdf-sidecars", rag_index: "Scholarium/runtime/rag-index/chunks.jsonl", scanned: terminal.length, accepted, rejected, deferred, skipped_reference_anchors: skippedReferenceAnchors, terminal }, graph: { papers, entities: [...entities.values()], edges }, invariants: { every_input_has_terminal_state: accepted + rejected + deferred === terminal.length, edges_are_mentions_only: edges.every((edge) => edge.relation === "MENTIONS"), every_edge_has_locator: edges.every((edge) => edge.locator.source_sha256 && edge.locator.anchor && edge.locator.quote_hash && edge.locator.original_url && edge.locator.source_type), creates_no_schema_objects: true, overwrites_no_existing_files: true } };
   plan.plan_sha256 = sha(JSON.stringify(plan));
   plan.valid = Object.values(plan.invariants).every(Boolean);
   return plan;
@@ -203,7 +267,7 @@ function htmlVisualizationStatic(plan) {
     ':root{--bg:#090b10;--ink:#f3f0ea;--muted:#8e95a3;--hair:rgba(255,255,255,.08)}*{box-sizing:border-box}html,body{margin:0;min-width:1500px;min-height:960px;background:radial-gradient(1100px 700px at 56% 45%,rgba(89,105,182,.11),transparent 62%),linear-gradient(180deg,#0a0c12,#080a0f);color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.15;background-image:radial-gradient(rgba(255,255,255,.12) .55px,transparent .65px);background-size:5px 5px}.topbar{height:82px;position:fixed;inset:0 0 auto;z-index:3;display:flex;align-items:center;justify-content:space-between;padding:0 34px;border-bottom:1px solid var(--hair);background:linear-gradient(180deg,rgba(9,11,16,.94),rgba(9,11,16,.72));backdrop-filter:blur(22px)}.brand{display:flex;gap:15px;align-items:center}.mark{width:32px;height:32px;border:1px solid rgba(152,166,255,.6);border-radius:50%;box-shadow:0 0 22px rgba(152,166,255,.16) inset;position:relative}.mark:after{content:"";position:absolute;width:6px;height:6px;border-radius:50%;background:#98a6ff;left:12px;top:12px;box-shadow:-10px -8px 0 -1px #72d7b2,11px 8px 0 -1px #dc7a9a}.kicker{font-size:10px;letter-spacing:.19em;color:#697182;text-transform:uppercase}.title{font:600 18px ui-serif,Georgia,"Songti SC",serif;margin-top:4px}.subtitle{font-size:11px;color:var(--muted);margin-top:3px}.metrics{display:flex;gap:20px}.metric{text-align:right}.metric b{display:block;font:600 14px ui-monospace,monospace}.metric span{font-size:9px;letter-spacing:.15em;color:#697182}.rail{position:fixed;left:28px;top:108px;z-index:2;width:176px}.rail-cap{font-size:9px;letter-spacing:.18em;color:#59606e;margin:4px 0 14px}.legend{display:flex;flex-direction:column;gap:9px}.legend span{font-size:12px;color:#a7afbd}.legend i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:9px;box-shadow:0 0 13px currentColor}.graph{position:absolute;top:82px;left:210px;width:1280px;height:835px}.graph svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}.graph line{stroke:rgba(173,184,218,.20);stroke-width:1.1}.node{position:absolute;z-index:1;width:136px;min-height:52px;padding:8px 9px;border:1px solid color-mix(in srgb,var(--color),transparent 42%);border-radius:12px;background:linear-gradient(145deg,color-mix(in srgb,var(--color),transparent 89%),rgba(12,15,22,.83));box-shadow:0 10px 25px rgba(0,0,0,.2),0 0 22px color-mix(in srgb,var(--color),transparent 88%)}.node b{display:block;font-size:11px;line-height:1.35;word-break:break-word}.node small{display:block;margin-top:4px;font:9px ui-monospace,monospace;color:#8f98a8;text-transform:uppercase}.node.paper{width:150px;min-height:60px;background:linear-gradient(145deg,rgba(152,166,255,.17),rgba(12,15,22,.84))}.zone{position:absolute;z-index:0;font:600 10px ui-sans-serif,sans-serif;letter-spacing:.18em;color:#4d5563}.zone.material{left:40px;top:35px}.zone.method{right:5px;top:35px}.zone.reaction{left:40px;bottom:105px}.zone.keyword{right:5px;bottom:105px}.footer{position:fixed;z-index:2;left:28px;right:28px;bottom:18px;display:flex;justify-content:space-between;font-size:10px;color:#697182}.footer i{display:inline-block;width:6px;height:6px;border-radius:50%;background:#98a6ff;margin-right:6px}.note{position:fixed;right:28px;bottom:48px;width:310px;border-left:2px solid #98a6ff;padding:10px 13px;background:rgba(18,22,31,.67);color:#aab1bd;font-size:11px;line-height:1.55}</style></head><body><header class="topbar"><div class="brand"><div class="mark"></div><div><div class="kicker">Evidence-located navigation view</div><div class="title">织研者 · Paper Knowledge Graph</div><div class="subtitle">' + view.papers.length + ' 篇 PDF · ' + view.entities.length + ' 个实体 · ' + view.edges.length + ' 条压缩 MENTIONS 关系</div></div></div><div class="metrics"><div class="metric"><b>' + nodes.length + '</b><span>NODES</span></div><div class="metric"><b>' + view.edges.length + '</b><span>RELATIONS</span></div></div></header><aside class="rail"><div class="rail-cap">SEMANTIC LAYERS</div><div class="legend">' + legend + '</div></aside><main class="graph"><span class="zone material">MATERIALS</span><span class="zone method">METHODS</span><span class="zone reaction">REACTIONS</span><span class="zone keyword">KEYWORDS</span><svg viewBox="0 0 1280 835">' + edgeMarkup + '</svg>' + nodeMarkup + '</main><aside class="note">每一条边只表示：某篇 PDF 的某个已定位段落提及该实体。它不是支持、反驳或科研结论；正式 Evidence 仍须走 Scholarium 审核流程。</aside><footer class="footer"><span><i></i>视图可由同一组 sidecar 重建</span><span>生成时间：' + escapeHtml(plan.generated_at) + '</span></footer></body></html>';
 }
 function report(plan) {
-  const lines = ["---", "generated_by: paper-knowledge-graph", `plan_sha256: ${plan.plan_sha256}`, "rebuildable_view: true", "---", "", "# Paper knowledge graph", "", `- Papers: ${plan.graph.papers.length}`, `- Entities: ${plan.graph.entities.length}`, `- Located MENTIONS edges: ${plan.graph.edges.length}`, "", "## Boundary", "", "All edges mean only that a passage mentions an entity. This report establishes no scientific conclusion and creates no formal Evidence.", "", "## Papers", ""];
+  const lines = ["---", "generated_by: paper-knowledge-graph", `plan_sha256: ${plan.plan_sha256}`, `source_mode: ${plan.source.mode || "sidecars"}`, "rebuildable_view: true", "---", "", "# Paper knowledge graph", "", `- Papers: ${plan.graph.papers.length}`, `- Entities: ${plan.graph.entities.length}`, `- Located MENTIONS edges: ${plan.graph.edges.length}`, "", "## Boundary", "", "All edges mean only that a located PDF-sidecar or RAG passage mentions an entity. This report establishes no scientific conclusion and creates no formal Evidence.", "", "## Papers", ""];
   for (const paper of plan.graph.papers) lines.push(`- ${paper.label} — ${paper.original_url}`);
   lines.push("", "## Located edges", "");
   for (const edge of plan.graph.edges) lines.push(`- ${edge.from} → ${edge.to} (${edge.locator.anchor}): ${edge.evidence_text}`);
@@ -230,4 +294,4 @@ if (require.main === module) {
   let input = {}; if (raw) input = fs.existsSync(raw) ? readJson(raw) : JSON.parse(raw);
   const plan = buildPlan(vault, input); if (apply) plan.applied = applyPlan(plan); console.log(JSON.stringify(plan, null, 2));
 }
-module.exports = { buildPlan, applyPlan, extractEntities, isLikelyReferenceBlock, visualGraph, canvas, htmlVisualization };
+module.exports = { buildPlan, applyPlan, extractEntities, isLikelyReferenceBlock, listRagSources, visualGraph, canvas, htmlVisualization };

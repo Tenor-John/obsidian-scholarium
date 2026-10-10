@@ -7,69 +7,24 @@
 // keyword-Jaccard ≥ 0.6 against existing entries in the same file.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const http = require('node:http');
-const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { startBridge } = require('./helpers/bridge-harness.js');
 
-const root = path.resolve(__dirname, '..');
-const bridgePort = 46400 + (process.pid % 300);
-const TOKEN = 'test-token-' + process.pid;
-
-let bridge;
-let vault;
-let configPath;
-
-function request(pathname, options = {}) {
-  return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port: bridgePort, path: pathname, method: options.method || 'GET', headers: options.headers || {} }, (res) => {
-      let raw = '';
-      res.on('data', (chunk) => { raw += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: raw }));
-    });
-    req.on('error', reject);
-    if (options.body) req.write(options.body);
-    req.end();
-  });
-}
-const post = (pathname, payload) => request(pathname, {
-  method: 'POST',
-  headers: { 'x-agent-bridge-token': TOKEN, 'content-type': 'application/json' },
-  body: JSON.stringify(payload),
-});
-
-async function waitForBridge() {
-  let lastError;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try { const res = await request('/health'); if (res.status === 200) return; }
-    catch (error) { lastError = error; }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw lastError || new Error('bridge did not start');
-}
+let harness, vault;
+const post = (pathname, payload) => harness.request(pathname, { method: 'POST', body: payload })
+  .then((res) => ({ ...res, body: res.text }));
 
 test.before(async () => {
   vault = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-memory-endpoint-vault-'));
-  configPath = path.join(os.tmpdir(), `agent-memory-endpoint-${process.pid}.config.json`);
-  fs.writeFileSync(configPath, JSON.stringify({
-    token: TOKEN,
-    allowExecution: false,
-    workspaceRoot: vault,
-    allowedRoots: [vault],
-    adapters: {},
-  }, null, 2), 'utf8');
-  bridge = spawn(process.execPath, [path.join(root, 'bridge', 'server.js')], {
-    cwd: root,
-    env: { ...process.env, AGENT_BRIDGE_PORT: String(bridgePort), AGENT_BRIDGE_CONFIG_PATH: configPath },
-    stdio: 'ignore', windowsHide: true,
+  harness = await startBridge({
+    config: { workspaceRoot: vault, allowedRoots: [vault], adapters: {} },
   });
-  await waitForBridge();
 });
 
 test.after(() => {
-  if (bridge && !bridge.killed) bridge.kill();
-  if (configPath && fs.existsSync(configPath)) fs.rmSync(configPath);
+  if (harness) harness.stop();
   if (vault && fs.existsSync(vault)) fs.rmSync(vault, { recursive: true, force: true });
 });
 
@@ -114,6 +69,17 @@ test('a genuinely different conclusion on the same topic is still written', asyn
   assert.equal(payload.deduped, undefined, 'different conclusion must not be swallowed by dedup');
   const content = fs.readFileSync(path.join(vault, '.scholarium', 'agent', 'evidence-ledger.md'), 'utf8');
   assert.match(content, /Kuo 2026/);
+});
+
+test('placeholder or title-equals-body memory entries are rejected', async () => {
+  for (const payload of [
+    { file: 'decisions.md', title: '上述定稿。', body: '上述定稿。' },
+    { file: 'lessons.md', title: '一个简短结论', body: '一个简短结论' },
+  ]) {
+    const res = await post('/v1/agent-memory/entry', payload);
+    assert.equal(res.status, 400);
+    assert.match(JSON.parse(res.body).error, /substantive/);
+  }
 });
 
 test('checkpoint accepts structured fields and stamps the file', async () => {

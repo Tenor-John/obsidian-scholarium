@@ -75,7 +75,7 @@
       body: JSON.stringify({ agentId, cwd: workspaceRoot, prompt, permission: 'read', execute: true }),
     });
     if (!created?.id) throw new Error('Bridge 未返回任务 ID。');
-    return waitTask(created.id);
+    return { text: await waitTask(created.id), taskId: created.id };
   }
 
   async function realSearch(query) {
@@ -89,7 +89,8 @@
   /* --------------------------------------------------------- cycle log -- */
 
   function cycleCard(entry) {
-    const badge = entry.score == null ? '' :
+    const badge = entry.score == null
+      ? '<span class="ql-score revise">未评分</span>' :
       `<span class="ql-score ${entry.score >= Core().SCORE_THRESHOLD ? 'pass' : 'revise'}">${entry.score} 分</span>`;
     const problems = (entry.problems || []).length
       ? `<ul class="ql-problems">${entry.problems.map((p) => `<li>${safeHtml(p)}</li>`).join('')}</ul>` : '';
@@ -106,14 +107,16 @@
       ${entry.rationale ? `<small>${safeHtml(entry.rationale)}</small>` : ''}
       ${breakdown}${penalties}
       <small class="wv-faint">${safeHtml(entry.searchNote || '')}</small>
+      ${entry.protocol?.repair_attempted ? `<small class="wv-faint">协议恢复：${entry.protocol.status === 'repaired' ? '已通过一次纯格式修复恢复评分' : '格式修复仍失败，本轮不得视为已评分'}</small>` : ''}
       ${problems}
     </section>`;
   }
 
   function renderLog(history) {
     const box = $('#queryLoopResults');
+    const bestLabel = best?.score == null ? '未评分 · 降级候选' : `${best.score} 分`;
     box.innerHTML = history.map(cycleCard).join('') + (best && history.at(-1)?.final ? `
-      <div class="idea-summary"><b>最终检索式（第 ${best.cycle} 轮，${best.score} 分）</b>
+      <div class="idea-summary"><b>最终检索式（第 ${best.cycle} 轮，${bestLabel}）</b>
       <p class="wv-mono">${safeHtml(best.query)}</p></div>` : '');
     box.hidden = false;
     box.scrollTop = box.scrollHeight;
@@ -140,8 +143,17 @@
       for (let cycle = 1; cycle <= core.MAX_CYCLES; cycle++) {
         if (aborted) throw new Error('已手动中止。');
         status(`第 ${cycle}/${core.MAX_CYCLES} 轮：构建者（${builder.id}）正在写检索式…`);
-        const built = core.parseBuilderReply(await runAgentFn(builder.id, core.buildBuilderPrompt({ topic, feedback, cycle })));
-        if (!built.ok) throw new Error(`构建者输出不合格：${built.error}`);
+        const built = await core.reviewBuilderWithRepair({
+          invoke: runAgentFn,
+          agentId: builder.id,
+          prompt: core.buildBuilderPrompt({ topic, feedback, cycle }),
+          onRepair: ({ error }) => status(`第 ${cycle}/${core.MAX_CYCLES} 轮：构建者格式不合格（${safeHtml(error)}），正在做一次纯格式修复…`),
+        });
+        if (!built.ok) {
+          const failure = new Error(`构建者输出不合格：${built.error}`);
+          failure.queryLoopProtocol = built.protocol;
+          throw failure;
+        }
 
         status(`第 ${cycle}/${core.MAX_CYCLES} 轮：多源并行检索中…`);
         const search = await searchFn(built.query);
@@ -151,13 +163,31 @@
 
         if (aborted) throw new Error('已手动中止。');
         status(`第 ${cycle}/${core.MAX_CYCLES} 轮：质疑者（${critic.id}${shared ? ' · 同 CLI 双角色' : ''}）正在评分…`);
-        const judged = core.parseCriticReply(
-          await runAgentFn(critic.id, core.buildCriticPrompt({ topic, query: built.query, records: search.records, cycle })),
-          { query: built.query, cycle },
-        );
-        if (!judged.ok) throw new Error(`质疑者输出不合格：${judged.error}`);
+        const judged = await core.reviewCriticWithRepair({
+          invoke: runAgentFn,
+          agentId: critic.id,
+          prompt: core.buildCriticPrompt({ topic, query: built.query, records: search.records, cycle }),
+          query: built.query,
+          cycle,
+          onRepair: ({ error }) => status(`第 ${cycle}/${core.MAX_CYCLES} 轮：质疑者格式不合格（${safeHtml(error)}），正在做一次纯格式修复…`),
+        });
+        if (!judged.ok) {
+          const failedEntry = {
+            cycle, query: built.query, rationale: built.rationale, score: null,
+            complexity: core.scoreQuerySimplicity(built.query, cycle), problems: [judged.error],
+            searchNote: sourceNote, protocol: judged.protocol, final: true,
+          };
+          history.push(failedEntry);
+          if (!best) best = { ...failedEntry, degraded: true };
+          else best = { ...best, degraded: true };
+          renderLog(history);
+          status(`<b>已降级为待确认候选。</b>质疑者两次未满足 JSON 契约；保留${best.score == null ? '本轮未评分' : '此前评分最高'}检索式用于人工审查，不把它标成已通过。`);
+          busy = false;
+          setButtons('done');
+          return;
+        }
 
-        const entry = { cycle, query: built.query, rationale: built.rationale, score: judged.score, breakdown: judged.breakdown, complexity: judged.complexity, problems: judged.problems, searchNote: sourceNote };
+        const entry = { cycle, query: built.query, rationale: built.rationale, score: judged.score, breakdown: judged.breakdown, complexity: judged.complexity, problems: judged.problems, searchNote: sourceNote, protocol: judged.protocol };
         history.push(entry);
         if (!best || judged.score > best.score) best = { ...entry };
         renderLog(history);
@@ -208,24 +238,66 @@
     let feedback = null;
     for (let cycle = 1; cycle <= core.MAX_CYCLES; cycle++) {
       onProgress({ phase: 'build', cycle, maxCycles: core.MAX_CYCLES, agent: builder.id });
-      const built = core.parseBuilderReply(await runAgentFn(builder.id, core.buildBuilderPrompt({ topic, feedback, cycle })));
-      if (!built.ok) throw new Error(`构建者输出不合格：${built.error}`);
+      const built = await core.reviewBuilderWithRepair({
+        invoke: runAgentFn,
+        agentId: builder.id,
+        prompt: core.buildBuilderPrompt({ topic, feedback, cycle }),
+        onRepair: ({ error, taskId }) => onProgress({
+          phase: 'builder-repair', cycle, maxCycles: core.MAX_CYCLES,
+          agent: builder.id, error, taskId,
+        }),
+      });
+      if (!built.ok) {
+        const failure = new Error(`构建者输出不合格：${built.error}`);
+        failure.queryLoopProtocol = built.protocol;
+        throw failure;
+      }
       onProgress({ phase: 'search', cycle, maxCycles: core.MAX_CYCLES, query: built.query });
       const search = await searchFn(built.query);
       onProgress({ phase: 'critic', cycle, maxCycles: core.MAX_CYCLES, agent: critic.id, shared, hits: search.records.length });
-      const judged = core.parseCriticReply(
-        await runAgentFn(critic.id, core.buildCriticPrompt({ topic, query: built.query, records: search.records, cycle })),
-        { query: built.query, cycle },
-      );
-      if (!judged.ok) throw new Error(`质疑者输出不合格：${judged.error}`);
-      const entry = { cycle, query: built.query, rationale: built.rationale, score: judged.score, breakdown: judged.breakdown, complexity: judged.complexity, problems: judged.problems, hits: search.records.length };
+      const judged = await core.reviewCriticWithRepair({
+        invoke: runAgentFn,
+        agentId: critic.id,
+        prompt: core.buildCriticPrompt({ topic, query: built.query, records: search.records, cycle }),
+        query: built.query,
+        cycle,
+        onRepair: ({ error, taskId }) => onProgress({
+          phase: 'critic-repair', cycle, maxCycles: core.MAX_CYCLES,
+          agent: critic.id, shared, error, taskId,
+        }),
+      });
+      if (!judged.ok) {
+        const failedEntry = {
+          cycle, query: built.query, rationale: built.rationale, score: null,
+          complexity: core.scoreQuerySimplicity(built.query, cycle), problems: [judged.error],
+          hits: search.records.length, protocol: judged.protocol,
+        };
+        history.push(failedEntry);
+        const fallback = best ? { ...best } : { ...failedEntry };
+        const degradation = {
+          phase: 'critic-parse', agent: critic.id, cycle,
+          candidate_query: built.query,
+          used_query_source: best ? `best-scored-cycle-${best.cycle}` : `last-valid-builder-cycle-${cycle}`,
+          protocol: judged.protocol,
+        };
+        onProgress({
+          phase: 'degraded', cycle, maxCycles: core.MAX_CYCLES,
+          query: fallback.query, score: fallback.score, degradation,
+        });
+        return {
+          ...fallback, history, degraded: true, requiresConfirmation: true,
+          quality_status: fallback.score == null ? 'degraded-unscored' : 'degraded-last-scored',
+          degradation,
+        };
+      }
+      const entry = { cycle, query: built.query, rationale: built.rationale, score: judged.score, breakdown: judged.breakdown, complexity: judged.complexity, problems: judged.problems, hits: search.records.length, protocol: judged.protocol };
       history.push(entry);
       if (!best || judged.score > best.score) best = { ...entry };
       onProgress({ phase: 'scored', cycle, maxCycles: core.MAX_CYCLES, score: judged.score, threshold: core.SCORE_THRESHOLD, breakdown: judged.breakdown, complexity: judged.complexity });
       const next = core.decideNext({ cycle, score: judged.score });
       if (next === 'accept' || next === 'exhausted') {
         onProgress({ phase: next, cycle, maxCycles: core.MAX_CYCLES, best });
-        return { ...best, history };
+        return { ...best, history, degraded: false, requiresConfirmation: false, quality_status: judged.protocol.status };
       }
       feedback = { problems: judged.problems, suggestion: judged.suggestion, query: built.query, breakdown: judged.breakdown };
     }
@@ -242,14 +314,14 @@
       // that's what made the loop feel like "a separate window" instead of part
       // of those two entry points.
       applyCallback({ query: best.query, score: best.score, cycle: best.cycle });
-      toast(`已应用打磨后的检索式（${best.score} 分）。`);
+      toast(best.score == null ? '已应用未评分的降级检索式；请先人工审查。' : `已应用打磨后的检索式（${best.score} 分）。`);
     } else {
       const goal = $('#taskGoal');
       if (goal) {
         goal.value = best.query;
         goal.dispatchEvent(new Event('input', { bubbles: true }));
       }
-      toast(`已将最终检索式（${best.score} 分）写入 Pipeline 检索主题。`);
+      toast(best.score == null ? '已将未评分的降级检索式写入 Pipeline 检索主题；请先人工审查。' : `已将最终检索式（${best.score} 分）写入 Pipeline 检索主题。`);
     }
     $('#queryLoopDialog')?.close();
   }

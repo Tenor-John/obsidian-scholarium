@@ -9,40 +9,23 @@
 // on PATH (same convention as tests/knowledge-graph-core.test.js).
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const http = require("node:http");
-const { spawn, spawnSync } = require("node:child_process");
+const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { startBridge } = require("./helpers/bridge-harness.js");
 
 const root = path.resolve(__dirname, "..");
-const bridgePort = 47600 + (process.pid % 300);
 const TOKEN = "test-token-" + process.pid;
 
-let bridge, workspace, vault, configPath, auditDir, runtimeDir;
+// This file used to derive 47600 + (process.pid % 300). The port is now
+// assigned by the OS and reported back by the Bridge, so nothing has to be
+// probed and no two test files can land on the same number.
+let harness, workspace, vault, runtimeDir;
 
-function request(pathname, options = {}) {
-  return new Promise((resolve, reject) => {
-    const headers = options.body ? { "content-type": "application/json" } : {};
-    if (!options.noAuth) headers["x-agent-bridge-token"] = TOKEN;
-    const req = http.request({ host: "127.0.0.1", port: bridgePort, path: pathname, method: options.method || "GET", headers }, (res) => {
-      let raw = ""; res.on("data", (chunk) => { raw += chunk; }); res.on("end", () => resolve({ status: res.statusCode, body: raw }));
-    });
-    req.on("error", reject);
-    if (options.body) req.write(options.body);
-    req.end();
-  });
-}
-
-async function waitForBridge() {
-  let lastError;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try { const res = await request("/health", { noAuth: true }); if (res.status === 200) return; }
-    catch (error) { lastError = error; }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw lastError || new Error("bridge did not start");
-}
+const request = (pathname, options = {}) => harness
+  .request(pathname, { ...options, ...(options.noAuth ? { auth: false } : {}) })
+  .then((res) => ({ status: res.status, body: res.text }));
 
 const PROJECT_UID = "01927d3f-8a41-7c62-b5e0-9f3a2c1d4e5b";
 const EXP_UID = "01927d3f-8a41-7c62-b5e0-9f3a2c1d4e5c";
@@ -71,30 +54,30 @@ test.before(async () => {
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), "graph-review-workspace-"));
   vault = fs.mkdtempSync(path.join(os.tmpdir(), "graph-review-vault-"));
   writeFixtureVault(vault);
-  auditDir = fs.mkdtempSync(path.join(os.tmpdir(), "graph-review-audit-"));
-  configPath = path.join(os.tmpdir(), `graph-review-${process.pid}.config.json`);
-  fs.writeFileSync(configPath, JSON.stringify({
-    token: TOKEN, allowExecution: false, workspaceRoot: workspace, allowedRoots: [workspace], adapters: {},
-    scholarium: { enabled: true, vaultRoot: vault },
-  }, null, 2), "utf8");
 
-  // Isolated from bridge/runtime/ (the un-set default): without this, the
-  // publish/list tests below would see every real knowledge-graph-runs
-  // record this repo has ever committed, not just this test's fixtures.
-  runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), "graph-review-runtime-"));
-
-  bridge = spawn(process.execPath, [path.join(root, "bridge", "server.js")], {
-    cwd: root,
-    env: { ...process.env, AGENT_BRIDGE_PORT: String(bridgePort), AGENT_BRIDGE_CONFIG_PATH: configPath, AGENT_BRIDGE_AUDIT_DIR: auditDir, AGENT_BRIDGE_RUNTIME_DIR: runtimeDir },
-    stdio: "ignore", windowsHide: true,
+  harness = await startBridge({
+    token: TOKEN,
+    config: { workspaceRoot: workspace, allowedRoots: [workspace], adapters: {}, scholarium: { enabled: true, vaultRoot: vault } },
+    // Audit and runtime live inside the harness scratch, so stop() clears them.
+    // The runtime directory must be isolated from bridge/runtime/ (the un-set
+    // default): without it the publish/list tests below would see every real
+    // knowledge-graph-runs record this repo has ever committed, not just this
+    // test's fixtures.
+    env: (scratch) => {
+      // Two tests below build run-history fixtures directly on disk, so the
+      // runtime directory has to be reachable from the test body as well.
+      runtimeDir = path.join(scratch, "runtime");
+      return {
+        AGENT_BRIDGE_AUDIT_DIR: path.join(scratch, "audit"),
+        AGENT_BRIDGE_RUNTIME_DIR: runtimeDir,
+      };
+    },
   });
-  await waitForBridge();
 });
 
 test.after(() => {
-  if (bridge && !bridge.killed) bridge.kill();
-  if (configPath && fs.existsSync(configPath)) fs.rmSync(configPath);
-  for (const dir of [workspace, vault, auditDir, runtimeDir]) if (dir && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  if (harness) harness.stop();
+  for (const dir of [workspace, vault]) if (dir && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("rejects project-objects without the bridge token", async () => {

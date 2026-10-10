@@ -4,6 +4,17 @@ import hashlib, json, re, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Emit UTF-8 on stdout regardless of the console's own code page. Python on a
+# Chinese Windows install defaults stdout to GBK, so a single character outside
+# that code page anywhere in the output - a degree sign in a column name was
+# enough - raises UnicodeEncodeError after the work is already done and written
+# to disk. The run then reports failure for a result it actually produced.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
+
 SECTION_PATTERNS = [
     ("Methods", re.compile(r"^(experimental( section)?|methods?|materials?\s+and\s+methods?|synthesis( procedure)?|实验部分|实验方法|材料与方法)\b", re.I)),
     ("Results", re.compile(r"^(results?( and discussion)?|结果(与讨论)?)\b", re.I)),

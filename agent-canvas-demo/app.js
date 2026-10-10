@@ -1,3 +1,26 @@
+// This legacy canvas is served from the old Vault's dedicated port.  It only
+// accepts a one-time recovery import from its Obsidian host, and first saves
+// every differing live value under a private recovery-backup key.
+const weaverVaultScope = new URLSearchParams(window.location.search).get('vault') || '';
+window.addEventListener('message', (event) => {
+  if (event.origin !== 'app://obsidian.md' || event.source !== window.parent) return;
+  const data = event.data || {};
+  if (data.type !== 'weaver:import-vault-state' || data.scope !== weaverVaultScope || !data.requestId || !Array.isArray(data.entries)) return;
+  const backupPrefix = `weaver.recovery-backup.${Date.now()}.`;
+  let imported = 0;
+  for (const entry of data.entries.slice(0, 500)) {
+    const [key, value] = Array.isArray(entry) ? entry : [];
+    if (typeof key !== 'string' || typeof value !== 'string') continue;
+    const current = localStorage.getItem(key);
+    if (current !== null && current !== value) localStorage.setItem(backupPrefix + key, current);
+    if (current === value) continue;
+    localStorage.setItem(key, value);
+    imported += 1;
+  }
+  window.parent.postMessage({ type: 'weaver:vault-state-imported', requestId: data.requestId, scope: weaverVaultScope, imported }, event.origin);
+  if (imported) window.setTimeout(() => window.location.reload(), 0);
+});
+
 const PROFILE_STORE = 'research-weaver:profiles:v1';
 const SKILL_STORE = 'research-weaver:skills:v1';
 const FLOW_STORE = 'research-weaver:flow:v2';

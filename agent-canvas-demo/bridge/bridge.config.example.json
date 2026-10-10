@@ -12,7 +12,16 @@
   "_workspaceRoot": "Default cwd for agent tasks. Normally one of allowedRoots.",
   "workspaceRoot": "C:\\path\\to\\your\\vault\\SomeProjectFolder",
 
-  "_adapters": "CLI agents the bridge may launch. {{prompt}} is substituted with the task prompt. Keep read-only sandbox flags unless you have a specific reason to grant writes. You do not have to hand-write these: open the Settings Center in the Research Weaver app and click '\u68c0\u6d4b\u672c\u673a Agent' (detect local agents) to probe this machine's PATH for the known CLIs in tools/known-agents.js (Claude Code, Codex, OpenCode, Hermes, OpenClaw, Pi, DeepSeek Harness, Kimi Code) and add any it finds with one click -- GET /v1/agents/discover and POST /v1/agents/adapters. Hand-editing below is still supported for anything not in that registry, or to customize args/sandbox for an entry it added.",
+  "_rag": "HF_TOKEN is stored through the Settings credential UI or bridge/.env, never here. These values select the cloud embedding profile and local hybrid retrieval policy.",
+  "rag": {
+    "embeddingModel": "ibm-granite/granite-embedding-311m-multilingual-r2",
+    "embeddingProvider": "hf-inference",
+    "embeddingBatchSize": 16,
+    "defaultRetrieval": "hybrid",
+    "maxPerSource": 3
+  },
+
+  "_adapters": "CLI agents the bridge may launch. Verified adapters receive prompts through stdin so prompt text never enters the Windows command line. Keep read-only sandbox flags unless you have a specific reason to grant writes.",
   "adapters": {
     "codex": {
       "command": "C:\\path\\to\\node.exe",
@@ -23,16 +32,21 @@
         "read-only",
         "--skip-git-repo-check",
         "--json",
-        "{{prompt}}"
-      ]
+        "-"
+      ],
+      "sandboxed": true,
+      "promptTransport": "stdin"
     },
     "claude": {
       "command": "C:\\path\\to\\@anthropic-ai\\claude-code\\bin\\claude.exe",
-      "args": ["-p", "{{prompt}}"]
+      "args": ["-p", "--output-format", "json", "--tools", "Read,Grep,Glob,WebFetch,WebSearch", "--allowedTools", "Read,Grep,Glob,WebFetch,WebSearch", "--strict-mcp-config"],
+      "sandboxed": true,
+      "promptTransport": "stdin"
     },
     "opencode": {
       "command": "opencode",
-      "args": ["run", "{{prompt}}"]
+      "args": ["run"],
+      "promptTransport": "stdin"
     }
   },
 
@@ -45,6 +59,6 @@
   "scholarium": {
     "enabled": false,
     "vaultRoot": "C:\\path\\to\\your\\vault",
-    "allowedActions": ["rss.refresh_feed", "rss.score_feed", "rss.clip_high_score", "project.list", "project.get", "experiment.scan_outcomes"]
+    "allowedActions": ["rss.refresh_feed", "rss.score_feed", "rss.clip_high_score", "project.list", "project.get", "experiment.scan_outcomes", "experiment.validate_chem", "experiment.insert_chem"]
   }
 }

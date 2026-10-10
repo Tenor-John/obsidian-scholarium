@@ -7,47 +7,24 @@
 // 模拟——fixture 就是 persistRunRecord 自己会写出的 JSON 形状。
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const http = require('node:http');
-const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { startBridge } = require('./helpers/bridge-harness.js');
 
-const root = path.resolve(__dirname, '..');
-const bridgePort = 47200 + (process.pid % 300);
-const TOKEN = 'test-token-' + process.pid;
-
-let bridge;
+// The port is assigned by the OS and reported back by the Bridge. This file
+// used to derive 47200 + (process.pid % 300), a base it shared with
+// full-lane-dispatch.test.js, so two files could land on the same port whenever
+// their pids were congruent mod 300.
+let harness;
 let workspace;
 let runtimeDir;
-let configPath;
 
-function request(pathname, options = {}) {
-  return new Promise((resolve, reject) => {
-    const headers = options.body ? { 'content-type': 'application/json' } : {};
-    if (!options.noAuth) headers['x-agent-bridge-token'] = TOKEN;
-    const req = http.request({
-      host: '127.0.0.1', port: bridgePort, path: pathname, method: options.method || 'GET', headers,
-    }, (res) => {
-      let raw = '';
-      res.on('data', (chunk) => { raw += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: raw }));
-    });
-    req.on('error', reject);
-    if (options.body) req.write(options.body);
-    req.end();
-  });
-}
-
-async function waitForBridge() {
-  let lastError;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try { const res = await request('/health', { noAuth: true }); if (res.status === 200) return; }
-    catch (error) { lastError = error; }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw lastError || new Error('bridge did not start');
-}
+// The harness returns the payload as `text`; keep the local name the
+// assertions below were written against.
+const request = (pathname, options = {}) => harness
+  .request(pathname, { ...options, ...(options.noAuth ? { auth: false } : {}) })
+  .then((res) => ({ ...res, body: res.text }));
 
 function writeFixture(kind, record) {
   const dir = path.join(runtimeDir, 'run-history', kind);
@@ -91,28 +68,19 @@ test.before(async () => {
     steps: [{ title: '第 5 步 · 下载', detail: '成功 1 篇', state: 'done' }],
     resumeFrom: 'nature-reader', artifacts: { downloadedPaths: ['literature/downloaded-pdfs/old.pdf'] },
   });
-  configPath = path.join(os.tmpdir(), `run-history-${process.pid}.config.json`);
-  fs.writeFileSync(configPath, JSON.stringify({
-    token: TOKEN,
-    allowExecution: false,
-    workspaceRoot: workspace,
-    allowedRoots: [workspace],
-    adapters: {},
-    fullTaskRuntimeDir: runtimeDir,
-    fullTaskAuditDir: path.join(runtimeDir, 'audit'),
-  }, null, 2), 'utf8');
-
-  bridge = spawn(process.execPath, [path.join(root, 'bridge', 'server.js')], {
-    cwd: root,
-    env: { ...process.env, AGENT_BRIDGE_PORT: String(bridgePort), AGENT_BRIDGE_CONFIG_PATH: configPath },
-    stdio: 'ignore', windowsHide: true,
+  harness = await startBridge({
+    config: {
+      workspaceRoot: workspace,
+      allowedRoots: [workspace],
+      adapters: {},
+      fullTaskRuntimeDir: runtimeDir,
+      fullTaskAuditDir: path.join(runtimeDir, 'audit'),
+    },
   });
-  await waitForBridge();
 });
 
 test.after(() => {
-  if (bridge && !bridge.killed) bridge.kill();
-  if (configPath && fs.existsSync(configPath)) fs.rmSync(configPath);
+  if (harness) harness.stop();
   if (workspace && fs.existsSync(workspace)) fs.rmSync(workspace, { recursive: true, force: true });
   if (runtimeDir && fs.existsSync(runtimeDir)) fs.rmSync(runtimeDir, { recursive: true, force: true });
 });

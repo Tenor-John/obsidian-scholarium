@@ -1,0 +1,78 @@
+# Regression gate for the built main.js bundle.
+#
+# The repo has no build chain yet, so there is nothing to compile and no
+# dependencies to install: tests/ reads main.js directly. That keeps this
+# workflow fast enough to be a required status check on every PR.
+#
+# The job name below ("Bundle regression") is the string that appears in
+# branch protection / rulesets. Renaming the job changes the required check
+# name and will silently stop enforcing it, so change both together.
+
+name: Regression
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: Bundle regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Assert the bundle is present and parses
+        run: |
+          test -f main.js || { echo "main.js missing"; exit 1; }
+          node --check main.js
+
+      - name: Fail if any tracked text file drifts back to CRLF
+        run: |
+          node -e '
+            const fs = require("fs");
+            const cp = require("child_process");
+            const text = new Set([".gitattributes", ".gitignore"]);
+            const extensions = new Set([".js", ".mjs", ".cjs", ".ts", ".json", ".css", ".md", ".yml", ".yaml", ".html", ".txt"]);
+            const tracked = cp.execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
+              .split("\0")
+              .filter(Boolean);
+            const bad = tracked.filter((f) =>
+              (text.has(f) || extensions.has(require("path").extname(f).toLowerCase())) &&
+              cp.execFileSync("git", ["show", ":" + f], { maxBuffer: 8 * 1024 * 1024 }).includes("\r\n"),
+            );
+            if (bad.length) {
+              console.error(
+                "::error::CRLF found in " + bad.join(", ") +
+                " which .gitattributes pins to LF. Run: git add --renormalize . && git commit",
+              );
+              process.exit(1);
+            }
+            console.log("line endings OK");
+          '
+
+      - name: Run regression suite
+        run: node tests/run.js
+
+      - name: Report bundle size
+        if: always()
+        run: |
+          echo "### Bundle" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`main.js\`: $(wc -c < main.js) chars / $(wc -l < main.js) lines" >> "$GITHUB_STEP_SUMMARY"

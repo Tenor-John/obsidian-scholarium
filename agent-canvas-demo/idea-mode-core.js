@@ -8,7 +8,7 @@
  *
  *   buildIdeaPrompt    组装综合 prompt（只允许基于实际检索到的记录发言）
  *   parseIdeaReply     解析并校验 Agent 回复（结构/数量/长度门禁）
- *   allocateIds        在既有 display_id 集合上分配下一批 QUE-xxx / HYP-xxx / IDEA-xxx
+ *   allocateIds        在既有 display_id 集合上分配下一批 Q-xxx / HYP-xxx / IDEA-xxx
  *   buildIdeaNotes     把通过校验的问题/假设渲染成 schema-v1 笔记 { path, content }
  *   buildIdeaCard      把综合结果渲染成 schema-v1 §5.1 的 Idea 卡片笔记（type: idea）
  *
@@ -131,11 +131,23 @@ function allocateIds(existingIds, prefix, count) {
   return Array.from({ length: count }, (_, i) => `${prefix}-${String(max + i + 1).padStart(3, "0")}`);
 }
 
+function uuidV7(now = Date.now()) {
+  const bytes = new Uint8Array(16);
+  const crypto_ = typeof crypto !== "undefined" ? crypto : require("node:crypto").webcrypto;
+  crypto_.getRandomValues(bytes);
+  let stamp = BigInt(now);
+  for (let i = 5; i >= 0; i--) { bytes[i] = Number(stamp & 255n); stamp >>= 8n; }
+  bytes[6] = 0x70 | (bytes[6] & 0x0f);
+  bytes[8] = 0x80 | (bytes[8] & 0x3f);
+  const h = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 function yamlQuote(value) {
   return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
-function noteFrontmatter({ uid, displayId, type, statement, status, at, topic }) {
+function noteFrontmatter({ uid, displayId, type, statement, status, at, topic, projectUid }) {
   return [
     "---",
     `uid: ${yamlQuote(uid)}`,
@@ -144,6 +156,7 @@ function noteFrontmatter({ uid, displayId, type, statement, status, at, topic })
     `type: ${yamlQuote(type)}`,
     `created_at: ${yamlQuote(at)}`,
     `updated_at: ${yamlQuote(at)}`,
+    `project_uid: ${yamlQuote(projectUid)}`,
     `statement: ${yamlQuote(statement)}`,
     `status: ${yamlQuote(status)}`,
     'created_by: "ai"',
@@ -180,7 +193,7 @@ function pickKeyPapers(records, max = MAX_KEY_PAPERS) {
  * 需要通过 M3 的原子 promotion 事务真正创建 PRJ；卡片生成阶段不冒充。 */
 function buildIdeaCard({ topic, summary, hotspots = [], gaps = [], records = [], existingIds = [], at, uid }) {
   const now = at || new Date().toISOString();
-  const resolvedUid = uid || (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `uid-${Math.random().toString(36).slice(2)}`);
+  const resolvedUid = uid || uuidV7();
   const displayId = allocateIds(existingIds, "IDEA", 1)[0];
   const keyPapers = pickKeyPapers(records);
   const frontmatter = [
@@ -219,17 +232,18 @@ ${papersSection}`;
 }
 
 /* 把通过校验的 Idea 结果渲染成待确认的 schema-v1 笔记批次。 */
-function buildIdeaNotes({ topic, summary, questions = [], hypotheses = [], existingIds = [], records = [], at, uidFn }) {
+function buildIdeaNotes({ topic, summary, questions = [], hypotheses = [], existingIds = [], records = [], at, uidFn, projectUid }) {
+  if (!projectUid) throw new Error("Question/Hypothesis 草稿必须绑定正式 Project uid");
   const now = at || new Date().toISOString();
-  const uid = uidFn || (() => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `uid-${Math.random().toString(36).slice(2)}`));
+  const uid = uidFn || (() => uuidV7());
   const items = [];
 
-  const queIds = allocateIds(existingIds, "QUE", questions.length);
+  const queIds = allocateIds(existingIds, "Q", questions.length);
   questions.forEach((q, i) => {
     const displayId = queIds[i];
     items.push({
       path: `Research/Questions/${displayId} ${sanitizeFileName(q.statement)}.md`,
-      content: `${noteFrontmatter({ uid: uid(), displayId, type: "question", statement: q.statement, status: "open", at: now, topic })}
+      content: `${noteFrontmatter({ uid: uid(), displayId, type: "question", statement: q.statement, status: "open", at: now, topic, projectUid })}
 
 # ${displayId} ${q.statement}
 
@@ -249,7 +263,7 @@ ${sourceSection(records)}`,
     const displayId = hypIds[i];
     items.push({
       path: `Research/Hypotheses/${displayId} ${sanitizeFileName(h.statement)}.md`,
-      content: `${noteFrontmatter({ uid: uid(), displayId, type: "hypothesis", statement: h.statement, status: "proposed", at: now, topic })}
+      content: `${noteFrontmatter({ uid: uid(), displayId, type: "hypothesis", statement: h.statement, status: "proposed", at: now, topic, projectUid })}
 
 # ${displayId} ${h.statement}
 
@@ -269,7 +283,7 @@ ${sourceSection(records)}`,
 
 const ideaCoreApi = {
   MAX_QUESTIONS, MAX_HYPOTHESES, MAX_HOTSPOTS, MAX_GAPS,
-  buildIdeaPrompt, parseIdeaReply, allocateIds, sanitizeFileName, buildIdeaNotes, buildIdeaCard,
+  buildIdeaPrompt, parseIdeaReply, allocateIds, sanitizeFileName, uuidV7, buildIdeaNotes, buildIdeaCard,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = ideaCoreApi;
 if (typeof window !== "undefined") window.weaverIdeaModeCore = ideaCoreApi;

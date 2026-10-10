@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import json, re, sys, time
+import json, os, re, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
@@ -13,6 +13,14 @@ if hasattr(sys.stdout, "reconfigure"):
 def load_api_key(root):
     """See nature-academic-search's load_api_key: OpenAlex requires a free API
     key since Feb 2026; without one you're in a near-empty anonymous pool."""
+    central = os.environ.get("SCHOLARIUM_SECRETS_FILE", "").strip() or str(Path.home() / "Scholarium" / "scholarium-secrets.json")
+    try:
+        payload = json.loads(Path(central).read_text(encoding="utf-8"))
+        value = payload.get("openalex", {}).get("apiKey", "")
+        if value:
+            return str(value).strip()
+    except Exception:
+        pass
     return resolve_secret(root, "openalex-api-key.txt")
 
 

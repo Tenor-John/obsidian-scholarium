@@ -14,71 +14,43 @@
 // "vaultRoot unset/nonexistent still fails closed" negative.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const http = require('node:http');
-const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const root = path.resolve(__dirname, '..');
-const port = 47100 + (process.pid % 300);
-const token = 'def005-token-' + process.pid;
+const { startBridge } = require('./helpers/bridge-harness.js');
 
-let bridge, vault, topicDir, configPath;
-
-function request(pathname, options = {}) {
-  return new Promise((resolve, reject) => {
-    const headers = options.body ? { 'content-type': 'application/json' } : {};
-    headers['x-agent-bridge-token'] = token;
-    const req = http.request({
-      host: '127.0.0.1', port, path: pathname, method: options.method || 'GET', headers,
-    }, (res) => {
-      let raw = '';
-      res.on('data', (chunk) => { raw += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: raw }));
-    });
-    req.on('error', reject);
-    if (options.body) req.write(options.body);
-    req.end();
-  });
-}
-
-async function waitForBridge() {
-  let lastError;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try { const res = await request('/health'); if (res.status === 200) return; }
-    catch (error) { lastError = error; }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw lastError || new Error('bridge did not start');
-}
+let harness, vault, topicDir;
+const request = (pathname, options = {}) => harness.request(pathname, { method: options.method, body: options.body })
+  .then((res) => ({ ...res, body: res.text }));
 
 test.before(async () => {
   vault = fs.mkdtempSync(path.join(os.tmpdir(), 'def005-vault-'));
   topicDir = path.join(vault, '等离子体金属AuNP可见光催化CO2RR', 'CeO2壳厚对Au@CeO2可见光析氢活性的影响');
   fs.mkdirSync(topicDir, { recursive: true });
-  configPath = path.join(os.tmpdir(), `def005-${process.pid}.config.json`);
-  fs.writeFileSync(configPath, JSON.stringify({
-    token, allowExecution: false,
-    workspaceRoot: topicDir,
-    // The defect's exact shape: allowedRoots is a *descendant* subfolder,
-    // NOT the vault itself.
-    allowedRoots: [topicDir],
-    adapters: {},
+  const projectPath = path.join(vault, 'Research', 'Projects', 'PRJ-002 topology.md');
+  fs.mkdirSync(path.dirname(projectPath), { recursive: true });
+  fs.writeFileSync(projectPath, [
+    '---',
+    'uid: "01927d3f-8a41-7c62-b5e0-9f3a2c1d4e5b"',
+    'display_id: "PRJ-002"',
+    'schema_version: 1',
+    'type: "project"',
+    'created_at: "2026-09-10T00:00:00.000Z"',
+    'updated_at: "2026-09-10T00:00:00.000Z"',
+    'title: "topology"',
+    'status: "active"',
+    '---',
+    '',
+  ].join('\n'), 'utf8');
+  harness = await startBridge({ config: {
+    workspaceRoot: topicDir, allowedRoots: [topicDir], adapters: {},
     scholarium: { enabled: true, vaultRoot: vault, allowedActions: [] },
-  }, null, 2), 'utf8');
-
-  bridge = spawn(process.execPath, [path.join(root, 'bridge', 'server.js')], {
-    cwd: root,
-    env: { ...process.env, AGENT_BRIDGE_PORT: String(port), AGENT_BRIDGE_CONFIG_PATH: configPath },
-    stdio: 'ignore', windowsHide: true,
-  });
-  await waitForBridge();
+  } });
 });
 
 test.after(() => {
-  if (bridge && !bridge.killed) bridge.kill();
-  if (configPath && fs.existsSync(configPath)) fs.rmSync(configPath, { force: true });
+  if (harness) harness.stop();
   if (vault && fs.existsSync(vault)) fs.rmSync(vault, { recursive: true, force: true });
 });
 
@@ -108,7 +80,10 @@ test('DEC draft batch writes into the vault even though vaultRoot is an ancestor
     ].join('\n'),
   }];
   const preview = await request('/v1/drafts/batch', {
-    method: 'POST', body: JSON.stringify({ items, base: 'scholarium-vault' }),
+    method: 'POST', body: {
+      items, base: 'scholarium-vault', serverManagedMetadata: true,
+      projectDisplayId: 'PRJ-002',
+    },
   });
   assert.equal(preview.status, 201, preview.body);
   const batch = JSON.parse(preview.body);
@@ -116,7 +91,7 @@ test('DEC draft batch writes into the vault even though vaultRoot is an ancestor
   const commit = await request(`/v1/drafts/batch/${batch.id}/commit`, { method: 'POST' });
   assert.equal(commit.status, 200, commit.body);
 
-  const written = path.join(vault, 'Research', 'Decisions', 'DEC-REPRO-TEST.md');
+  const written = path.join(vault, batch.items[0].path);
   assert.ok(fs.existsSync(written), 'DEC file must actually land in the vault');
   // Proves the schema-metadata fix actually ran on this write, not just that
   // it didn't break it: created_at/updated_at were omitted from the fixture
@@ -131,7 +106,7 @@ test('DEC draft batch writes into the vault even though vaultRoot is an ancestor
 test('a draft path that tries to escape the vault with ../ is still rejected', async () => {
   const res = await request('/v1/drafts/batch', {
     method: 'POST',
-    body: JSON.stringify({ base: 'scholarium-vault', items: [{ path: '../escape.md', content: 'x' }] }),
+    body: { base: 'scholarium-vault', items: [{ path: '../escape.md', content: 'x' }] },
   });
   assert.equal(res.status, 400, res.body);
   assert.match(JSON.parse(res.body).error, /relative \.md path/);
@@ -141,11 +116,11 @@ test('a draft path that tries to escape the vault with ../ is still rejected', a
 test('full-permission lane sandbox boundary is not widened: the vault root itself is still outside allowedRoots', async () => {
   const res = await request('/v1/full-tasks/preview', {
     method: 'POST',
-    body: JSON.stringify({
+    body: {
       category: 'fetch_and_attach_pdf',
       workspace: vault, // the vault itself: allowed for drafts, must stay refused for full-lane spawns
       prompt: '按 DOI 10.1021/example 下载 PDF 并挂载到文献库',
-    }),
+    },
   });
   assert.equal(res.status, 403, res.body);
   assert.match(JSON.parse(res.body).error, /outside configured allowedRoots/);
@@ -156,11 +131,11 @@ test('full-permission lane sandbox boundary: a sibling topic folder under the va
   fs.mkdirSync(sibling, { recursive: true });
   const res = await request('/v1/full-tasks/preview', {
     method: 'POST',
-    body: JSON.stringify({
+    body: {
       category: 'fetch_and_attach_pdf',
       workspace: sibling,
       prompt: '按 DOI 10.1021/example 下载 PDF 并挂载到文献库',
-    }),
+    },
   });
   assert.equal(res.status, 403, res.body);
   fs.rmSync(sibling, { recursive: true, force: true });

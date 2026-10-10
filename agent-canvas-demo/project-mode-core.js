@@ -98,7 +98,7 @@
       const tests = e.hypothesis_indexes.map((index) => hypotheses[index].uid);
       const object = { uid: e.uid, display_id: e.display_id, schema_version: 1, type: 'experiment', created_at: now, updated_at: now,
         project_uid: project.uid, title: e.title, tests_hypotheses: tests, status: 'designed', result: '', conclusion: '', produced_evidence: [],
-        data_origin: 'planned', raw_data_refs: [], data_provenance_note: 'P4 设计草案，尚未执行或产生数据。', data_recorded_by: 'user', data_recorded_at: now,
+        raw_data_refs: [], data_provenance_note: 'P4 设计草案，尚未执行或产生数据；数据来源必须由研究者在执行后声明。',
         variables: { independent: e.independent_variables, dependent: e.dependent_variables, controlled: e.controlled_variables, replicates: e.replicates },
         blocked_by: e.blocked_by, estimated_hours: e.estimated_hours, created_by: 'ai', review_status: 'pending' };
       const outline = e.procedure_outline.map((step, n) => `${n + 1}. ${step}`).join('\n') || '等待研究者补充。';

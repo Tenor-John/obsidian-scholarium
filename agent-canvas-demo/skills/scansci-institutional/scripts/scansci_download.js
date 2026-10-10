@@ -17,7 +17,30 @@ const { spawnSync } = require('node:child_process');
 
 const DEFAULT_OUT = 'literature/downloaded-pdfs';
 
+/* A run that dies before it starts must not leave the previous run's progress
+   file lying around for the UI to poll.
+
+   The 2026-09-05 run failed at resolvePython() — line 147, long before the
+   progress file is reset at line ~549 — so the poller kept reading a stale
+   document and rendered "11/35（成功 0，失败 11）· 10.1021/nl3029202 · 已 15
+   分钟没有更新，任务可能已经停止或崩溃". None of those numbers belonged to
+   that run. The file's own header comment already warns about exactly this
+   ("a fresh run came up already showing 34/75"), and the guard it describes
+   sits after the failure point, so it never ran.
+
+   Clearing on the failure path is the cheap half of the fix: whatever the UI
+   reads next is at least not a different run's numbers. */
+function clearStaleProgress() {
+  try {
+    const ws = process.argv[2];
+    if (!ws) return;
+    const file = path.resolve(ws, 'Scholarium', 'runtime', 'download-progress.json');
+    if (fs.existsSync(file)) fs.rmSync(file, { force: true });
+  } catch (_) { /* best-effort: never mask the real error with a cleanup error */ }
+}
+
 function fail(message, extra) {
+  clearStaleProgress();
   process.stdout.write(JSON.stringify({
     error: message, results: [], downloaded_paths: [],
     session_policy: 'scansci-pdf institutional', browser_mode: 'scansci-pdf', ...(extra || {})
@@ -25,15 +48,62 @@ function fail(message, extra) {
   process.exit(0);
 }
 
-function resolvePython() {
-  const candidates = [
-    process.env.SCANSCI_PYTHON,
-  ].filter(Boolean);
-  for (const c of candidates) {
-    if (!fs.existsSync(c)) continue;
-    const probe = spawnSync(c, ['-c', 'import scansci_pdf'], { encoding: 'utf8', windowsHide: true });
-    if (probe.status === 0) return c;
+/* Find the interpreter that actually has scansci_pdf.
+
+   Until 2026-09-06 the candidate list was literally one entry —
+   process.env.SCANSCI_PYTHON — while the failure message said "not importable
+   by any candidate Python interpreter", promising a search that did not exist.
+   SCANSCI_PYTHON was set nowhere: not in the process, not at User or Machine
+   level, and nowhere in this repo. So the institutional channel failed
+   instantly on every run, before a single network request, and the pipeline
+   reported it as "机构通道成功 0/35 篇" — which reads like 35 failed downloads
+   rather than a channel that never started.
+
+   Measured on this machine: `python` and `py` resolve to Anaconda, which does
+   NOT have scansci_pdf; the package is installed under
+   %LOCALAPPDATA%\Programs\Python\Python311\python.exe. A PATH-only fallback
+   would therefore still have failed, which is why the well-known per-user
+   install locations are searched as well.
+
+   `fs.existsSync` is only applied to absolute paths: bare names like `python`
+   are resolved by the OS at spawn time and would never pass an existsSync
+   check, which is the second reason the original loop could not have found
+   anything even with more candidates. */
+function pythonCandidates() {
+  const out = [process.env.SCANSCI_PYTHON, 'python', 'python3'];
+  const local = process.env.LOCALAPPDATA;
+  const programFiles = process.env.ProgramFiles;
+  const dirs = [];
+  if (local) dirs.push(path.join(local, 'Programs', 'Python'));
+  if (programFiles) dirs.push(programFiles);
+  for (const dir of dirs) {
+    let entries = [];
+    try { entries = fs.readdirSync(dir); } catch (_) { continue; }
+    for (const name of entries) {
+      if (!/^Python3?\d*$/i.test(name)) continue;
+      out.push(path.join(dir, name, 'python.exe'));
+    }
   }
+  // Newest install first: a machine with 3.9 and 3.11 side by side usually got
+  // the package into the newer one.
+  const known = out.filter(Boolean);
+  return [...new Set(known)];
+}
+
+function resolvePython() {
+  const candidates = pythonCandidates();
+  const tried = [];
+  for (const c of candidates) {
+    if (path.isAbsolute(c) && !fs.existsSync(c)) { tried.push(`${c} (不存在)`); continue; }
+    let probe;
+    try {
+      probe = spawnSync(c, ['-c', 'import scansci_pdf'], { encoding: 'utf8', windowsHide: true, timeout: 30000 });
+    } catch (error) { tried.push(`${c} (${error.message})`); continue; }
+    if (probe && probe.status === 0) return c;
+    const why = String((probe && (probe.stderr || probe.stdout)) || '').trim().split(/\r?\n/).pop();
+    tried.push(`${c} (${why || '无法运行'})`.slice(0, 160));
+  }
+  resolvePython.tried = tried;
   for (const c of ['python', 'python3']) {
     const probe = spawnSync(c, ['-c', 'import scansci_pdf'], { encoding: 'utf8', windowsHide: true, shell: false });
     if (probe.status === 0) return c;
@@ -98,7 +168,14 @@ const outDir = path.resolve(workspace, outRel);
 fs.mkdirSync(outDir, { recursive: true });
 
 const python = resolvePython();
-if (!python) fail('scansci-pdf is not importable by any candidate Python interpreter. Set SCANSCI_PYTHON to the interpreter that has it installed.');
+if (!python) {
+  /* Report what was actually tried. The old message named no candidate, so a
+     user whose package sits in a non-PATH interpreter had nothing to act on. */
+  const tried = Array.isArray(resolvePython.tried) ? resolvePython.tried : [];
+  fail('没有找到装有 scansci_pdf 的 Python 解释器，机构下载通道无法启动（本次没有发出任何网络请求）。'
+    + '已尝试：' + (tried.length ? tried.join(' | ') : '无候选')
+    + '。请把 SCANSCI_PYTHON 设为装有该包的解释器完整路径。');
+}
 
 const PY = `
 import json, sys, os, subprocess, threading
@@ -373,6 +450,40 @@ try:
     if not _allow_browser and hasattr(_sources_module, "_batch_institutional_phase"):
         _sources_module._batch_institutional_phase = lambda *args, **kwargs: None
         patch_notes.append("publisher_phase2=delegated_to_scholarium_fallback")
+
+    # Patch 3 - the publisher-specific browser sources.
+    #
+    # Rebinding _try_instsci_browser above only silences ONE path. ACS, Wiley,
+    # RSC, Nature and Springer each have their own browser source, registered in
+    # sources/publishers.py PUBLISHER_TOOL_MAP (e.g. "ACS": ["ACSBrowser", ...])
+    # and implemented in publisher_strategies.py. They live entirely outside the
+    # instsci module, so allow_browser=false never reached them.
+    #
+    # Observed live: with allow_browser=false the run still put a visible
+    # Chromium on screen at pubs.acs.org/... - the RAW publisher URL, not a
+    # wvpn.ustc.edu.cn rewrite, because only instsci does WebVPN rewriting.
+    # source_scores.json confirmed ACSBrowser/WileyBrowser/RSCBrowser all ran
+    # during that batch.
+    #
+    # Forcing them headless is not an option: publisher_strategies.py hardcodes
+    # launch(headless=False) and never reads config browser_headless. So in a
+    # silent batch they are removed from the tool map entirely; whatever they
+    # would have fetched is handed to Scholarium's own browser fallback (tier 2),
+    # which honours headless and reuses the persistent WebVPN session.
+    if not _allow_browser and hasattr(_sources_module, "publishers"):
+        try:
+            _pub = _sources_module.publishers
+            _tool_map = getattr(_pub, "PUBLISHER_TOOL_MAP", None)
+            if isinstance(_tool_map, dict):
+                _removed = set()
+                for _publisher, _tools in _tool_map.items():
+                    _kept = [t for t in _tools if not str(t).endswith("Browser")]
+                    if len(_kept) != len(_tools):
+                        _removed.update(t for t in _tools if str(t).endswith("Browser"))
+                        _tool_map[_publisher] = _kept
+                patch_notes.append("publisher_browser_sources_removed=%s" % (",".join(sorted(_removed)) or "none"))
+        except Exception as exc:
+            patch_notes.append("publisher_browser_patch_failed:%s" % exc)
     patch_notes.append(
         "tier_order=http_first,allow_browser=%s,browser_workers=%s,publisher_login=%s"
         % (_allow_browser, payload.get("browser_workers", 1), _publisher_login_enabled))

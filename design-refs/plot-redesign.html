@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>织研者数据绘图 — Agent对话模式</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg-base: #F8F8F6;
+    --bg-panel: #F2F1EE;
+    --bg-surface: #FFFFFF;
+    --bg-elevated: #FDFDFC;
+    --bg-chat: #FAFAF8;
+    --border: rgba(0,0,0,0.08);
+    --border-soft: rgba(0,0,0,0.05);
+    --border-strong: rgba(0,0,0,0.15);
+    --text-primary: #1A1A18;
+    --text-secondary: #6B6B66;
+    --text-muted: #9C9C96;
+    --text-placeholder: #C5C5BE;
+    --accent: #3D6149;
+    --accent-rgb: 61, 97, 73;
+    --accent-dim: #557A63;
+    --accent-deep: #2B4733;
+    --accent-soft: rgba(61,97,73,0.08);
+    --accent-hover: rgba(61,97,73,0.12);
+    --purple: #7C5CFF;
+    --purple-rgb: 124, 92, 255;
+    --purple-soft: rgba(124,92,255,0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', 'Noto Sans SC', -apple-system, sans-serif;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .app-bg {
+    position: fixed; inset: 0;
+    background: var(--bg-base);
+    z-index: 0;
+  }
+  .app-bg::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 48px;
+    background: #2C2C2A;
+  }
+
+  /* ── Toggle ── */
+  .proto-toggle {
+    position: fixed; top: 16px; right: 16px; z-index: 100;
+    display: flex;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  }
+  .proto-toggle button {
+    padding: 7px 16px;
+    font-size: 12px; font-weight: 600; font-family: inherit;
+    border: none; background: none; cursor: pointer;
+    color: var(--text-muted); transition: all 0.15s;
+  }
+  .proto-toggle button.active {
+    background: var(--accent); color: white;
+  }
+
+  /* ═════════════════════════════════════
+     NEW: Agent chat split layout
+     ═════════════════════════════════════ */
+  .modal-overlay-new {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.35);
+    z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .modal-new {
+    width: 980px; max-width: 95vw;
+    height: 620px; max-height: 90vh;
+    background: var(--bg-surface);
+    border-radius: 14px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06);
+    display: flex; flex-direction: column;
+    overflow: hidden; z-index: 20;
+  }
+
+  /* Header */
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 22px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .modal-header-left {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .modal-header-icon {
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent-soft);
+    border-radius: 7px;
+  }
+  .modal-header-icon svg {
+    width: 15px; height: 15px;
+    stroke: var(--accent); fill: none; stroke-width: 1.8;
+  }
+  .modal-title { font-size: 15px; font-weight: 700; }
+  .modal-header-status {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11.5px; color: var(--text-muted);
+  }
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #3D9B6A;
+  }
+  .modal-close {
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: none; cursor: pointer;
+    border-radius: 7px; color: var(--text-muted);
+    transition: background 0.15s;
+  }
+  .modal-close:hover { background: var(--bg-panel); color: var(--text-primary); }
+  .modal-close svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+  /* Body */
+  .modal-body {
+    display: flex; flex: 1; overflow: hidden;
+  }
+
+  /* ── Left: Config panel (ultra-compact) ── */
+  .config-panel {
+    width: 280px; flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow-y: auto; padding: 12px 14px;
+    gap: 8px;
+  }
+
+  .dataset-info {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 10px;
+    background: var(--bg-panel);
+    border-radius: 7px;
+    font-size: 11px; color: var(--text-secondary);
+  }
+  .dataset-info svg {
+    width: 13px; height: 13px;
+    stroke: var(--text-muted); fill: none; stroke-width: 1.6; flex-shrink: 0;
+  }
+  .dataset-path {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--text-primary);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .field-group { display: flex; flex-direction: column; gap: 3px; }
+  .field-row { display: flex; flex-direction: column; gap: 8px; }
+  .field-label {
+    font-size: 10.5px; font-weight: 600; color: var(--text-secondary);
+    display: flex; align-items: center; gap: 3px;
+  }
+  .field-label .hint { font-weight: 400; color: var(--text-muted); font-size: 9.5px; }
+  .field-input {
+    width: 100%; padding: 5px 8px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-elevated);
+    font-size: 11.5px; color: var(--text-primary);
+    font-family: inherit; outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .field-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  .field-input.mono { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+
+  .y-select-list {
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-elevated); overflow: hidden;
+  }
+  .y-select-item {
+    display: flex; align-items: center; gap: 5px;
+    padding: 5px 8px; font-size: 11.5px;
+    cursor: pointer; transition: background 0.12s;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .y-select-item:last-child { border-bottom: none; }
+  .y-select-item:hover { background: var(--accent-soft); }
+  .y-select-item.selected { background: var(--accent-soft); font-weight: 500; }
+  .y-check {
+    width: 13px; height: 13px;
+    border: 1.5px solid var(--border-strong); border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: all 0.15s;
+  }
+  .y-select-item.selected .y-check {
+    background: var(--accent); border-color: var(--accent);
+  }
+  .y-check svg { width: 8px; height: 8px; stroke: white; fill: none; stroke-width: 2.5; display: none; }
+  .y-select-item.selected .y-check svg { display: block; }
+
+  .config-divider { height: 1px; background: var(--border); margin: 1px 0; }
+
+  .checkbox-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+  .checkbox-box {
+    width: 14px; height: 14px;
+    border: 1.5px solid var(--border-strong); border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; background: var(--bg-elevated); transition: all 0.15s;
+  }
+  .checkbox-box.checked { background: var(--accent); border-color: var(--accent); }
+  .checkbox-box svg { width: 9px; height: 9px; stroke: white; fill: none; stroke-width: 2.5; display: none; }
+  .checkbox-box.checked svg { display: block; }
+  .checkbox-label { font-size: 11.5px; color: var(--text-primary); cursor: pointer; }
+
+  .config-actions {
+    display: flex; gap: 6px; margin-top: auto; padding-top: 2px;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 6px 10px; border-radius: 6px;
+    font-size: 11.5px; font-weight: 500; font-family: inherit;
+    cursor: pointer; border: 1px solid var(--border);
+    background: var(--bg-surface); color: var(--text-primary);
+    transition: all 0.15s;
+  }
+  .btn:hover { background: var(--bg-panel); }
+  .btn svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: white; }
+  .btn-primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+  .btn-ghost { border-color: transparent; background: transparent; color: var(--text-secondary); }
+  .btn-ghost:hover { background: var(--bg-panel); color: var(--text-primary); }
+  .btn-sm { padding: 5px 8px; font-size: 10.5px; }
+
+  /* ── Right: Agent chat panel ── */
+  .chat-panel {
+    flex: 1; display: flex; flex-direction: column;
+    overflow: hidden; background: var(--bg-chat);
+  }
+
+  /* Chat header */
+  .chat-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg-surface);
+  }
+  .chat-header-left {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .chat-agent-avatar {
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent);
+    border-radius: 6px;
+  }
+  .chat-agent-avatar svg {
+    width: 13px; height: 13px; stroke: white; fill: none; stroke-width: 2;
+  }
+  .chat-agent-name { font-size: 13px; font-weight: 600; }
+  .chat-agent-role { font-size: 11px; color: var(--text-muted); }
+  .chat-header-right {
+    display: flex; align-items: center; gap: 4px;
+  }
+  .chat-tool-btn {
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-elevated); cursor: pointer;
+    color: var(--text-secondary); transition: all 0.15s;
+  }
+  .chat-tool-btn:hover { background: var(--bg-panel); color: var(--text-primary); }
+  .chat-tool-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+
+  /* Chat messages */
+  .chat-messages {
+    flex: 1; overflow-y: auto;
+    padding: 16px 18px;
+    display: flex; flex-direction: column;
+    gap: 14px;
+  }
+
+  /* Agent message */
+  .msg-agent {
+    display: flex; gap: 10px;
+    max-width: 92%;
+  }
+  .msg-agent-avatar {
+    width: 26px; height: 26px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent);
+    border-radius: 6px;
+    margin-top: 2px;
+  }
+  .msg-agent-avatar svg {
+    width: 13px; height: 13px; stroke: white; fill: none; stroke-width: 2;
+  }
+  .msg-agent-body {
+    flex: 1; min-width: 0;
+  }
+  .msg-agent-text {
+    font-size: 13px; line-height: 1.65;
+    color: var(--text-primary);
+  }
+  .msg-agent-text strong { font-weight: 600; }
+  .msg-agent-text code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    background: var(--bg-panel);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  /* Agent thinking / progress */
+  .msg-thinking {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    background: var(--accent-soft);
+    border-radius: 8px;
+    font-size: 12px; color: var(--accent-dim);
+    margin-top: 8px;
+  }
+  .thinking-dots {
+    display: flex; gap: 3px;
+  }
+  .thinking-dots span {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+
+  /* Step chip (compact progress) */
+  .step-chips {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-top: 8px;
+  }
+  .step-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px; font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+  }
+  .step-chip.done {
+    border-color: rgba(61,155,106,0.3);
+    background: rgba(61,155,106,0.06);
+    color: #3D9B6A;
+  }
+  .step-chip.running {
+    border-color: rgba(232,168,56,0.3);
+    background: rgba(232,168,56,0.06);
+    color: #C48A20;
+  }
+  .step-chip .chip-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: currentColor;
+  }
+  .step-chip.running .chip-dot {
+    animation: pulse 1s ease-in-out infinite;
+  }
+
+  /* Chart preview card (inline in chat) */
+  .chart-card {
+    margin-top: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-surface);
+    overflow: hidden;
+  }
+  .chart-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-elevated);
+  }
+  .chart-card-title {
+    font-size: 11.5px; font-weight: 600; color: var(--text-primary);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .chart-card-title .ver-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--text-muted);
+    font-weight: 400;
+  }
+  .chart-card-actions {
+    display: flex; gap: 3px;
+  }
+  .chart-card-actions button {
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: none; cursor: pointer;
+    border-radius: 5px; color: var(--text-muted);
+    transition: all 0.12s;
+  }
+  .chart-card-actions button:hover {
+    background: var(--bg-panel); color: var(--text-primary);
+  }
+  .chart-card-actions button svg {
+    width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.8;
+  }
+  .chart-card-body {
+    padding: 12px;
+  }
+  .chart-card-body svg {
+    width: 100%; height: auto;
+    max-height: 200px;
+  }
+
+  /* Quick settings row */
+  .quick-settings {
+    display: flex; flex-wrap: wrap; gap: 5px;
+    margin-top: 8px;
+  }
+  .quick-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .quick-chip:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .quick-chip.active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .quick-chip svg {
+    width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 1.8;
+  }
+
+  /* User message */
+  .msg-user {
+    display: flex; justify-content: flex-end;
+    max-width: 85%;
+    align-self: flex-end;
+  }
+  .msg-user-bubble {
+    padding: 9px 14px;
+    background: var(--accent);
+    color: white;
+    border-radius: 12px 12px 4px 12px;
+    font-size: 13px; line-height: 1.55;
+  }
+
+  /* Chat input */
+  .chat-input-area {
+    padding: 12px 18px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg-surface);
+  }
+  .chat-input-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .chat-input {
+    flex: 1;
+    padding: 9px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-elevated);
+    font-size: 13px; font-family: inherit;
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .chat-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  .chat-input::placeholder { color: var(--text-placeholder); }
+  .chat-send-btn {
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; border-radius: 10px;
+    background: var(--accent);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .chat-send-btn:hover { background: var(--accent-deep); }
+  .chat-send-btn svg {
+    width: 16px; height: 16px; stroke: white; fill: none; stroke-width: 2;
+  }
+  .chat-input-hint {
+    font-size: 10.5px; color: var(--text-muted);
+    margin-top: 6px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .chat-input-hint kbd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 1px 4px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg-panel);
+  }
+
+  /* ══════════════════════════════════════
+     OLD: Original modal
+     ══════════════════════════════════════ */
+  .modal-overlay-old {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.35);
+    z-index: 10;
+    display: none; align-items: center; justify-content: center;
+  }
+  .modal-overlay-old.visible { display: flex; }
+
+  .modal-old {
+    width: 680px; max-width: 90vw;
+    background: var(--bg-surface);
+    border-radius: 14px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06);
+    padding: 24px 28px 20px;
+    z-index: 20;
+  }
+  .modal-old .old-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 16px; border-bottom: 1px solid var(--border); margin-bottom: 16px;
+  }
+  .modal-old .old-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  }
+  .modal-old .old-footer {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);
+  }
+  .modal-old .old-version-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 14px; padding: 9px 12px;
+    background: var(--bg-panel); border-radius: 8px;
+    font-size: 11.5px; color: var(--text-secondary);
+  }
+  .modal-old .old-version-row code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px; color: var(--text-primary);
+  }
+
+  @media (max-width: 860px) {
+    .modal-new { flex-direction: column; height: auto; max-height: 95vh; }
+    .config-panel { width: 100%; border-right: none; border-bottom: 1px solid var(--border); max-height: 40vh; }
+    .chat-panel { min-height: 280px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app-bg"></div>
+
+<!-- Toggle -->
+<div class="proto-toggle">
+  <button class="active" onclick="showView('new')">Agent对话模式</button>
+  <button onclick="showView('old')">当前版本</button>
+</div>
+
+<!-- ════════════════════════════════════════
+     NEW: Agent chat split layout
+     ════════════════════════════════════════ -->
+<div class="modal-overlay-new" id="view-new">
+  <div class="modal-new">
+    <!-- Header -->
+    <div class="modal-header">
+      <div class="modal-header-left">
+        <div class="modal-header-icon">
+          <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-9"/></svg>
+        </div>
+        <span class="modal-title">织研者数据绘图</span>
+        <div class="modal-header-status" style="margin-left:8px;">
+          <span class="status-dot"></span>
+          绘图Agent就绪
+        </div>
+      </div>
+      <button class="modal-close">
+        <svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <!-- Body -->
+    <div class="modal-body">
+      <!-- Left: Config (compact) -->
+      <div class="config-panel">
+        <div class="dataset-info">
+          <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span class="dataset-path">Materials/1.25mM苯甲醇--信号文件.CSV</span>
+        </div>
+
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">X 轴字段</label>
+            <input class="field-input mono" value="时间(min)" readonly>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Y 轴 <span class="hint">多选</span></label>
+            <div class="y-select-list">
+              <div class="y-select-item" onclick="this.classList.toggle('selected')">
+                <div class="y-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+                <span>时间(min)</span>
+              </div>
+              <div class="y-select-item selected" onclick="this.classList.toggle('selected')">
+                <div class="y-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+                <span>信号值(uAU)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="config-divider"></div>
+
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">图表类型</label>
+            <input class="field-input" value="折线图" readonly>
+          </div>
+          <div class="field-group">
+            <label class="field-label">图标题</label>
+            <input class="field-input" placeholder="自动命名" value="1.25mM苯甲醇">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">科研样式</label>
+            <input class="field-input" value="科研出版" readonly>
+          </div>
+          <div class="field-group">
+            <label class="field-label">线条粗细</label>
+            <input class="field-input mono" type="number" value="2.6" min="1" max="6" step="0.1">
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">坐标网格</label>
+          <div class="checkbox-row">
+            <div class="checkbox-box checked" onclick="this.classList.toggle('checked')">
+              <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <span class="checkbox-label">显示网格线</span>
+          </div>
+        </div>
+
+        <div class="config-actions">
+          <button class="btn btn-ghost btn-sm" style="flex:1">
+            <svg viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.58 3.25 3.93"/></svg>
+            分析字段
+          </button>
+          <button class="btn btn-primary btn-sm" style="flex:1">
+            <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-9"/></svg>
+            生成图表
+          </button>
+        </div>
+      </div>
+
+      <!-- Right: Agent chat -->
+      <div class="chat-panel">
+        <!-- Chat header -->
+        <div class="chat-header">
+          <div class="chat-header-left">
+            <div class="chat-agent-avatar">
+              <svg viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.58 3.25 3.93"/></svg>
+            </div>
+            <div>
+              <div class="chat-agent-name">绘图Agent</div>
+              <div class="chat-agent-role">已加载 1 个数据集 · 2 个数值列</div>
+            </div>
+          </div>
+          <div class="chat-header-right">
+            <button class="chat-tool-btn" title="版本历史">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </button>
+            <button class="chat-tool-btn" title="设置">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Chat messages -->
+        <div class="chat-messages">
+          <!-- Agent greeting -->
+          <div class="msg-agent">
+            <div class="msg-agent-avatar">
+              <svg viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.58 3.25 3.93"/></svg>
+            </div>
+            <div class="msg-agent-body">
+              <div class="msg-agent-text">
+                已读取 <code>1.25mM苯甲醇--信号文件.CSV</code>，检测到 2 个数值列：<strong>时间(min)</strong> 和 <strong>信号值(uAU)</strong>，共 3600 行数据。建议以时间为 X 轴绘制色谱图。
+              </div>
+              <!-- Step chips -->
+              <div class="step-chips">
+                <span class="step-chip done"><span class="chip-dot"></span>读取CSV</span>
+                <span class="step-chip done"><span class="chip-dot"></span>识别字段</span>
+                <span class="step-chip done"><span class="chip-dot"></span>生成图表</span>
+              </div>
+              <!-- Chart preview card -->
+              <div class="chart-card">
+                <div class="chart-card-header">
+                  <div class="chart-card-title">
+                    信号值(uAU) vs 时间(min)
+                    <span class="ver-tag">v1 · 08:43:11</span>
+                  </div>
+                  <div class="chart-card-actions">
+                    <button title="放大">
+                      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
+                    </button>
+                    <button title="下载SVG">
+                      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    </button>
+                    <button title="编辑">
+                      <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="chart-card-body">
+                  <svg viewBox="0 0 500 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Grid -->
+                    <line x1="40" y1="10" x2="40" y2="155" stroke="#E8E8E4" stroke-width="0.4"/>
+                    <line x1="120" y1="10" x2="120" y2="155" stroke="#E8E8E4" stroke-width="0.4"/>
+                    <line x1="200" y1="10" x2="200" y2="155" stroke="#E8E8E4" stroke-width="0.4"/>
+                    <line x1="280" y1="10" x2="280" y2="155" stroke="#E8E8E4" stroke-width="0.4"/>
+                    <line x1="360" y1="10" x2="360" y2="155" stroke="#E8E8E4" stroke-width="0.4"/>
+                    <line x1="440" y1="10" x2="440" y2="155" stroke="#E8E8E4" stroke-width="0.4"/>
+                    <line x1="40" y1="40" x2="460" y2="40" stroke="#E8E8E4" stroke-width="0.4"/>
+                    <line x1="40" y1="75" x2="460" y2="75" stroke="#E8E8E4" stroke-width="0.4"/>
+                    <line x1="40" y1="110" x2="460" y2="110" stroke="#E8E8E4" stroke-width="0.4"/>
+                    <!-- Axes -->
+                    <line x1="40" y1="155" x2="460" y2="155" stroke="#1A1A18" stroke-width="1"/>
+                    <line x1="40" y1="10" x2="40" y2="155" stroke="#1A1A18" stroke-width="1"/>
+                    <!-- Data line -->
+                    <path d="M40,152 L60,150 L80,147 L100,142 L120,135 L135,125 L145,105 L152,75 L157,45 L160,25 L162,15 L164,12 L166,14 L168,22 L172,40 L178,70 L185,100 L193,125 L202,140 L215,148 L230,151 L250,152 L280,153 L310,153 L340,153 L370,153 L400,153 L430,153 L460,153"
+                          stroke="#3D6149" stroke-width="1.8" fill="none" stroke-linejoin="round"/>
+                    <!-- Small peak -->
+                    <path d="M310,153 L315,148 L320,138 L323,128 L325,125 L327,128 L330,138 L335,148 L340,152"
+                          stroke="#7C5CFF" stroke-width="1.4" fill="none" stroke-linejoin="round" opacity="0.6"/>
+                    <!-- Tick labels -->
+                    <text x="40" y="168" text-anchor="middle" font-size="7" fill="#9C9C96" font-family="JetBrains Mono, monospace">0</text>
+                    <text x="120" y="168" text-anchor="middle" font-size="7" fill="#9C9C96" font-family="JetBrains Mono, monospace">10</text>
+                    <text x="200" y="168" text-anchor="middle" font-size="7" fill="#9C9C96" font-family="JetBrains Mono, monospace">20</text>
+                    <text x="280" y="168" text-anchor="middle" font-size="7" fill="#9C9C96" font-family="JetBrains Mono, monospace">30</text>
+                    <text x="360" y="168" text-anchor="middle" font-size="7" fill="#9C9C96" font-family="JetBrains Mono, monospace">40</text>
+                    <text x="440" y="168" text-anchor="middle" font-size="7" fill="#9C9C96" font-family="JetBrains Mono, monospace">50</text>
+                    <text x="34" y="43" text-anchor="end" font-size="7" fill="#9C9C96" font-family="JetBrains Mono, monospace">400</text>
+                    <text x="34" y="78" text-anchor="end" font-size="7" fill="#9C9C96" font-family="JetBrains Mono, monospace">300</text>
+                    <text x="34" y="113" text-anchor="end" font-size="7" fill="#9C9C96" font-family="JetBrains Mono, monospace">200</text>
+                    <text x="34" y="158" text-anchor="end" font-size="7" fill="#9C9C96" font-family="JetBrains Mono, monospace">0</text>
+                    <!-- Axis title -->
+                    <text x="250" y="178" text-anchor="middle" font-size="8" fill="#6B6B66" font-family="Inter, sans-serif">时间 (min)</text>
+                  </svg>
+                </div>
+              </div>
+              <!-- Quick settings -->
+              <div class="quick-settings">
+                <span class="quick-chip active" onclick="this.classList.toggle('active')">
+                  <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-9"/></svg>
+                  折线图
+                </span>
+                <span class="quick-chip" onclick="this.classList.toggle('active')">
+                  <svg viewBox="0 0 24 24"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="6" width="4" height="15"/><rect x="17" y="3" width="4" height="18"/></svg>
+                  柱状图
+                </span>
+                <span class="quick-chip" onclick="this.classList.toggle('active')">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 0 20"/></svg>
+                  散点图
+                </span>
+                <span class="quick-chip" onclick="this.classList.toggle('active')">
+                  网格: 开
+                </span>
+                <span class="quick-chip" onclick="this.classList.toggle('active')">
+                  线宽: 2.6
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- User message -->
+          <div class="msg-user">
+            <div class="msg-user-bubble">把主峰区域放大看看，另外加一条基线标注</div>
+          </div>
+
+          <!-- Agent thinking -->
+          <div class="msg-agent">
+            <div class="msg-agent-avatar">
+              <svg viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.58 3.25 3.93"/></svg>
+            </div>
+            <div class="msg-agent-body">
+              <div class="msg-thinking">
+                <div class="thinking-dots"><span></span><span></span><span></span></div>
+                正在重新渲染，截取 10–20min 区间并添加基线标注…
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat input -->
+        <div class="chat-input-area">
+          <div class="chat-input-row">
+            <input class="chat-input" placeholder="描述你想要的图表调整…" value="">
+            <button class="chat-send-btn">
+              <svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            </button>
+          </div>
+          <div class="chat-input-hint">
+            <kbd>Enter</kbd> 发送 · <kbd>Shift+Enter</kbd> 换行 · 可直接说"换成柱状图"、"线宽改为3"、"显示数据点"
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     OLD: Original modal
+     ════════════════════════════════════════ -->
+<div class="modal-overlay-old visible" id="view-old">
+  <div class="modal-old">
+    <div class="old-header">
+      <div class="modal-header-left">
+        <div class="modal-header-icon">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-9"/></svg>
+        </div>
+        <span class="modal-title">织研者数据绘图</span>
+      </div>
+      <button class="modal-close">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <p style="font-size:12px; color:var(--text-secondary); margin-bottom:14px; line-height:1.5;">
+      原始 CSV/TSV 只读。绘图会生成独立 SVG，报告与清单到 Materials/_analysis/，不会覆盖数据。
+    </p>
+    <p style="font-size:11.5px; color:var(--text-muted); margin-bottom:14px;">
+      数据集：<span style="font-family:'JetBrains Mono',monospace; color:var(--text-primary);">Materials/1.25mM苯甲醇--信号文件.CSV</span>
+    </p>
+
+    <div class="old-grid">
+      <div class="field-group">
+        <label class="field-label">X 轴字段</label>
+        <input class="field-input mono" value="时间(min)" readonly>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Y 轴字段 <span class="hint">可多选</span></label>
+        <div class="y-select-list">
+          <div class="y-select-item"><span style="font-size:12.5px; color:var(--text-secondary);">时间(min)</span></div>
+          <div class="y-select-item selected"><span style="font-size:12.5px;">信号值(uAU)</span></div>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">图表类型</label>
+        <input class="field-input" value="折线图" readonly>
+      </div>
+      <div class="field-group">
+        <label class="field-label">图标题</label>
+        <input class="field-input" placeholder="留空则按字段自动命名">
+      </div>
+      <div class="field-group">
+        <label class="field-label">科研样式</label>
+        <input class="field-input" value="科研出版（推荐）" readonly>
+      </div>
+      <div class="field-group">
+        <label class="field-label">数据点标记</label>
+        <input class="field-input" value="自动（密集数据不显示）" readonly>
+      </div>
+      <div class="field-group">
+        <label class="field-label">坐标网格</label>
+        <div class="checkbox-row">
+          <div class="checkbox-box checked"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <span class="checkbox-label">显示网格线</span>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">线条粗细 (1–6)</label>
+        <input class="field-input mono" type="number" value="2.6" min="1" max="6" step="0.1">
+      </div>
+    </div>
+
+    <div class="old-version-row">
+      <strong style="font-size:11.5px; color:var(--text-primary);">已有图表版本</strong>
+      <code>2026-08-19 08:43:11 · 1.25mM苯甲醇--信号文件: 信号值(uAU) vs 时间(min)</code>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto;">打开所选版本修改</button>
+    </div>
+
+    <div class="old-footer">
+      <button class="btn btn-ghost btn-sm">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.58 3.25 3.93"/></svg>
+        织研者分析字段
+      </button>
+      <button class="btn btn-primary btn-sm">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-9"/></svg>
+        生成 SVG 图表
+      </button>
+      <button class="btn btn-ghost btn-sm">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function showView(v) {
+    document.getElementById('view-new').style.display = v === 'new' ? 'flex' : 'none';
+    document.getElementById('view-old').style.display = v === 'old' ? 'flex' : 'none';
+    document.getElementById('view-old').classList.toggle('visible', v === 'old');
+    document.querySelectorAll('.proto-toggle button').forEach((b, i) => {
+      b.classList.toggle('active', (i === 0 && v === 'new') || (i === 1 && v === 'old'));
+    });
+  }
+</script>
+</body>
+</html>

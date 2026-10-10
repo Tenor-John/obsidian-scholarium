@@ -45,6 +45,156 @@
     container-name: scholarium-view;
 }
 
+/* Optional Academy Ink visual style. Scoped to Scholarium, with no network font dependency. */
+/* =====================================================
+   学院墨韵（可选视觉风格）
+   以当前组件选择器为边界，不覆盖 Obsidian 全局样式；不依赖在线字体。
+   ===================================================== */
+.scholarium-root[data-visual-style="oriental"] {
+    --orient-primary: #1B3A5C;
+    --orient-gold: #B8872E;
+    --orient-paper: #F5F0E6;
+    --orient-surface: #FDFCF8;
+    --orient-ink: #1A1A18;
+    --orient-border: rgba(27, 58, 92, .14);
+    --orient-border: rgba(27, 58, 92, 0.14);
+    --orient-serif: "Noto Serif CJK SC", "Songti SC", STSong, SimSun, Georgia, serif;
+    --orient-sans: "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    --celn-accent: var(--orient-primary);
+    --celn-accent-rgb: 27, 58, 92;
+    --celn-accent-light: #365B82;
+    --celn-accent-medium: #163251;
+    --celn-accent-dark: #102942;
+    --celn-accent-deeper: #0B1D31;
+    --celn-paper: var(--orient-paper);
+    --celn-ink: var(--orient-ink);
+    --celn-border: var(--orient-border);
+}
+.scholarium-root[data-visual-style="oriental"].scholarium-dashboard {
+    background: var(--orient-paper); color: var(--orient-ink); font-family: var(--orient-sans);
+}
+.scholarium-root[data-visual-style="oriental"] .scholarium-header,
+.scholarium-root[data-visual-style="oriental"] .scholarium-panel-switch,
+.scholarium-root[data-visual-style="oriental"] .scholarium-action-bar {
+    background: var(--orient-surface); border-color: var(--orient-border);
+}
+
+.scholarium-root[data-visual-style="oriental"].scholarium-dashboard {
+    background: var(--orient-paper);
+    color: var(--orient-ink);
+    font-family: var(--orient-sans);
+}
+
+.scholarium-root[data-visual-style="oriental"] .scholarium-header,
+.scholarium-root[data-visual-style="oriental"] .scholarium-panel-switch,
+.scholarium-root[data-visual-style="oriental"] .scholarium-action-bar {
+    background: var(--orient-surface);
+    border-color: var(--orient-border);
+}
+
+.scholarium-root[data-visual-style="oriental"] .scholarium-logo,
+.scholarium-root[data-visual-style="oriental"] .scholarium-panel h1,
+.scholarium-root[data-visual-style="oriental"] .scholarium-panel h2,
+.scholarium-root[data-visual-style="oriental"] .scholarium-panel h3 {
+    font-family: var(--orient-serif); color: var(--orient-primary);
+}
+.scholarium-root[data-visual-style="oriental"] .scholarium-logo { letter-spacing: .025em; }
+.scholarium-root[data-visual-style="oriental"] .scholarium-switch-btn.active,
+.scholarium-root[data-visual-style="oriental"] .filter-tab.active {
+    color: var(--orient-primary); border-color: var(--orient-border); background: rgba(184,135,46,.10);
+}
+.scholarium-root[data-visual-style="oriental"] .scholarium-btn {
+    border-color: var(--orient-border); background: var(--orient-surface); color: var(--orient-primary); border-radius: 6px;
+}
+.scholarium-root[data-visual-style="oriental"] .scholarium-btn:hover {
+    border-color: var(--orient-gold); color: var(--orient-primary); background: rgba(184,135,46,.09);
+}
+.scholarium-root[data-visual-style="oriental"] .scholarium-btn.primary {
+    color: #fff; background: var(--orient-primary); border-color: var(--orient-primary);
+}
+.scholarium-root[data-visual-style="oriental"] .scholarium-btn.primary:hover {
+    background: var(--orient-gold); border-color: var(--orient-gold);
+}
+.scholarium-root[data-visual-style="oriental"] .rss-card,
+.scholarium-root[data-visual-style="oriental"] .exp-item {
+    border-color: var(--orient-border); background: var(--orient-surface);
+}
+.scholarium-root[data-visual-style="oriental"] .rss-card:hover,
+.scholarium-root[data-visual-style="oriental"] .exp-item.active {
+    border-color: var(--orient-gold); box-shadow: 0 3px 14px rgba(27,58,92,.10);
+}
+.theme-dark .scholarium-root[data-visual-style="oriental"] {
+    --orient-primary: #9EB8D5; --orient-gold: #D2AB5E; --orient-paper: #101827;
+    --orient-surface: #18243A; --orient-ink: #E8E4DC; --orient-border: rgba(158,184,213,.20);
+    --celn-accent: var(--orient-primary); --celn-accent-rgb: 158,184,213;
+    --celn-accent-light: #C4D5E8; --celn-accent-medium: #85A8CC;
+    --celn-accent-dark: #769ABD; --celn-accent-deeper: #6389AF;
+    font-family: var(--orient-serif);
+    color: var(--orient-primary);
+}
+
+.scholarium-root[data-visual-style="oriental"] .scholarium-logo {
+    letter-spacing: .025em;
+}
+
+.scholarium-root[data-visual-style="oriental"] .scholarium-switch-btn.active,
+.scholarium-root[data-visual-style="oriental"] .filter-tab.active {
+    color: var(--orient-primary);
+    border-color: var(--orient-border);
+    background: rgba(184, 135, 46, .10);
+}
+
+.scholarium-root[data-visual-style="oriental"] .scholarium-btn {
+    border-color: var(--orient-border);
+    background: var(--orient-surface);
+    color: var(--orient-primary);
+    border-radius: 6px;
+}
+
+.scholarium-root[data-visual-style="oriental"] .scholarium-btn:hover {
+    border-color: var(--orient-gold);
+    color: var(--orient-primary);
+    background: rgba(184, 135, 46, .09);
+}
+
+.scholarium-root[data-visual-style="oriental"] .scholarium-btn.primary {
+    color: #fff;
+    background: var(--orient-primary);
+    border-color: var(--orient-primary);
+}
+
+.scholarium-root[data-visual-style="oriental"] .scholarium-btn.primary:hover {
+    background: var(--orient-gold);
+    border-color: var(--orient-gold);
+}
+
+.scholarium-root[data-visual-style="oriental"] .rss-card,
+.scholarium-root[data-visual-style="oriental"] .exp-item {
+    border-color: var(--orient-border);
+    background: var(--orient-surface);
+}
+
+.scholarium-root[data-visual-style="oriental"] .rss-card:hover,
+.scholarium-root[data-visual-style="oriental"] .exp-item.active {
+    border-color: var(--orient-gold);
+    box-shadow: 0 3px 14px rgba(27, 58, 92, .10);
+}
+
+.theme-dark .scholarium-root[data-visual-style="oriental"] {
+    --orient-primary: #9EB8D5;
+    --orient-gold: #D2AB5E;
+    --orient-paper: #101827;
+    --orient-surface: #18243A;
+    --orient-ink: #E8E4DC;
+    --orient-border: rgba(158, 184, 213, .20);
+    --celn-accent: var(--orient-primary);
+    --celn-accent-rgb: 158, 184, 213;
+    --celn-accent-light: #C4D5E8;
+    --celn-accent-medium: #85A8CC;
+    --celn-accent-dark: #769ABD;
+    --celn-accent-deeper: #6389AF;
+}
+
 /* 顶部标题栏 */
 .scholarium-header {
     display: flex;
@@ -215,6 +365,9 @@
 .filter-tab.active { background: rgba(var(--celn-accent-rgb),0.12); color: var(--celn-accent); border-color: rgba(var(--celn-accent-rgb),0.3); font-weight: 600; }
 
 .exp-list-container { overflow-y: auto; }
+.exp-list-actions { display: flex; align-items: center; gap: 6px; min-height: 34px; margin: 0 0 8px; }
+.exp-project-bulk-toggle { width: 100%; font-size: 0.8em; }
+.exp-project-bulk-count { margin-right: auto; color: var(--text-normal); font-size: 0.82em; font-weight: 650; white-space: nowrap; }
 .exp-day-group { margin-bottom: 12px; }
 .exp-day-label { font-size: 0.72em; color: var(--text-faint); font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 4px; padding: 0 2px; }
 .exp-list { display: flex; flex-direction: column; gap: 4px; }
@@ -242,6 +395,65 @@
 }
 .exp-item:hover .exp-item-del-btn { display: block; }
 .exp-item-del-btn:hover { background: rgba(220,50,50,0.12); color: #e53935; }
+.exp-item-project-btn {
+    display: none; background: none; border: none; padding: 3px 5px;
+    font-size: 0.76em; cursor: pointer; border-radius: 4px;
+    color: var(--text-muted); white-space: nowrap;
+}
+.exp-item:hover .exp-item-project-btn { display: block; }
+.exp-item-project-btn:hover { background: rgba(var(--celn-accent-rgb),0.12); color: var(--celn-accent); }
+.exp-item-project-check {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+    margin: 0 2px 0 0; padding: 4px 6px; border-radius: 5px;
+    border: 1px solid var(--background-modifier-border); background: var(--background-primary);
+    color: var(--text-normal); font-size: .76em; cursor: pointer; white-space: nowrap;
+}
+.exp-item-project-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--interactive-accent); cursor: pointer; }
+.exp-item-project-check:has(input:checked) { border-color: var(--interactive-accent); background: var(--interactive-accent-hover); }
+
+.exp-project-assign-overlay {
+    position: fixed; inset: 0; z-index: 10001; background: rgba(0,0,0,0.45);
+    display: flex; align-items: center; justify-content: center; opacity: 0;
+    transition: opacity .12s ease;
+}
+.exp-project-assign-overlay.is-open { opacity: 1; }
+.exp-project-assign-modal {
+    width: min(420px, calc(100vw - 36px)); padding: 22px; border-radius: 12px;
+    background: var(--background-primary); border: 1px solid var(--background-modifier-border);
+    box-shadow: 0 16px 48px rgba(0,0,0,.28);
+}
+.exp-project-assign-modal h3 { margin: 0 0 8px; }
+.exp-project-assign-help { margin: 0 0 16px; color: var(--text-muted); font-size: .9em; line-height: 1.55; }
+.exp-project-assign-select { width: 100%; margin-bottom: 16px; }
+.exp-project-assign-actions { display: flex; justify-content: flex-end; gap: 8px; min-height: 38px; }
+.exp-project-assign-confirm {
+    display: inline-flex !important; align-items: center; justify-content: center;
+    min-width: 96px !important; color: #fff !important; background: var(--interactive-accent) !important;
+    border-color: var(--interactive-accent) !important; opacity: 1 !important;
+}
+
+/* Fixed record actions: selection and deletion never appear only on hover. */
+.exp-item { padding-right: 84px; }
+.exp-item-actions {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    display: flex; align-items: center; gap: 5px;
+}
+.exp-item-select-btn {
+    width: 27px; height: 27px; padding: 0; border-radius: 6px;
+    border: 1px solid var(--background-modifier-border); background: var(--background-primary);
+    color: transparent; font-size: 17px; font-weight: 800; line-height: 1;
+    cursor: pointer; transition: background .12s, border-color .12s, color .12s;
+}
+.exp-item-select-btn:hover { border-color: var(--interactive-accent); }
+.exp-item-select-btn.is-selected {
+    color: #fff; background: var(--interactive-accent); border-color: var(--interactive-accent);
+}
+.exp-item-actions .exp-item-del-btn {
+    display: inline-flex; position: static; transform: none; align-items: center; justify-content: center;
+    width: 27px; height: 27px; padding: 0; background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border); color: var(--text-muted);
+}
+.exp-item-actions .exp-item-del-btn:hover { color: #e53935; border-color: rgba(220,50,50,.45); }
 
 /* ── 删除确认弹窗 ── */
 .exp-del-modal-overlay {
@@ -407,6 +619,7 @@
 .rss-filter.active { background: var(--sch-accent-soft, var(--background-modifier-hover)); color: var(--sch-accent-ink, var(--text-accent)); }
 
 .rss-card-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; align-content: start; }
+.rss-load-more { grid-column: 1 / -1; display: flex; justify-content: center; padding: 8px 0 4px; }
 .rss-card {
     display: flex; flex-direction: column; border-radius: 12px; cursor: pointer; overflow: hidden;
     border: 1px solid var(--sch-line, var(--background-modifier-border));
@@ -425,6 +638,42 @@
 .rss-radar-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 5px 7px; border: 1px solid var(--sch-line, var(--background-modifier-border)); border-radius: 8px; background: var(--sch-surface, var(--background-secondary)); }
 .rss-radar-label { font-size: 11.5px; font-weight: 750; color: var(--sch-accent-ink, var(--text-accent)); white-space: nowrap; }
 .rss-radar-select, .rss-radar-filter { height: 28px; max-width: 210px; border: 1px solid var(--sch-line, var(--background-modifier-border)); border-radius: 7px; background: var(--background-primary); color: var(--text-normal); font-size: 11.5px; }
+.rss-radar-bar { display: grid; grid-template-columns: minmax(200px, 1fr) auto; gap: 8px 14px; align-items: center; margin: 7px 0 10px; padding: 9px 11px; border: 1px solid var(--background-modifier-border); border-radius: 9px; background: var(--background-secondary); color: var(--text-normal); }
+.rss-radar-copy { min-width: 0; }
+.rss-radar-kicker { font-size: 12px; font-weight: 750; letter-spacing: .02em; color: var(--text-accent); }
+.rss-radar-title { margin-top: 2px; overflow: hidden; color: var(--text-normal); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.rss-radar-description { margin-top: 2px; color: var(--text-muted); font-size: 11px; line-height: 1.45; }
+.rss-radar-tools, .rss-radar-stats, .rss-radar-feedback { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rss-radar-tools { justify-content: flex-end; }
+.rss-radar-project-select { min-width: 138px; max-width: 230px; height: 28px; padding: 0 7px; border: 1px solid var(--background-modifier-border); border-radius: 6px; background: var(--background-primary); color: var(--text-normal); font: inherit; font-size: 11px; }
+.rss-radar-button { height: 28px; padding: 0 8px; border: 1px solid var(--background-modifier-border); border-radius: 6px; background: var(--background-primary); color: var(--text-normal); font: inherit; font-size: 11px; cursor: pointer; }
+.rss-radar-button:hover:not(:disabled) { border-color: var(--interactive-accent); color: var(--text-accent); background: var(--background-modifier-hover); }
+.rss-radar-button:disabled { opacity: .6; cursor: default; }
+.rss-radar-stats { grid-column: 1 / -1; color: var(--text-faint); font-size: 10.5px; }
+.rss-radar-stats b { color: var(--text-muted); font-weight: 650; }
+.rss-radar-warning { grid-column: 1 / -1; color: var(--text-warning); font-size: 11px; line-height: 1.45; }
+.rss-radar-card-score { display: inline-flex; align-items: center; gap: 3px; margin: 0 0 6px; padding: 2px 6px; border: 1px solid var(--background-modifier-border); border-radius: 999px; background: var(--background-secondary); color: var(--text-muted); font-size: 10px; font-weight: 700; line-height: 1.2; }
+.rss-radar-card-score.rss-radar-tier-high { color: var(--color-green, #228b57); border-color: color-mix(in srgb, var(--color-green, #228b57) 35%, var(--background-modifier-border)); }
+.rss-radar-card-score.rss-radar-tier-candidate { color: var(--color-orange, #b36b00); }
+.rss-radar-card-score.rss-radar-tier-low { color: var(--text-faint); }
+.rss-radar-review { margin: 11px 0; padding: 10px 11px; border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-secondary); }
+.rss-radar-review-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.rss-radar-review-title { color: var(--text-accent); font-size: 12px; font-weight: 750; }
+.rss-radar-metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 7px 0 9px; }
+.rss-radar-metric { min-width: 0; padding: 6px 7px; border-radius: 6px; background: var(--background-primary); }
+.rss-radar-metric-label { overflow: hidden; color: var(--text-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.rss-radar-metric-value { margin-top: 1px; color: var(--text-normal); font-size: 14px; font-weight: 700; }
+.rss-radar-stale { margin: 4px 0 8px; padding: 6px 8px; border-radius: 6px; background: color-mix(in srgb, var(--text-warning, #b8860b) 12%, transparent); color: var(--text-muted); font-size: 10.5px; line-height: 1.5; }
+.rss-radar-metric.is-unscored { opacity: .55; border: 1px dashed var(--background-modifier-border); }
+.rss-radar-metric.is-unscored strong { color: var(--text-faint); font-weight: 600; }
+.rss-radar-basis { margin: -3px 0 7px; color: var(--text-faint); font-size: 10.5px; }
+.rss-radar-evidence { margin: 0 0 8px; padding: 5px 7px; border-left: 2px solid var(--background-modifier-border); color: var(--text-muted); font-size: 10.5px; line-height: 1.5; }
+.rss-radar-review-block { margin: 7px 0; color: var(--text-muted); font-size: 11.5px; line-height: 1.55; white-space: pre-wrap; }
+.rss-radar-review-block b { color: var(--text-normal); font-weight: 650; }
+.rss-radar-feedback { margin-top: 9px; color: var(--text-faint); font-size: 10.5px; }
+.rss-radar-feedback button { height: 25px; padding: 0 7px; border: 1px solid var(--background-modifier-border); border-radius: 6px; background: var(--background-primary); color: var(--text-muted); font: inherit; font-size: 10.5px; cursor: pointer; }
+.rss-radar-feedback button.is-active, .rss-radar-feedback button:hover { color: var(--text-accent); border-color: var(--interactive-accent); }
+@media (max-width: 740px) { .rss-radar-bar { grid-template-columns: 1fr; } .rss-radar-tools { justify-content: flex-start; } .rss-radar-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .rss-relevance { margin: 5px 0 8px; padding: 8px; border: 1px solid var(--sch-line, var(--background-modifier-border)); border-radius: 8px; background: color-mix(in srgb, var(--background-secondary) 72%, transparent); }
 .rss-relevance-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .rss-relevance-score { padding: 2px 7px; border-radius: 999px; color: #fff; font-size: 11.5px; font-weight: 800; }
@@ -440,7 +689,7 @@
 .rss-card-score-btn { align-self: flex-start; margin: 4px 0 7px; padding: 4px 8px; }
 .rss-card-summary { margin: 0 0 8px; font-size: 12.5px; color: var(--sch-ink2, var(--text-muted)); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 /* 卡片内固定高度滚动区（摘要 / AI 总结） */
-.rss-card-scroll { height: 148px; overflow-y: auto; margin: 4px 0 8px; padding: 6px 8px 4px 0; border-top: 1px dashed var(--sch-line, var(--background-modifier-border)); }
+.rss-card-scroll { min-height: 148px; flex: 1 1 148px; overflow-y: auto; margin: 4px 0 8px; padding: 6px 8px 4px 0; border-top: 1px dashed var(--sch-line, var(--background-modifier-border)); }
 .rss-card-sec-label { font-size: 10px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: var(--sch-accent-ink, var(--text-accent)); margin: 6px 0 3px; }
 .rss-card-sec-label:first-child { margin-top: 0; }
 .rss-card-sec-text { font-size: 11.5px; line-height: 1.5; color: var(--sch-ink2, var(--text-muted)); white-space: pre-wrap; word-break: break-word; }
@@ -458,7 +707,9 @@
 .rss-reader-head { border-bottom: 1px solid var(--sch-line, var(--background-modifier-border)); padding-bottom: 12px; margin-bottom: 14px; }
 .rss-reader-feed { font-size: 12.5px; font-weight: 700; color: var(--sch-accent-ink, var(--text-accent)); }
 .rss-reader-title { margin: 4px 0 6px; font-size: 22px; line-height: 1.3; }
-.rss-reader-meta { display: flex; gap: 14px; font-size: 12.5px; color: var(--sch-mute, var(--text-faint)); }
+.rss-reader-meta { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 14px; font-size: 12.5px; color: var(--sch-mute, var(--text-faint)); }
+.rss-reader-meta > span, .rss-reader-meta > a { min-width: 0; overflow-wrap: anywhere; }
+.rss-reader-metadata-source { margin: 5px 0 8px; color: var(--sch-mute, var(--text-faint)); font-size: 11px; line-height: 1.45; }
 .rss-reader-body { max-height: 56vh; overflow-y: auto; line-height: 1.65; font-size: 14.5px; }
 .rss-reader-content { display: block; }
 .rss-abstract-text { white-space: pre-wrap; word-break: break-word; line-height: 1.65; font-size: 14px; color: var(--sch-ink, var(--text-normal)); }
@@ -469,7 +720,7 @@
 .rss-reader-link:hover { text-decoration: underline; }
 .rss-reader-cover { width: 100%; margin-bottom: 14px; border-radius: 8px; overflow: hidden; }
 .rss-reader-cover img { width: 100%; height: auto; display: block; }
-.rss-reader-author { max-width: 100%; }
+.rss-reader-author { flex: 1 1 200px; max-width: 100%; overflow-wrap: anywhere; }
 .rss-reader-loading { margin-top: 10px; font-size: 12.5px; color: var(--sch-mute, var(--text-faint)); font-style: italic; }
 
 /* 右侧阅读栏（面板内分栏，替代弹窗） */
@@ -522,8 +773,9 @@
 .rss-reader-pane .rss-reader-title { font-size: 17px; }
 .rss-reader-pane .rss-reader-feed { font-size: 11px; }
 .rss-reader-pane .rss-reader-link { font-size: 11.5px; }
-.rss-reader-affil { flex-basis: 100%; font-size: 11.5px; color: var(--sch-mute, var(--text-faint)); line-height: 1.5; margin-top: 4px; }
-.rss-reader-affil-label { font-weight: 700; color: var(--sch-accent-ink, var(--text-accent)); }
+.rss-reader-affil { min-width: 0; max-width: 100%; margin: 8px 0 12px; font-size: 11.5px; color: var(--sch-mute, var(--text-faint)); line-height: 1.5; overflow-wrap: anywhere; }
+.rss-reader-affil-label { cursor: pointer; font-weight: 700; color: var(--sch-accent-ink, var(--text-accent)); }
+.rss-reader-affil-content { padding: 6px 0 0 16px; overflow-wrap: anywhere; }
 .rss-reader-ai { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--sch-line, var(--background-modifier-border)); }
 .rss-reader-ai-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .rss-reader-ai-head .rss-reader-section-label { margin: 0; }
@@ -851,7 +1103,7 @@
 
 .mat-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 12px;
 }
 
@@ -881,7 +1133,8 @@
 .mat-card-img {
     width: 100%;
     aspect-ratio: 4/3;
-    object-fit: cover;
+    object-fit: contain;
+    background: #fff;
     display: block;
 }
 
@@ -926,6 +1179,24 @@
     display: flex;
     gap: 6px;
     justify-content: center;
+    flex-wrap: wrap;
+}
+
+/* The plot and normalize buttons are appended after the generic card actions,
+ * so with six 32px circles they wrap onto a second row and read as a separate,
+ * unexplained control rather than as this card's next step. Accent them and
+ * give the row a little vertical breathing room so a wrapped button still
+ * belongs to the same group, and make the one action that matters findable. */
+.mat-card-actions .sch-material-plot-action,
+.mat-card-actions .sch-material-normalize-action {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    order: 99;
+}
+
+.mat-card-actions .sch-material-plot-action:hover,
+.mat-card-actions .sch-material-normalize-action:hover {
+    background: var(--interactive-accent-hover);
 }
 
 .mat-action-btn {
@@ -954,9 +1225,28 @@
     font-size: 0.82em;
     font-weight: 600;
     color: var(--text-normal);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    line-height: 1.35;
+}
+.mat-card-display-name { margin-top: 3px; color: var(--text-muted); font-size: .72em; overflow-wrap: anywhere; }
+.mat-card-path {
+    width: 100%; margin: 5px 0 0; padding: 0; border: 0; background: transparent;
+    color: var(--text-faint); box-shadow: none; text-align: left;
+    font: 9.5px/1.35 var(--font-monospace); overflow-wrap: anywhere; cursor: copy;
+}
+.mat-card-path:hover { color: var(--interactive-accent); background: transparent; }
+.mat-card-generated { border-color: color-mix(in srgb, #7C5CFC 35%, var(--background-modifier-border)); }
+.mat-card-generated::after {
+    content: "生成图"; position: absolute; top: 7px; left: 7px; z-index: 2;
+    padding: 2px 7px; border-radius: 10px; background: rgba(55, 34, 125, .78); color: #fff;
+    font-size: 9px; font-weight: 700; pointer-events: none;
+}
+.mat-card { position: relative; }
+.mat-card-dragging { opacity: .45; transform: scale(.98); }
+.scholarium-root .mat-folder-drop-target {
+    outline: 2px solid var(--interactive-accent); outline-offset: -2px;
+    background: color-mix(in srgb, var(--interactive-accent) 16%, var(--background-primary)) !important;
 }
 
 .mat-badge {
@@ -4527,14 +4817,37 @@
     overflow: auto;
 }
 
+/* The board header is a two-part row: a heading block and a tool bar.
+   It used to break in two ways at once on a narrow panel.
+
+   `.exp-board-tools` had `flex-shrink: 0`, so the tools never yielded a pixel.
+   Everything they could not fit simply overflowed and the last buttons were
+   clipped off the right edge.
+
+   The heading block absorbed all of that pressure instead. It has no class of
+   its own, so it fell back to `min-width: auto` and was squeezed to its
+   min-content width — and the min-content width of Chinese text is one
+   character, which is why the title rendered as a vertical column of
+   characters rather than wrapping.
+
+   Now both sides may shrink, the heading has a floor it cannot fall below,
+   and once the two no longer fit side by side the tools wrap onto their own
+   full-width row instead of overflowing. */
 .exp-board-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 18px;
+    gap: 10px 18px;
     margin-bottom: 14px;
     padding-bottom: 14px;
     border-bottom: 1px solid var(--nb-line);
+}
+
+/* The heading block is created without a class, so it is addressed by position. */
+.exp-board-header > div:first-child {
+    flex: 1 1 240px;
+    min-width: 200px;
 }
 
 .exp-board-title {
@@ -4549,8 +4862,26 @@
 .exp-board-tools {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     justify-content: flex-end;
     gap: 8px;
+    /* Grow to fill its row once wrapped, shrink rather than overflow before
+       that. The old `flex-shrink: 0` is what pushed the buttons off-screen. */
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* The project selector is injected after render and carried whatever width its
+   longest project title implied, which on its own could push the buttons past
+   the edge. */
+.exp-board-tools .project-profile-project-select {
+    flex: 0 1 auto;
+    min-width: 120px;
+    max-width: 220px;
+    text-overflow: ellipsis;
+}
+
+.exp-board-tools > * {
     flex-shrink: 0;
 }
 
@@ -5619,6 +5950,27 @@
     max-width: 100%;
 }
 
+.sch-brandbar-logo-img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+    border-radius: 4px;
+    vertical-align: middle;
+}
+
+/* Small inline brand mark for headings/buttons that previously stood in with
+   an ad-hoc emoji (looked mismatched next to the actual RW mark and could
+   render inconsistently across fonts/platforms). Same asset as
+   .sch-brandbar-logo-img, just sized for running text. */
+.sch-inline-logo {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+    border-radius: 3px;
+    vertical-align: -3px;
+    margin-right: 5px;
+}
+
 .sch-brandbar-tabs > button {
     flex: 0 0 auto;
 }
@@ -6661,6 +7013,386 @@
     }
 }
 
+/* Research deduction room: design before experiment records. */
+.deduction-full-panel {
+  /* container-type: inline-size 会让内容不再撑开自身宽度；作为 .scholarium-main
+     (display:flex) 的子项时必须显式给出 flex/width，否则会塌成 0 宽白屏。 */
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  padding: 0 !important;
+  overflow: hidden;
+  background: var(--background-primary);
+  container-type: inline-size;
+  container-name: deduction;
+}
+
+.deduction-room {
+  display: grid;
+  grid-template-columns: minmax(200px, 0.85fr) minmax(340px, 1.6fr) minmax(240px, 1fr);
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  color: var(--text-normal);
+}
+
+.deduction-room-fallback {
+  min-height: 560px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 16px;
+  background: var(--background-primary);
+}
+
+.deduction-room-fallback pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--background-secondary);
+}
+
+.deduction-pane {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 22px;
+  border-right: 1px solid var(--background-modifier-border);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 对话栏：head / bridge-state / transcript / composer 四行，
+   只有 transcript 滚动，输入框固定在底部，避免每次重渲染后位置跳动。 */
+.deduction-dialogue-pane {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 12px;
+  overflow: hidden;
+}
+.deduction-dialogue-pane > .deduction-transcript {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.deduction-dialogue-pane > .deduction-pane-head,
+.deduction-dialogue-pane > .deduction-composer { margin: 0; }
+
+.deduction-plan-pane { border-right: 0; background: var(--background-secondary); }
+.deduction-pane-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.deduction-pane-head h2 { margin: 0; font-size: 18px; }
+.deduction-pane-head p, .deduction-project-label, .deduction-empty { color: var(--text-muted); font-size: 12px; line-height: 1.55; }
+.deduction-pane-head p { margin: 4px 0 0; }
+.deduction-project-label { margin: 0 0 14px; }
+.deduction-design-list { display: grid; gap: 10px; }
+
+.deduction-design-card {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  padding: 13px;
+  text-align: left;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+.deduction-design-card:hover, .deduction-design-card.is-selected { border-color: var(--interactive-accent); background: var(--background-primary-alt); }
+
+/* ── 文献 Pipeline：主题弹窗 ──────────────────────────────
+   弹窗挂在 document.body 上，拿不到插件视图里定义的 --celn-accent，
+   所以这里必须用 Obsidian 全局变量重写按钮配色，否则是白底白字。 */
+.scholarium-pipeline-modal { width: min(680px, 88vw); }
+.scholarium-pipeline-modal h2 { margin: 0 0 6px; font-size: 18px; }
+.scholarium-pipeline-modal textarea {
+  width: 100%; min-height: 130px; resize: vertical; margin-top: 8px;
+}
+.scholarium-pipeline-modal .scholarium-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  font-size: 13px;
+  cursor: pointer;
+}
+.scholarium-pipeline-modal .scholarium-btn:hover { background: var(--interactive-hover); }
+.scholarium-pipeline-modal .scholarium-btn.primary {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.scholarium-pipeline-modal .scholarium-btn.primary:hover { background: var(--interactive-accent-hover); }
+.pipeline-topic-hint, .pipeline-topic-tip { color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.pipeline-topic-tip { margin-top: 10px; padding: 9px 11px; border-radius: 8px; background: var(--background-secondary); }
+.pipeline-topic-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.pipeline-settings { display: grid; gap: 13px; margin-top: 14px; }
+.pipeline-setting-row { padding-bottom: 12px; border-bottom: 1px solid var(--background-modifier-border); }
+.pipeline-setting-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.pipeline-setting-label { display: flex; align-items: center; gap: 9px; font-size: 13px; cursor: pointer; }
+.pipeline-setting-label input[type="checkbox"] { flex: 0 0 auto; }
+.pipeline-setting-label input[type="number"] { width: 92px; margin-left: auto; }
+.pipeline-setting-hint { margin: 5px 0 0 !important; color: var(--text-muted); font-size: 11.5px; line-height: 1.6; }
+
+/* ── 文献 Pipeline：对话流内的运行卡片 ─────────────────── */
+.deduction-pipeline { border-color: var(--interactive-accent) !important; }
+.deduction-pipeline.is-live { border-style: solid !important; }
+.pipeline-badge {
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; white-space: nowrap;
+  background: var(--background-modifier-hover); color: var(--text-muted);
+}
+.pipeline-badge.is-running { background: var(--interactive-accent); color: var(--text-on-accent); }
+.pipeline-badge.is-stopped { background: var(--color-orange, #d9822b); color: #fff; }
+.pipeline-badge.is-done { background: var(--color-green, #22c55e); color: #fff; }
+.pipeline-live-status {
+  margin: 8px 0 0 !important; padding: 6px 9px; border-radius: 6px;
+  background: var(--background-secondary); color: var(--text-muted) !important;
+  font-size: 11.5px !important; font-family: var(--font-monospace);
+  overflow-wrap: anywhere;
+}
+.pipeline-steps { display: grid; gap: 5px; margin-top: 9px; }
+.pipeline-step {
+  padding: 7px 10px; border-radius: 7px;
+  border-left: 3px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+.pipeline-step.is-running { border-left-color: var(--interactive-accent); }
+.pipeline-step.is-done { border-left-color: var(--color-green, #22c55e); }
+.pipeline-step.is-error { border-left-color: var(--color-orange, #d9822b); }
+.pipeline-step.is-warning { border-left-color: var(--color-yellow, #eab308); background: color-mix(in srgb, var(--color-yellow, #eab308) 5%, transparent); }
+.pipeline-step strong { display: block; font-size: 12.5px; line-height: 1.45; }
+.pipeline-step-desc { margin: 2px 0 0 !important; color: var(--text-faint) !important; font-size: 11px !important; }
+.pipeline-step-note { margin: 4px 0 0 !important; font-size: 12px !important; line-height: 1.55; overflow-wrap: anywhere; }
+.pipeline-step.is-running .pipeline-step-note { color: var(--text-muted) !important; }
+.pipeline-live-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.pipeline-result {
+  margin-top: 11px; padding: 11px 13px; border-radius: 9px;
+  background: var(--background-primary);
+  border-left: 3px solid var(--color-green, #22c55e);
+}
+.pipeline-result.is-error { border-left-color: var(--color-orange, #d9822b); }
+.pipeline-result strong { display: block; margin-bottom: 6px; font-size: 13px; }
+.pipeline-result p { margin: 4px 0 !important; font-size: 12px !important; line-height: 1.6; overflow-wrap: anywhere; }
+.pipeline-review { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--background-modifier-border); }
+.pipeline-review summary { cursor: pointer; font-size: 12px; color: var(--text-muted); }
+.pipeline-review li { font-size: 11.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.pipeline-review-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+
+/* ── 对话记录：保存下来的会话 md，点击载入并继续 ────────────── */
+
+/* 次级区块标题：比「实验设计」轻，形成层级，避免两个大标题打架 */
+.deduction-session-head {
+  align-items: center;
+  margin: 22px 0 9px;
+  padding-top: 15px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.deduction-session-head h2 {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.deduction-session-head .scholarium-btn {
+  padding: 3px 9px;
+  font-size: 11.5px;
+  background: transparent;
+}
+.deduction-session-scope {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-family: var(--font-monospace);
+  letter-spacing: 0;
+}
+
+.deduction-session-list { display: grid; gap: 2px; }
+
+/* 列表项：无边框、靠 hover/选中底色区分，比卡片式更省空间也更好扫读 */
+.deduction-session-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 30px 8px 10px;
+  text-align: left;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-normal);
+  cursor: pointer;
+  box-shadow: none;
+}
+.deduction-session-card:hover { background: var(--background-modifier-hover); }
+.deduction-session-card.is-selected {
+  background: var(--background-modifier-hover);
+  box-shadow: inset 2px 0 0 var(--interactive-accent);
+}
+
+/* 标题最多两行，超出省略；anywhere 保证长英文/DOI 也能断行不撑破侧栏 */
+.deduction-session-card strong {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.deduction-session-card.is-selected strong { font-weight: 600; }
+.deduction-session-card small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 「在 md 中打开」只在 hover 时出现，平时不干扰阅读 */
+.deduction-session-open {
+  position: absolute;
+  top: 7px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 5px;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.deduction-session-card:hover .deduction-session-open { opacity: 1; }
+.deduction-session-open:hover { background: var(--background-modifier-border); color: var(--interactive-accent); }
+.deduction-design-card small, .deduction-plan-card small { color: var(--text-muted); }
+.deduction-design-card strong { font-size: 14px; line-height: 1.45; }
+.deduction-status { width: fit-content; padding: 3px 7px; border-radius: 999px; background: var(--background-modifier-hover); color: var(--text-muted); font-size: 11px; }
+.deduction-status.status-awaiting-experiment { background: var(--interactive-accent-hover); color: var(--text-on-accent); }
+.deduction-bridge-state { padding: 9px 11px; border-radius: 8px; background: var(--background-secondary); color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.deduction-bridge-state.is-online { color: var(--color-green); }
+.deduction-transcript { display: grid; gap: 12px; min-height: 300px; }
+.deduction-message { padding: 14px; border-radius: 12px; background: var(--background-secondary); }
+.deduction-message.user { margin-left: 36px; background: var(--interactive-accent-hover); color: var(--text-on-accent); }
+.deduction-message small { opacity: 0.75; font-weight: 700; }
+.deduction-message p { margin: 7px 0 0; white-space: pre-wrap; line-height: 1.6; overflow-wrap: anywhere; }
+.deduction-message .deduction-markdown { margin-top: 7px; line-height: 1.7; overflow-wrap: anywhere; }
+.deduction-message .deduction-markdown > :first-child { margin-top: 0; }
+.deduction-message .deduction-markdown > :last-child { margin-bottom: 0; }
+.deduction-message .deduction-markdown p { white-space: normal; }
+.deduction-message .deduction-markdown :is(h1, h2, h3, h4, h5, h6) { margin: 1.15em 0 0.45em; line-height: 1.35; }
+.deduction-message .deduction-markdown h1 { font-size: 1.28em; }
+.deduction-message .deduction-markdown h2 { font-size: 1.18em; }
+.deduction-message .deduction-markdown h3 { font-size: 1.08em; }
+.deduction-message .deduction-markdown :is(ul, ol) { margin: 0.55em 0; padding-left: 1.45em; }
+.deduction-message .deduction-markdown li + li { margin-top: 0.25em; }
+.deduction-message .deduction-markdown blockquote { margin: 0.7em 0; padding: 0.2em 0 0.2em 0.9em; border-left: 3px solid var(--interactive-accent); color: var(--text-muted); }
+.deduction-message .deduction-markdown pre { margin: 0.75em 0; max-width: 100%; overflow: auto; }
+.deduction-message .deduction-markdown :not(pre) > code { padding: 0.12em 0.35em; border-radius: 4px; background: var(--background-primary); }
+.deduction-message .deduction-markdown table { display: table; width: max-content; max-width: 100%; margin: 0.75em 0; font-size: 0.92em; }
+.deduction-evidence { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.deduction-evidence span { padding: 4px 7px; border-radius: 999px; background: var(--background-primary); font-size: 11px; }
+.deduction-evidence .evidence-unverified { color: var(--color-orange); }
+.deduction-questions { margin: 12px 0 0; padding-left: 20px; line-height: 1.6; }
+.deduction-audit { padding: 9px; border-left: 3px solid var(--color-orange); background: var(--background-primary); }
+.deduction-audit.passed { border-color: var(--color-green); }
+.deduction-composer { display: grid; gap: 9px; margin-top: 15px; }
+.deduction-composer textarea { min-height: 105px; resize: vertical; }
+.deduction-composer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.deduction-mode-toggle { margin-right: auto; }
+.deduction-mode-toggle.is-active { background: var(--interactive-accent); color: var(--text-on-accent); border-color: var(--interactive-accent); }
+.deduction-plan-card { display: grid; gap: 10px; padding: 15px; border: 1px solid var(--background-modifier-border); border-radius: 12px; background: var(--background-primary); }
+.deduction-plan-card h3 { margin: 0; font-size: 16px; }
+.deduction-plan-section h4 { margin: 7px 0 4px; font-size: 12px; color: var(--text-muted); }
+.deduction-plan-section p { margin: 0; line-height: 1.55; font-size: 13px; }
+.deduction-create-experiment, .deduction-draft-actions { margin-top: 15px; }
+.deduction-draft-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.deduction-draft-actions p { margin: 0; color: var(--text-muted); font-size: 12px; }
+
+.deduction-message.tool { background: var(--background-primary); border: 1px dashed var(--background-modifier-border); border-radius: 10px; padding: 10px 14px; margin-right: 36px; }
+.deduction-message.tool .deduction-tool-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.deduction-message.tool small { color: var(--text-muted); font-size: 11px; letter-spacing: 0.02em; overflow-wrap: anywhere; min-width: 0; }
+.deduction-message.tool .deduction-tool-top span { font-size: 11px; padding: 2px 7px; border-radius: 999px; background: var(--background-secondary); color: var(--text-muted); }
+.deduction-message.tool p { font-size: 12.5px; color: var(--text-muted); }
+.deduction-message.tool p:last-child { color: var(--text-normal); }
+.deduction-download-detail { margin-top: 4px; display: flex; flex-direction: column; gap: 2px; }
+.deduction-download-detail p { margin: 0; font-size: 11.5px; overflow-wrap: anywhere; }
+.deduction-download-detail p.ok { color: var(--color-green); }
+.deduction-download-detail p.fail { color: var(--color-red, #e5484d); }
+
+.deduction-downloader-card {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--background-secondary) 86%, var(--interactive-accent) 5%);
+}
+
+.deduction-downloader-card .deduction-tool-top span {
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.deduction-download-warning {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--color-orange, #f59e0b);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-orange, #f59e0b) 10%, transparent);
+  color: var(--text-normal);
+}
+/* 发送后立刻出现的等待占位，收到回复时被重渲染替换 */
+.deduction-message.deduction-pending { animation: deduction-pending-pulse 1.4s ease-in-out infinite; }
+.deduction-message.deduction-pending p { color: var(--text-muted); }
+@keyframes deduction-pending-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+.deduction-message.tool.pending { border-style: solid; border-color: var(--color-orange, #d9822b); background: var(--background-primary-alt); }
+.deduction-message.tool.pending .deduction-tool-top span { background: var(--color-orange, #d9822b); color: var(--text-on-accent, #fff); }
+.deduction-evidence-candidates { margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+.deduction-candidate-row { display: flex; align-items: flex-start; gap: 8px; padding: 4px 6px; border-radius: 6px; background: var(--background-secondary); flex-wrap: wrap; }
+.deduction-candidate-row label { display: flex; align-items: flex-start; gap: 6px; font-size: 12.5px; color: var(--text-normal); cursor: pointer; flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.deduction-candidate-row input[type="checkbox"] { accent-color: #22c55e; width: 16px; height: 16px; min-width: 16px; flex: 0 0 auto; cursor: pointer; margin-top: 2px; }
+.deduction-candidate-row small { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.deduction-evidence-actions { display: flex; gap: 8px; margin: 4px 0 14px; }
+
+@media (max-width: 1100px) {
+  .deduction-room { grid-template-columns: 220px minmax(0, 1fr); }
+  .deduction-plan-pane { grid-column: 1 / -1; border-top: 1px solid var(--background-modifier-border); }
+}
+
+@media (max-width: 720px) {
+  .deduction-room { grid-template-columns: 1fr; }
+  .deduction-pane { border-right: 0; border-bottom: 1px solid var(--background-modifier-border); }
+  .deduction-message.user { margin-left: 0; }
+}
+
+/* Container queries: respond to the actual pane width, not the whole window
+   (Obsidian leaves can be narrow even when the app window is wide). */
+@container deduction (max-width: 1100px) {
+  .deduction-room { grid-template-columns: 220px minmax(0, 1fr); }
+  .deduction-plan-pane { grid-column: 1 / -1; border-top: 1px solid var(--background-modifier-border); }
+}
+
+@container deduction (max-width: 720px) {
+  .deduction-room { grid-template-columns: 1fr; height: auto; max-height: none; }
+  .deduction-pane { border-right: 0; border-bottom: 1px solid var(--background-modifier-border); height: auto; max-height: 70vh; }
+  .deduction-message.user { margin-left: 0; }
+}
+
 /* Academic tools page: grouped navigation layout */
 .rtl-root {
     --rtl-page-max: 1420px;
@@ -7654,6 +8386,122 @@
     background: #0a0a0a;
     color: #e8e8e8;
     font-size: 13px;
+}
+
+/* Scholarium 研究推演室：Bridge 旁运行控制组
+   位置原则：保留原 Brand Bar；Agent/WebVPN/Pipeline 只属于科研论标题区。 */
+.scholarium-dashboard .deduction-pane-head.sch-deduction-head-with-tools {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.scholarium-dashboard .sch-deduction-bridge-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.scholarium-dashboard .sch-deduction-agent-pill {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1a1a18;
+}
+
+.scholarium-dashboard .sch-deduction-agent-pill .sch-agent-dot {
+  color: #2ea043;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.scholarium-dashboard .sch-deduction-agent-select {
+  height: 28px;
+  min-width: 92px;
+  border: 0;
+  background: transparent;
+  color: #1a1a18;
+  font-weight: 700;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  box-shadow: none;
+}
+
+.scholarium-dashboard .sch-deduction-tool-btn {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #333333;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: none;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+.scholarium-dashboard .sch-deduction-tool-btn:hover {
+  border-color: rgba(25, 118, 210, 0.35);
+  background: rgba(25, 118, 210, 0.06);
+  color: #1976d2;
+}
+
+.scholarium-dashboard .sch-deduction-tool-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.scholarium-dashboard .sch-deduction-tool-btn.is-webvpn-ok {
+  border-color: rgba(46, 160, 67, 0.25);
+  background: rgba(46, 160, 67, 0.10);
+  color: #2ea043;
+}
+
+.scholarium-dashboard .sch-deduction-tool-btn.is-webvpn-warn {
+  border-color: rgba(255, 165, 0, 0.30);
+  background: rgba(255, 165, 0, 0.10);
+  color: #d48806;
+}
+
+.scholarium-dashboard .sch-deduction-tool-btn.is-webvpn-checking {
+  border-color: rgba(100, 149, 237, 0.35);
+  background: rgba(100, 149, 237, 0.10);
+  color: #1976d2;
+}
+
+.scholarium-dashboard .sch-deduction-toggle.is-on {
+  border-color: rgba(123, 97, 255, 0.45);
+  background: rgba(123, 97, 255, 0.10);
+  color: #5b43d6;
+}
+
+.scholarium-dashboard .sch-deduction-tool-primary {
+  border-color: #1976d2;
+  background: #1976d2;
+  color: #ffffff;
+}
+
+.scholarium-dashboard .sch-deduction-tool-primary:hover {
+  border-color: #0d47a1;
+  background: #0d47a1;
+  color: #ffffff;
 }
 
 /* Top command bar */
@@ -9085,7 +9933,6 @@ body.scholarium-resizing-sidebar {
     padding: 14px 17px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 10px;
 }
 
@@ -9093,21 +9940,27 @@ body.scholarium-resizing-sidebar {
     display: none;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section-summary::after {
-    content: "+";
+.scholarium-root.scholarium-settings .sch-settings-section-summary::before {
+    content: "›";
     color: var(--text-muted);
-    font-size: 20px;
+    font-size: 22px;
     line-height: 1;
+    transition: transform 120ms ease, color 120ms ease;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section[open] .sch-settings-section-summary::after {
-    content: "-";
+.scholarium-root.scholarium-settings .sch-settings-section[open] .sch-settings-section-summary::before {
     color: var(--accent);
+    transform: rotate(90deg);
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section-summary h3 {
+.scholarium-root.scholarium-settings .sch-settings-section-summary h3,
+.scholarium-root.scholarium-settings .sch-settings-section-summary .setting-item-heading {
+    flex: 1;
     margin: 0 !important;
     font-size: 18px;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
 }
 
 .scholarium-root.scholarium-settings .sch-settings-section-body {
@@ -9136,16 +9989,315 @@ body.scholarium-resizing-sidebar {
     padding: 7px 10px;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section-summary h3 {
+.scholarium-root.scholarium-settings .sch-settings-section-summary h3,
+.scholarium-root.scholarium-settings .sch-settings-section-summary .setting-item-heading {
     font-size: 1.55em !important;
 }
 
-.scholarium-root.scholarium-settings .sch-settings-section-summary::after {
+.scholarium-root.scholarium-settings .sch-settings-section-summary::before {
     font-size: 14px;
 }
 
 .scholarium-root.scholarium-settings .sch-settings-section-body {
     padding: 0 10px 8px;
+}
+
+/* Obsidian mounts plugin settings without the dashboard's .scholarium-root class. */
+.scholarium-settings .sch-settings-section {
+    margin: 6px 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-panel);
+    overflow: hidden;
+}
+.scholarium-settings .sch-settings-section-summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 7px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.scholarium-settings .sch-settings-section-summary::-webkit-details-marker { display: none; }
+.scholarium-settings .sch-settings-section-summary::before {
+    content: "›";
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1;
+    transition: transform 120ms ease, color 120ms ease;
+}
+.scholarium-settings .sch-settings-section[open] .sch-settings-section-summary::before {
+    color: var(--accent);
+    transform: rotate(90deg);
+}
+.scholarium-settings .sch-settings-section-summary h3,
+.scholarium-settings .sch-settings-section-summary .setting-item-heading {
+    flex: 1;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+}
+.scholarium-settings .sch-settings-section-body {
+    padding: 0 10px 8px;
+    border-top: 1px solid var(--border-soft);
+}
+
+/* Academic settings redesign: restrained paper, ink, and brass palette. */
+.scholarium-settings {
+    --sch-academic-ink: #233a58;
+    --sch-academic-muted: #6e7785;
+    --sch-academic-brass: #b8843f;
+    --sch-academic-line: rgba(38, 58, 86, .15);
+    --sch-academic-paper: #fffdf9;
+    background: linear-gradient(135deg, #fcfaf6 0%, #fffefa 58%, #f8f5ee 100%);
+    color: var(--sch-academic-ink);
+    padding: 32px 48px 48px !important;
+}
+.scholarium-settings > .setting-item-heading {
+    margin: 0 0 18px !important;
+    padding: 0 0 16px !important;
+    border-bottom: 1px solid var(--sch-academic-line) !important;
+    background: transparent !important;
+}
+.scholarium-settings > .setting-item-heading .setting-item-name {
+    font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+    font-size: 25px !important;
+    font-weight: 600;
+    letter-spacing: .08em;
+    color: var(--sch-academic-ink) !important;
+}
+.scholarium-settings .sch-settings-section {
+    margin: 6px 0 !important;
+    border: 1px solid var(--sch-academic-line) !important;
+    border-radius: 9px !important;
+    background: color-mix(in srgb, var(--sch-academic-paper) 96%, transparent) !important;
+    box-shadow: 0 2px 8px rgba(28, 46, 70, .025);
+    transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.scholarium-settings .sch-settings-section:hover {
+    border-color: rgba(184, 132, 63, .42) !important;
+    box-shadow: 0 5px 16px rgba(28, 46, 70, .06);
+}
+.scholarium-settings .sch-settings-section-summary {
+    min-height: 52px;
+    padding: 11px 22px !important;
+    gap: 14px !important;
+}
+.scholarium-settings .sch-settings-section-summary::before {
+    width: 27px;
+    height: 27px;
+    display: inline-grid;
+    place-items: center;
+    border: 1px solid rgba(35, 58, 88, .32);
+    border-radius: 50%;
+    color: var(--sch-academic-ink) !important;
+    font-size: 16px !important;
+    transform: none !important;
+}
+.scholarium-settings .sch-settings-section-summary::after {
+    content: "›";
+    margin-left: auto;
+    color: var(--sch-academic-muted);
+    font-family: Georgia, serif;
+    font-size: 28px;
+    font-weight: 400;
+    line-height: 1;
+    transition: transform 160ms ease, color 160ms ease;
+}
+.scholarium-settings .sch-settings-section[open] .sch-settings-section-summary::after {
+    color: var(--sch-academic-brass);
+    transform: rotate(90deg);
+}
+.scholarium-settings .sch-settings-section-summary .setting-item-heading {
+    display: block !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+}
+.scholarium-settings .sch-settings-section-summary .setting-item-name {
+    font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+    font-size: 19px !important;
+    font-weight: 600 !important;
+    letter-spacing: .035em;
+    color: var(--sch-academic-ink) !important;
+}
+.scholarium-settings .sch-settings-section-description {
+    margin-top: 3px;
+    color: var(--sch-academic-muted);
+    font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+    font-size: 12.5px;
+    letter-spacing: .02em;
+    line-height: 1.45;
+}
+.scholarium-settings .sch-settings-section[data-section="personal"] summary::before { content: "◌"; }
+.scholarium-settings .sch-settings-section[data-section="general"] summary::before { content: "□"; color: var(--sch-academic-brass) !important; border-color: rgba(184,132,63,.45); }
+.scholarium-settings .sch-settings-section[data-section="weather"] summary::before { content: "⌁"; }
+.scholarium-settings .sch-settings-section[data-section="ai"] summary::before { content: "✦"; color: var(--sch-academic-brass) !important; border-color: rgba(184,132,63,.45); }
+.scholarium-settings .sch-settings-section[data-section="agent"] summary::before { content: "⌘"; }
+.scholarium-settings .sch-settings-section[data-section="prompt"] summary::before { content: "✎"; color: var(--sch-academic-brass) !important; border-color: rgba(184,132,63,.45); }
+.scholarium-settings .sch-settings-section[data-section="vision"] summary::before { content: "▣"; }
+.scholarium-settings .sch-settings-section[data-section="rss"] summary::before { content: "⌁"; color: var(--sch-academic-brass) !important; border-color: rgba(184,132,63,.45); }
+.scholarium-settings .sch-settings-section[data-section="library"] summary::before { content: "▥"; }
+.scholarium-settings .sch-settings-section[data-section="cloud"] summary::before { content: "☁"; }
+.scholarium-settings .sch-settings-section[data-section="theme"] summary::before { content: "◈"; color: var(--sch-academic-brass) !important; border-color: rgba(184,132,63,.45); }
+.scholarium-settings .sch-settings-section-body {
+    padding: 8px 22px 18px !important;
+    border-top-color: var(--sch-academic-line) !important;
+}
+.scholarium-settings .sch-settings-section-body .setting-item {
+    padding: 10px 0 !important;
+    border-top-color: rgba(35, 58, 88, .08) !important;
+}
+.scholarium-settings .sch-settings-section-body .setting-item-name {
+    font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+    font-size: 15px !important;
+    color: var(--sch-academic-ink) !important;
+}
+.scholarium-settings .sch-settings-section-body .setting-item-description {
+    color: var(--sch-academic-muted) !important;
+    font-size: 12px !important;
+    line-height: 1.5;
+}
+.scholarium-settings input, .scholarium-settings select, .scholarium-settings textarea {
+    border-color: rgba(35, 58, 88, .18) !important;
+    border-radius: 5px !important;
+    background: rgba(255, 254, 250, .92) !important;
+    color: var(--sch-academic-ink) !important;
+    box-shadow: none !important;
+}
+.scholarium-settings input:focus, .scholarium-settings select:focus, .scholarium-settings textarea:focus {
+    border-color: var(--sch-academic-brass) !important;
+    box-shadow: 0 0 0 2px rgba(184, 132, 63, .12) !important;
+}
+
+/* Visual styles stay visible as two deliberate choices instead of being
+   hidden behind a narrow native select on Windows. */
+.scholarium-settings .sch-visual-style-picker {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 2px 0 14px;
+}
+.scholarium-settings .sch-visual-style-choice {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 13px 15px;
+    border: 1px solid var(--sch-academic-line);
+    border-radius: 7px;
+    background: rgba(255, 254, 250, .72);
+    color: var(--sch-academic-ink);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+.scholarium-settings .sch-visual-style-choice:hover {
+    border-color: rgba(184, 132, 63, .62);
+    background: rgba(184, 132, 63, .07);
+}
+.scholarium-settings .sch-visual-style-choice.is-selected {
+    border-color: var(--sch-academic-brass);
+    background: rgba(184, 132, 63, .12);
+    box-shadow: inset 3px 0 0 var(--sch-academic-brass);
+}
+.scholarium-settings .sch-visual-style-choice-title {
+    color: var(--sch-academic-ink);
+    font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+    font-size: 15px;
+    font-weight: 600;
+}
+.scholarium-settings .sch-visual-style-choice-desc {
+    color: var(--sch-academic-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+@media (max-width: 540px) {
+    .scholarium-settings .sch-visual-style-picker {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Use Windows' symbol font for the accordion pictograms.  The serif text font
+   intentionally used by the academic theme does not contain every symbol. */
+.scholarium-settings .sch-settings-section-summary::before {
+    font-family: "Segoe UI Symbol", "Segoe UI Emoji", "Arial Unicode MS", sans-serif !important;
+    font-weight: 400 !important;
+    line-height: 1 !important;
+}
+
+/* A deliberately compact reading density for the native Obsidian settings pane. */
+.scholarium-settings {
+    padding: 18px 28px 30px !important;
+    font-size: 13px !important;
+}
+.scholarium-settings > .setting-item-heading {
+    margin: 0 0 10px !important;
+    padding: 0 0 9px !important;
+}
+.scholarium-settings > .setting-item-heading .setting-item-name {
+    font-size: 20px !important;
+}
+.scholarium-settings .sch-settings-section {
+    margin: 4px 0 !important;
+    border-radius: 7px !important;
+}
+.scholarium-settings .sch-settings-section-summary {
+    min-height: 42px !important;
+    padding: 8px 15px !important;
+    gap: 10px !important;
+}
+.scholarium-settings .sch-settings-section-summary::before {
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 13px !important;
+}
+.scholarium-settings .sch-settings-section-summary::after {
+    content: ">" !important;
+    font-family: Arial, sans-serif !important;
+    font-size: 17px !important;
+}
+.scholarium-settings .sch-settings-section-summary .setting-item-name {
+    font-size: 16px !important;
+    letter-spacing: .02em;
+}
+.scholarium-settings .sch-settings-section-description {
+    margin-top: 1px;
+    font-size: 10.5px !important;
+    line-height: 1.3;
+}
+.scholarium-settings .sch-settings-section-body {
+    padding: 5px 15px 10px !important;
+}
+.scholarium-settings .sch-settings-section-body .setting-item {
+    padding: 6px 0 !important;
+    min-height: 0 !important;
+}
+.scholarium-settings .sch-settings-section-body .setting-item-name {
+    font-size: 13px !important;
+}
+.scholarium-settings .sch-settings-section-body .setting-item-description {
+    font-size: 10.5px !important;
+    line-height: 1.35;
+}
+.scholarium-settings input, .scholarium-settings select, .scholarium-settings textarea,
+.scholarium-settings button {
+    font-size: 12px !important;
+}
+
+/* Keep the settings visually native to whichever Obsidian theme is active. */
+.scholarium-settings,
+.scholarium-settings .setting-item,
+.scholarium-settings .setting-item-name,
+.scholarium-settings .setting-item-description,
+.scholarium-settings .sch-settings-section-summary .setting-item-name,
+.scholarium-settings .sch-settings-section-description,
+.scholarium-settings input,
+.scholarium-settings select,
+.scholarium-settings textarea,
+.scholarium-settings button {
+    font-family: var(--font-interface) !important;
 }
 
 .scholarium-root.scholarium-settings .setting-item {
@@ -13029,40 +14181,3263 @@ body.scholarium-resizing-sidebar {
     align-items: stretch;
   }
 
-  .project-profile-form {
+.project-profile-form {
     grid-template-columns: 1fr;
   }
 }
 
+/* =====================================================
+   Scholarium high-contrast academic-blue preview theme
+   Final override layer · 2026-08-04
+   Pure white + saturated semantic colors + sharp borders.
+   ===================================================== */
+.scholarium-dashboard.scholarium-dashboard,
+.scholarium-chat-modal-wrap,
+.scholarium-settings {
+  --celn-accent: #1976d2;
+  --celn-accent-rgb: 25, 118, 210;
+  --celn-accent-light: rgba(25, 118, 210, 0.08);
+  --celn-accent-medium: #1976d2;
+  --celn-accent-dark: #0d47a1;
+  --celn-accent-deeper: #0d47a1;
+  --celn-alpha: 0.08;
+  --sch-bg: #ffffff;
+  --sch-bg-deep: #ffffff;
+  --sch-surface: #ffffff;
+  --sch-surface2: #fafafa;
+  --sch-paper: #ffffff;
+  --sch-line: rgba(0, 0, 0, 0.10);
+  --sch-line-soft: rgba(0, 0, 0, 0.06);
+  --sch-ink: #1a1a18;
+  --sch-ink2: #666666;
+  --sch-mute: #999999;
+  --sch-mute-soft: #bbbbbb;
+  --sch-accent: #1976d2;
+  --sch-accent-soft: rgba(25, 118, 210, 0.08);
+  --sch-accent-ink: #1976d2;
+  --sch-rose: #da4453;
+  --sch-sun: #d48806;
+  --sch-moss: #2ea043;
+  --sch-sky: #6495ed;
+  --sch-iris: #7B61FF;
+  --sch-coral: #da4453;
+  --sch-rose-fg: #da4453;
+  --sch-rose-bg: rgba(218, 68, 83, 0.12);
+  --sch-sun-fg: #d48806;
+  --sch-sun-bg: rgba(255, 165, 0, 0.12);
+  --sch-moss-fg: #2ea043;
+  --sch-moss-bg: rgba(46, 160, 67, 0.12);
+  --sch-sky-fg: #246b87;
+  --sch-sky-bg: rgba(74, 143, 193, 0.10);
+  --sch-iris-fg: #1976d2;
+  --sch-iris-bg: rgba(25, 118, 210, 0.08);
+  --sch-coral-fg: #da4453;
+  --sch-coral-bg: rgba(218, 68, 83, 0.12);
+  --sch-radius: 8px;
+  --sch-radius-inset: 6px;
+  --sch-pad: 18px;
+  --sch-gap: 12px;
+  --background-primary: #ffffff;
+  --background-primary-alt: #ffffff;
+  --background-secondary: #fafafa;
+  --background-secondary-alt: #f8f8f6;
+  --background-modifier-border: rgba(0, 0, 0, 0.10);
+  --background-modifier-hover: rgba(25, 118, 210, 0.08);
+  --background-modifier-active-hover: rgba(25, 118, 210, 0.08);
+  --text-normal: #1a1a18;
+  --text-muted: #666666;
+  --text-faint: #999999;
+  --interactive-accent: #1976d2;
+  --interactive-accent-hover: #0d47a1;
+  --sch-font-serif: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  color: #1a1a18;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.scholarium-dashboard.scholarium-dashboard {
+  background: #ffffff !important;
+  color: #1a1a18 !important;
+}
+
+.scholarium-dashboard .scholarium-main,
+.scholarium-dashboard .scholarium-panel,
+.scholarium-dashboard .deduction-room,
+.scholarium-dashboard .project-profile-drawer {
+  background: #ffffff;
+  color: #1a1a18;
+}
+
+.scholarium-dashboard .sch-brandbar,
+.scholarium-dashboard .scholarium-header,
+.scholarium-dashboard .scholarium-panel-switch,
+.scholarium-dashboard .scholarium-action-bar {
+  background: #0d0d0d !important;
+  border-color: rgba(255, 255, 255, 0.10) !important;
+  color: #e8e8e8;
+}
+
+.scholarium-dashboard .sch-brandbar button,
+.scholarium-dashboard .scholarium-panel-switch button {
+  color: #888888;
+  border-radius: 8px;
+}
+
+.scholarium-dashboard .sch-brandbar button:hover,
+.scholarium-dashboard .scholarium-panel-switch button:hover {
+  color: #e8e8e8;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.scholarium-dashboard .sch-brandbar button.is-active,
+.scholarium-dashboard .scholarium-panel-switch button.is-active,
+.scholarium-dashboard .scholarium-panel-switch button.active {
+  color: #1aff8c !important;
+  background: rgba(26, 255, 140, 0.06) !important;
+  box-shadow: inset 0 -2px 0 #1aff8c !important;
+}
+
+.scholarium-dashboard h1,
+.scholarium-dashboard h2,
+.scholarium-dashboard h3,
+.scholarium-dashboard strong {
+  color: #1a1a18;
+}
+
+.scholarium-dashboard h1,
+.scholarium-dashboard h2 {
+  font-weight: 800;
+}
+
+.scholarium-dashboard small,
+.scholarium-dashboard .section-title,
+.scholarium-dashboard .deduction-pane-head p,
+.scholarium-dashboard .deduction-project-label {
+  color: #999999;
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+}
+
+/* Final theme boundary for the top Scholarium shell. Several legacy rules
+   above use a dark presentation palette; they must not win in Obsidian light
+   mode, where the product name and navigation need readable ink. */
+body.theme-light .scholarium-root .sch-brandbar,
+body.theme-light .scholarium-root .scholarium-header,
+body.theme-light .scholarium-root .scholarium-panel-switch,
+body.theme-light .scholarium-root .scholarium-action-bar {
+  background: var(--bg-panel, #ffffff) !important;
+  border-color: var(--border, #d8dee8) !important;
+  color: var(--text-primary, #172033) !important;
+}
+
+body.theme-light .scholarium-root .sch-brandbar-logo,
+body.theme-light .scholarium-root .scholarium-logo,
+body.theme-light .scholarium-root .scholarium-clock {
+  color: var(--text-primary, #172033) !important;
+}
+
+body.theme-light .scholarium-root .sch-brandbar-tabs button,
+body.theme-light .scholarium-root .scholarium-switch-btn,
+body.theme-light .scholarium-root .sch-brandbar-actions button {
+  color: var(--text-secondary, #475569) !important;
+}
+
+body.theme-light .scholarium-root .sch-brandbar-tabs button:hover,
+body.theme-light .scholarium-root .scholarium-switch-btn:hover,
+body.theme-light .scholarium-root .sch-brandbar-actions button:hover {
+  background: var(--bg-elevated, #eef2f7) !important;
+  color: var(--text-primary, #172033) !important;
+}
+
+body.theme-light .scholarium-root .sch-brandbar-tabs button.active,
+body.theme-light .scholarium-root .scholarium-switch-btn.active {
+  color: var(--accent, #1769aa) !important;
+  background: color-mix(in srgb, var(--accent, #1769aa) 10%, transparent) !important;
+  border-color: color-mix(in srgb, var(--accent, #1769aa) 30%, var(--border, #d8dee8)) !important;
+  box-shadow: inset 0 -2px 0 var(--accent, #1769aa) !important;
+}
+
+.scholarium-dashboard .scholarium-card,
+.scholarium-dashboard .scholarium-panel,
+.scholarium-dashboard .rss-card,
+.scholarium-dashboard .deduction-design-card,
+.scholarium-dashboard .deduction-plan-card,
+.scholarium-dashboard .deduction-message,
+.scholarium-dashboard .project-profile-card,
+.scholarium-dashboard .project-profile-summary-grid > div {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.scholarium-dashboard .scholarium-card:hover,
+.scholarium-dashboard .rss-card:hover,
+.scholarium-dashboard .deduction-design-card:hover,
+.scholarium-dashboard .project-profile-card:hover {
+  border-color: rgba(25, 118, 210, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+.scholarium-dashboard .scholarium-btn,
+.scholarium-dashboard button.scholarium-btn {
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  background: #ffffff;
+  color: #555555;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.scholarium-dashboard .scholarium-btn:hover,
+.scholarium-dashboard button.scholarium-btn:hover {
+  border-color: rgba(25, 118, 210, 0.35);
+  background: rgba(25, 118, 210, 0.08);
+  color: #1976d2;
+}
+
+.scholarium-dashboard .scholarium-btn.primary,
+.scholarium-dashboard button.scholarium-btn.primary {
+  background: #1976d2 !important;
+  border-color: #1976d2 !important;
+  color: #ffffff !important;
+}
+
+.scholarium-dashboard .scholarium-btn.primary:hover,
+.scholarium-dashboard button.scholarium-btn.primary:hover {
+  background: #0d47a1 !important;
+  border-color: #0d47a1 !important;
+  color: #ffffff !important;
+}
+
+.scholarium-dashboard .scholarium-btn.ai-btn,
+.scholarium-dashboard button.ai-btn {
+  background: linear-gradient(135deg, #7B61FF, #1976d2) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+}
+
+.scholarium-dashboard input,
+.scholarium-dashboard textarea,
+.scholarium-dashboard select,
+.scholarium-dashboard .project-profile-editor {
+  background: #f8f8f6 !important;
+  border: 1px solid rgba(0, 0, 0, 0.10) !important;
+  border-radius: 6px !important;
+  color: #1a1a18 !important;
+}
+
+.scholarium-dashboard input:focus,
+.scholarium-dashboard textarea:focus,
+.scholarium-dashboard select:focus,
+.scholarium-dashboard .project-profile-editor:focus {
+  border-color: #1976d2 !important;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.10) !important;
+}
+
+.scholarium-dashboard input::placeholder,
+.scholarium-dashboard textarea::placeholder {
+  color: #bbbbbb;
+}
+
+.scholarium-dashboard .deduction-message.user {
+  margin-left: 36px;
+  background: rgba(25, 118, 210, 0.08) !important;
+  color: #1a1a18 !important;
+  border-color: rgba(25, 118, 210, 0.18);
+}
+
+.scholarium-dashboard .deduction-message.agent {
+  background: #f5f5f5 !important;
+  color: #1a1a18;
+}
+
+.scholarium-dashboard .deduction-message.tool,
+.scholarium-dashboard .deduction-tool-card,
+.scholarium-dashboard .deduction-downloader-card {
+  background: #f0f4f8 !important;
+  border: 1px solid rgba(25, 118, 210, 0.18) !important;
+}
+
+.scholarium-dashboard .deduction-evidence span,
+.scholarium-dashboard .evidence-direct,
+.scholarium-dashboard .deduction-evidence .evidence-direct {
+  background: rgba(46, 160, 67, 0.10);
+  color: #2ea043;
+  border-radius: 4px;
+}
+
+.scholarium-dashboard .evidence-indirect,
+.scholarium-dashboard .deduction-evidence .evidence-indirect {
+  background: rgba(25, 118, 210, 0.08);
+  color: #1976d2;
+  border-radius: 4px;
+}
+
+.scholarium-dashboard .evidence-unverified,
+.scholarium-dashboard .deduction-evidence .evidence-unverified {
+  background: rgba(255, 165, 0, 0.10);
+  color: #d48806;
+  border-radius: 4px;
+}
+
+.scholarium-dashboard .deduction-status.status-ready,
+.scholarium-dashboard .status-done,
+.scholarium-dashboard .status-completed,
+.scholarium-dashboard .is-success {
+  background: rgba(46, 160, 67, 0.12) !important;
+  color: #2ea043 !important;
+}
+
+.scholarium-dashboard .status-running,
+.scholarium-dashboard .status-warning,
+.scholarium-dashboard .deduction-message.tool.pending {
+  background: rgba(255, 165, 0, 0.12) !important;
+  color: #d48806 !important;
+  border-color: rgba(255, 165, 0, 0.22) !important;
+}
+
+.scholarium-dashboard .status-planned,
+.scholarium-dashboard .status-info {
+  background: rgba(100, 149, 237, 0.12) !important;
+  color: #6495ed !important;
+}
+
+.scholarium-dashboard .status-error,
+.scholarium-dashboard .is-error,
+.scholarium-dashboard .deduction-download-detail p.fail {
+  background: rgba(218, 68, 83, 0.12);
+  color: #da4453 !important;
+}
+
+.scholarium-dashboard .project-profile-tags span,
+.scholarium-dashboard .reagent-chip,
+.scholarium-dashboard .tag,
+.scholarium-dashboard .chip {
+  background: rgba(25, 118, 210, 0.05) !important;
+  border: 1px solid rgba(25, 118, 210, 0.18) !important;
+  border-radius: 4px !important;
+  color: #1976d2 !important;
+}
+
+/* Deduction left rail refactor: independent design/session scroll areas + resizer. */
+.scholarium-dashboard .deduction-list-pane.deduction-list-pane-refactored {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  position: relative;
+  min-width: 200px;
+  max-width: 440px;
+}
+
+.scholarium-dashboard .deduction-list-top {
+  flex: 0 0 auto;
+  max-height: 45%;
+  min-height: 120px;
+  overflow-y: auto;
+  padding: 18px 18px 12px;
+}
+
+.scholarium-dashboard .deduction-list-top .deduction-pane-head,
+.scholarium-dashboard .deduction-list-bottom .deduction-pane-head {
+  flex: 0 0 auto;
+}
+
+.scholarium-dashboard .deduction-divider {
+  flex: 0 0 1px;
+  height: 1px;
+  margin: 0 18px;
+  background: rgba(0, 0, 0, 0.08);
+  position: relative;
+}
+
+.scholarium-dashboard .deduction-divider::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  width: 24px;
+  height: 7px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.scholarium-dashboard .deduction-list-bottom {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 14px 18px 18px;
+  display: flex;
+  flex-direction: column;
+}
+
+.scholarium-dashboard .deduction-session-list {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex !important;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scholarium-dashboard .deduction-session-list:empty::after {
+  content: "还没有保存的对话。点击输入框旁的“保存会话”存成 md。";
+  display: block;
+  font-size: 12px;
+  color: #999999;
+  line-height: 1.55;
+  padding: 8px 0;
+}
+
+.scholarium-dashboard .deduction-session-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.scholarium-dashboard .deduction-session-card:hover {
+  border-color: rgba(25, 118, 210, 0.30);
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+.scholarium-dashboard .deduction-session-card.is-selected {
+  border-color: #1976d2;
+  background: rgba(25, 118, 210, 0.08);
+}
+
+.scholarium-dashboard .deduction-session-card strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1a1a18;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  padding-right: 18px;
+}
+
+.scholarium-dashboard .deduction-session-card small {
+  font-size: 10px;
+  color: #999999;
+}
+
+.scholarium-dashboard .deduction-session-open {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-size: 13px;
+  color: #999999;
+  opacity: 0.45;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.scholarium-dashboard .deduction-session-card:hover .deduction-session-open {
+  opacity: 1;
+  color: #1976d2;
+}
+
+.scholarium-dashboard .deduction-sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.scholarium-dashboard .deduction-sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 3px;
+  width: 1px;
+  height: 100%;
+  background: transparent;
+  transition: background 0.15s ease, width 0.15s ease, left 0.15s ease;
+}
+
+.scholarium-dashboard .deduction-sidebar-resizer:hover::after,
+.scholarium-dashboard .deduction-sidebar-resizer.is-dragging::after {
+  width: 2px;
+  left: 2.5px;
+  background: #1976d2;
+}
+
+body.deduction-sidebar-resizing {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+.scholarium-dashboard .deduction-list-top::-webkit-scrollbar,
+.scholarium-dashboard .deduction-session-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.scholarium-dashboard .deduction-list-top::-webkit-scrollbar-thumb,
+.scholarium-dashboard .deduction-session-list::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 3px;
+}
+
+.scholarium-dashboard .deduction-list-top::-webkit-scrollbar-thumb:hover,
+.scholarium-dashboard .deduction-session-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+@media (max-width: 1100px) {
+  .scholarium-dashboard .deduction-room {
+    grid-template-columns: 220px minmax(0, 1fr) !important;
+  }
+  .scholarium-dashboard .deduction-sidebar-resizer {
+    display: none;
+  }
+  .scholarium-dashboard .deduction-list-top {
+    max-height: 40%;
+  }
+}
+
+@media (max-width: 720px) {
+  .scholarium-dashboard .deduction-room {
+    grid-template-columns: 1fr !important;
+  }
+  .scholarium-dashboard .deduction-list-pane.deduction-list-pane-refactored {
+    width: auto !important;
+    max-width: none;
+    height: auto;
+    max-height: 50vh;
+    border-right: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.10);
+  }
+}
+
+/* Deduction left rail polish 2.0.8: restore readable session cards and prevent Obsidian button styles from collapsing them. */
+.scholarium-dashboard .deduction-list-pane.deduction-list-pane-refactored {
+  background: #ffffff !important;
+  border-right: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+.scholarium-dashboard .deduction-design-head,
+.scholarium-dashboard .deduction-session-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+}
+
+.scholarium-dashboard .deduction-design-head h2,
+.scholarium-dashboard .deduction-session-head h2 {
+  margin: 0 !important;
+  color: #1a1a18 !important;
+  font-size: 18px !important;
+  font-weight: 800 !important;
+  line-height: 1.25 !important;
+}
+
+.scholarium-dashboard .deduction-project-label,
+.scholarium-dashboard .deduction-session-scope {
+  color: #999999 !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+}
+
+.scholarium-dashboard .deduction-session-list {
+  gap: 8px !important;
+  padding-top: 8px !important;
+}
+
+.scholarium-dashboard button.deduction-session-card {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  display: block !important;
+  width: 100% !important;
+  min-height: 82px !important;
+  height: auto !important;
+  padding: 14px 42px 12px 16px !important;
+  margin: 0 !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  border-radius: 10px !important;
+  background: #ffffff !important;
+  color: #1a1a18 !important;
+  text-align: left !important;
+  white-space: normal !important;
+  line-height: 1.45 !important;
+  overflow: visible !important;
+  box-shadow: none !important;
+  cursor: pointer !important;
+  position: relative !important;
+}
+
+.scholarium-dashboard button.deduction-session-card:hover {
+  border-color: rgba(25, 118, 210, 0.35) !important;
+  background: #ffffff !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06) !important;
+}
+
+.scholarium-dashboard button.deduction-session-card.is-selected {
+  border-color: #1976d2 !important;
+  background: rgba(25, 118, 210, 0.10) !important;
+}
+
+.scholarium-dashboard button.deduction-session-card strong {
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  max-width: 100% !important;
+  margin: 0 0 8px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  color: #1a1a18 !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  line-height: 1.35 !important;
+  text-overflow: ellipsis !important;
+  overflow-wrap: anywhere !important;
+}
+
+.scholarium-dashboard button.deduction-session-card small {
+  display: block !important;
+  margin: 0 !important;
+  color: #999999 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 1.3 !important;
+}
+
+.scholarium-dashboard button.deduction-session-card .deduction-session-open {
+  position: absolute !important;
+  top: 14px !important;
+  right: 16px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 18px !important;
+  height: 18px !important;
+  color: #999999 !important;
+  font-size: 13px !important;
+  opacity: 0.85 !important;
+  pointer-events: auto !important;
+}
+
+.scholarium-dashboard button.deduction-session-card:hover .deduction-session-open,
+.scholarium-dashboard button.deduction-session-card.is-selected .deduction-session-open {
+  color: #1976d2 !important;
+  opacity: 1 !important;
+}
+
+.scholarium-dashboard .deduction-list-bottom .deduction-empty {
+  color: #999999 !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  padding: 10px 0 !important;
+}
+
+/* Scholarium deduction command bar 2.0.9 */
+.scholarium-dashboard .sch-deduction-commandbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  min-height: 48px;
+  padding: 8px 16px;
+  display: grid;
+  grid-template-columns: minmax(320px, 1.1fr) auto minmax(360px, 1fr);
+  align-items: center;
+  gap: 14px;
+  background: #121214;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+.sch-deduction-commandbar-left,
+.sch-deduction-commandbar-center,
+.sch-deduction-commandbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sch-deduction-commandbar-left {
+  justify-content: flex-start;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sch-deduction-commandbar-left::-webkit-scrollbar {
+  display: none;
+}
+
+.sch-deduction-commandbar-center {
+  justify-content: center;
+}
+
+.sch-deduction-commandbar-right {
+  justify-content: flex-end;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sch-deduction-commandbar-right::-webkit-scrollbar {
+  display: none;
+}
+
+.sch-commandbar-btn,
+.sch-agent-select-wrap {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #17171b;
+  color: #d7d7dc;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+.sch-commandbar-btn:hover,
+.sch-agent-select-wrap:hover {
+  background: #202027;
+  border-color: rgba(120, 112, 255, 0.55);
+  color: #ffffff;
+}
+
+.sch-commandbar-btn:active {
+  transform: translateY(1px);
+}
+
+.sch-commandbar-btn.is-active {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: linear-gradient(180deg, #202027, #17171b);
+  box-shadow: inset 0 -2px 0 #7b61ff;
+}
+
+.sch-commandbar-btn.is-webvpn-ok {
+  color: #1aff8c;
+  border-color: rgba(26, 255, 140, 0.38);
+  background: rgba(26, 255, 140, 0.08);
+}
+
+.sch-commandbar-btn.is-webvpn-warn {
+  color: #ffb020;
+  border-color: rgba(255, 176, 32, 0.42);
+  background: rgba(255, 176, 32, 0.10);
+}
+
+.sch-commandbar-btn.is-webvpn-checking {
+  color: #9fb7ff;
+  border-color: rgba(123, 97, 255, 0.46);
+  background: rgba(123, 97, 255, 0.10);
+}
+
+.sch-commandbar-primary {
+  color: #ffffff;
+  border-color: rgba(123, 97, 255, 0.65);
+  background: linear-gradient(135deg, #7b61ff, #1976d2);
+  box-shadow: 0 0 0 1px rgba(123, 97, 255, 0.18), 0 6px 18px rgba(25, 118, 210, 0.18);
+}
+
+.sch-commandbar-primary:hover {
+  background: linear-gradient(135deg, #8a74ff, #0d47a1);
+  border-color: rgba(151, 132, 255, 0.8);
+}
+
+.sch-commandbar-toggle.is-on {
+  color: #d9d3ff;
+  border-color: rgba(123, 97, 255, 0.7);
+  background: rgba(123, 97, 255, 0.16);
+}
+
+.sch-commandbar-toggle.is-off {
+  color: #a6a6ad;
+  border-color: rgba(255, 255, 255, 0.10);
+}
+
+.sch-commandbar-more {
+  width: 32px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.sch-agent-select-wrap {
+  padding: 0 8px 0 10px;
+}
+
+.sch-agent-dot {
+  color: #2ea043;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.sch-agent-select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #e8e8ec;
+  font-size: 13px;
+  font-weight: 800;
+  min-width: 78px;
+  cursor: pointer;
+}
+
+.sch-agent-select option {
+  color: #1a1a18;
+  background: #ffffff;
+}
+
+@media (max-width: 1100px) {
+  .scholarium-dashboard .sch-deduction-commandbar {
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "left center"
+      "right right";
+    gap: 8px;
+  }
+
+  .sch-deduction-commandbar-left {
+    grid-area: left;
+  }
+
+  .sch-deduction-commandbar-center {
+    grid-area: center;
+    justify-content: flex-end;
+  }
+
+  .sch-deduction-commandbar-right {
+    grid-area: right;
+    justify-content: flex-start;
+  }
+}
+
+/* Full-width dashboards: use all available Obsidian leaf space on wide screens. */
+.scholarium-dashboard .scholarium-main {
+  width: 100%;
+  min-width: 0;
+}
+
+.scholarium-dashboard .scholarium-panel.rss-full-panel,
+.scholarium-dashboard .scholarium-panel.rtl-full-panel {
+  flex: 1 1 auto;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.scholarium-dashboard .rss-root {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  align-self: stretch;
+  box-sizing: border-box;
+}
+
+.scholarium-dashboard .rtl-root {
+  flex: 1 1 auto;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0;
+  min-height: 0;
+  margin: 0 !important;
+  border-radius: 0;
+}
+
+.scholarium-dashboard .rtl-main,
+.scholarium-dashboard .rtl-grid-wrap {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Schema v1 Experiment creator: keep a long research record readable and scannable. */
+.scholarium-experiment-create-modal .modal-content {
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+
+.sch-experiment-create {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  color: var(--text-normal);
+  background: var(--background-primary);
+}
+
+.sch-experiment-create__header {
+  padding: 22px 26px 18px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary)), var(--background-primary) 62%);
+}
+
+.sch-experiment-create__header h2 {
+  margin: 0;
+  color: var(--interactive-accent);
+  font-size: 1.35em;
+  letter-spacing: -0.02em;
+}
+
+.sch-experiment-create__header p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 0.88em;
+}
+
+.sch-experiment-create__form {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 26px 28px;
+}
+
+.sch-experiment-create__section {
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background: var(--background-secondary);
+}
+
+.sch-experiment-create__section--compact {
+  max-width: 360px;
+}
+
+.sch-experiment-create__section h3 {
+  margin: 0 0 13px;
+  color: var(--text-normal);
+  font-size: 0.95em;
+}
+
+.sch-experiment-create__provenance-intro {
+  margin: -4px 0 14px;
+  color: var(--text-muted);
+  font-size: 0.84em;
+  line-height: 1.5;
+}
+
+.sch-experiment-create__grid {
+  display: grid;
+  /* A long Project title is valid content, not an overflow case. Keep each
+     basic field on its own line so the project picker can wrap safely. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.sch-experiment-create__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sch-experiment-create__field > label {
+  color: var(--text-muted);
+  font-size: 0.72em;
+  font-weight: 750;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.sch-experiment-create__field > small {
+  color: var(--text-faint);
+  font-size: 0.8em;
+  line-height: 1.35;
+}
+
+.sch-experiment-create__field input,
+.sch-experiment-create__field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.sch-experiment-create__field input:focus,
+.sch-experiment-create__field textarea:focus {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 22%, transparent);
+  outline: none;
+}
+
+.sch-experiment-create__native-picker {
+  position: absolute;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sch-experiment-create__choice-picker {
+  position: relative;
+}
+
+.sch-experiment-create__choice-trigger {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 36px 9px 11px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 7px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.42;
+  text-align: left;
+  overflow-wrap: anywhere;
+  position: relative;
+}
+
+.sch-experiment-create__choice-trigger::after {
+  content: "⌄";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  color: var(--text-muted);
+  font-size: 1.15em;
+  transform: translateY(-55%);
+}
+
+.sch-experiment-create__choice-picker.is-open .sch-experiment-create__choice-trigger,
+.sch-experiment-create__choice-trigger:focus {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 22%, transparent);
+  outline: none;
+}
+
+.sch-experiment-create__choice-menu {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  max-height: 250px;
+  overflow: auto;
+  padding: 5px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, .18);
+}
+
+.sch-experiment-create__choice-picker.is-open .sch-experiment-create__choice-menu {
+  display: grid;
+  gap: 2px;
+}
+
+.sch-experiment-create__choice-menu button {
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-normal);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.4;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.sch-experiment-create__choice-menu button:hover,
+.sch-experiment-create__choice-menu button.is-selected {
+  background: color-mix(in srgb, var(--interactive-accent) 13%, var(--background-primary));
+}
+
+.sch-experiment-create__hypothesis-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 1px 0 8px;
+}
+
+.sch-experiment-create__hypothesis-toolbar > span {
+  color: var(--text-faint);
+  font-size: 0.8em;
+}
+
+.sch-experiment-create__hypothesis-toolbar button {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--interactive-accent);
+  cursor: pointer;
+  font-size: 0.84em;
+}
+
+.sch-experiment-create__hypothesis-toolbar button:hover {
+  background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+}
+
+.sch-experiment-create__hypothesis-list {
+  display: grid;
+  gap: 7px;
+  max-height: 238px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 7px;
+  background: var(--background-primary);
+}
+
+.sch-experiment-create__hypothesis-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sch-experiment-create__hypothesis-option:hover {
+  border-color: var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.sch-experiment-create__hypothesis-option input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--interactive-accent);
+}
+
+.sch-experiment-create__hypothesis-option strong,
+.sch-experiment-create__hypothesis-option span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.sch-experiment-create__hypothesis-option strong {
+  margin-bottom: 3px;
+  color: var(--interactive-accent);
+  font-size: 0.85em;
+}
+
+.sch-experiment-create__hypothesis-option span {
+  color: var(--text-normal);
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.sch-experiment-create__empty-hypotheses {
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 0.88em;
+}
+
+.sch-experiment-create__field textarea {
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.sch-experiment-evidence-create__select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 7px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sch-experiment-evidence-create__select:focus {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 22%, transparent);
+  outline: none;
+}
+
+.sch-experiment-evidence-create__selected-text {
+  padding: 9px 10px;
+  border-left: 3px solid color-mix(in srgb, var(--interactive-accent) 65%, transparent);
+  background: color-mix(in srgb, var(--interactive-accent) 7%, var(--background-primary));
+  color: var(--text-normal);
+  font-size: 0.88em;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.sch-experiment-evidence-create__grid {
+  display: grid;
+  grid-template-columns: minmax(210px, .7fr) minmax(0, 1.3fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.sch-experiment-evidence-create__ai-draft {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 28%, var(--background-modifier-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--interactive-accent) 6%, var(--background-primary));
+  color: var(--text-muted);
+  font-size: .86em;
+  line-height: 1.45;
+}
+
+.sch-experiment-evidence-create__ai-draft > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sch-experiment-evidence-create__ai-draft button {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 6px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.sch-experiment-evidence-create__ai-draft button:disabled {
+  opacity: .6;
+  cursor: wait;
+}
+
+.sch-experiment-evidence-create .sch-experiment-create__section:nth-of-type(1) textarea {
+  font-family: var(--font-monospace);
+}
+
+.sch-experiment-create__section:nth-of-type(4) textarea {
+  font-family: var(--font-monospace);
+}
+
+.sch-experiment-create__actions {
+  flex: 0 0 auto;
+  margin: 0 !important;
+  padding: 14px 26px;
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  justify-content: flex-end;
+}
+
+.sch-experiment-create__actions button {
+  min-width: 92px;
+  transition: filter 120ms ease, transform 120ms ease;
+}
+
+.sch-experiment-create__actions button:hover {
+  filter: brightness(1.08);
+}
+
+.sch-experiment-create__actions button:active {
+  transform: translateY(1px);
+}
+
+/* Evidence review is a decision surface, not a faded toolbar.  The generic
+   .scholarium-btn rules deliberately make buttons quiet, but that makes a
+   disabled review action disappear against a light modal.  Keep every action
+   legible and reserve colour for its distinct outcome. */
+.scholarium-evidence-reviewer__actions .scholarium-btn {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal) !important;
+  font-weight: 650;
+  opacity: 1;
+}
+
+.scholarium-evidence-reviewer__actions .scholarium-btn:disabled {
+  border-color: var(--background-modifier-border);
+  background: var(--background-secondary-alt, var(--background-secondary));
+  color: var(--text-muted) !important;
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.scholarium-evidence-reviewer__actions .scholarium-evidence-reviewer__ai {
+  border-color: color-mix(in srgb, var(--interactive-accent) 58%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--interactive-accent) 11%, var(--background-primary));
+  color: var(--interactive-accent) !important;
+}
+
+.scholarium-evidence-reviewer__actions .scholarium-evidence-reviewer__confirm,
+.scholarium-evidence-reviewer__actions .scholarium-evidence-reviewer__accept:not(:disabled) {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent) !important;
+}
+
+.scholarium-evidence-reviewer__actions .scholarium-evidence-reviewer__reject {
+  border-color: color-mix(in srgb, var(--color-red, #c53b3b) 60%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--color-red, #c53b3b) 10%, var(--background-primary));
+  color: var(--color-red, #b42318) !important;
+}
+
+.scholarium-evidence-reviewer__actions .scholarium-evidence-reviewer__confirm:disabled,
+.scholarium-evidence-reviewer__actions .scholarium-evidence-reviewer__accept:disabled,
+.scholarium-evidence-reviewer__actions .scholarium-evidence-reviewer__reject:disabled {
+  border-color: var(--background-modifier-border);
+  background: var(--background-secondary-alt, var(--background-secondary));
+  color: var(--text-muted) !important;
+}
+
+/* The evidence reviewer may contain long quotations. Keep its commit actions
+   outside the scrollable form so a researcher never has to hunt below a large
+   textarea to confirm or reject the current Evidence. */
+.scholarium-evidence-reviewer-modal .modal-content {
+  height: 100%;
+  max-height: none;
+  padding: 0;
+}
+
+.sch-evidence-reviewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 0;
+}
+
+.sch-evidence-reviewer__header {
+  flex: 0 0 auto;
+  padding: 20px 26px 14px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: color-mix(in srgb, var(--interactive-accent) 5%, var(--background-primary));
+}
+
+.sch-evidence-reviewer__header h2 {
+  margin: 0 0 6px;
+}
+
+.sch-evidence-reviewer__header p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.sch-evidence-reviewer__form {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 26px 28px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.sch-evidence-reviewer__form > label {
+  margin-top: 6px;
+  font-weight: 650;
+  color: var(--text-normal);
+}
+
+.sch-evidence-reviewer__form > select,
+.sch-evidence-reviewer__form > textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 38px;
+}
+
+.sch-evidence-reviewer__quote {
+  min-height: 132px !important;
+  resize: vertical;
+  font-family: var(--font-monospace);
+  line-height: 1.5;
+}
+
+.sch-evidence-reviewer__claim {
+  min-height: 88px !important;
+  resize: vertical;
+}
+
+.sch-evidence-reviewer__actions {
+  flex: 0 0 auto;
+  margin: 0 !important;
+  padding: 14px 26px;
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  justify-content: flex-end;
+  box-shadow: 0 -8px 20px color-mix(in srgb, var(--background-primary) 72%, transparent);
+}
+
+@media (max-width: 540px) {
+  .sch-experiment-create__header,
+  .sch-experiment-create__form {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sch-experiment-create__actions {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sch-experiment-evidence-create__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sch-experiment-evidence-create__ai-draft {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+/* Material Library / Research Weaver data plotting.  Keep the raw-data action
+   visually distinct from destructive material actions. */
+.sch-material-plot-modal,
+.sch-material-picker-modal { min-width: min(720px, 92vw); }
+.sch-material-plot-source { margin: 12px 0; padding: 9px 11px; border-radius: 7px; color: var(--text-muted); background: var(--background-secondary); overflow-wrap: anywhere; }
+.sch-material-plot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin: 16px 0; }
+.sch-material-plot-grid > div { display: flex; flex-direction: column; gap: 6px; }
+.sch-material-plot-grid label { font-weight: 600; color: var(--text-normal); }
+.sch-material-plot-grid select,
+.sch-material-plot-grid input,
+.sch-material-picker-select { width: 100%; min-height: 34px; box-sizing: border-box; }
+.sch-material-plot-grid input[type="checkbox"] { width: 18px; min-height: 18px; margin: 8px 0; accent-color: var(--interactive-accent); }
+.sch-material-plot-grid select[multiple] { min-height: 130px; }
+.sch-material-plot-actions { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+.sch-material-plot-history { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 10px; padding: 10px; border: 1px solid var(--background-modifier-border); border-radius: 7px; background: var(--background-secondary); }
+.sch-material-plot-history label { font-weight: 600; white-space: nowrap; }
+.sch-material-plot-history select { min-width: 0; width: 100%; }
+.sch-material-plot-action { background: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-primary)) !important; }
+@media (max-width: 540px) { .sch-material-plot-grid { grid-template-columns: 1fr; } .sch-material-plot-history { grid-template-columns: 1fr; } }
 
 /* =====================================================
-   织研者：课题状态与建议入口（M2 只读上下文头部）
+   素材库改进方案 — 覆盖样式
+   Appended after materials-redesign prototype approval.
+   All rules use .scholarium-root prefix + !important to
+   override the core mat-* block (lines 924-1519) and the
+   theme-override block (lines 10361-10578).
    ===================================================== */
-.scholarium-weaver-header {
-    padding: 8px 4px 12px;
+
+/* ── Hero Header ─────────────────────────────────── */
+.scholarium-root .mat-hero {
+    padding: 24px 28px 18px !important;
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    flex-shrink: 0 !important;
+}
+.scholarium-root .mat-hero-title {
+    font-size: 20px !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.02em !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    color: var(--text-primary) !important;
+}
+.scholarium-root .mat-hero-title svg {
+    width: 22px !important;
+    height: 22px !important;
+    stroke: var(--celn-accent, var(--interactive-accent)) !important;
+    fill: none !important;
+    stroke-width: 1.6 !important;
+    flex-shrink: 0 !important;
+}
+.scholarium-root .mat-hero-sub {
+    margin-top: 6px !important;
+    font-size: 13px !important;
+    color: var(--text-muted) !important;
+    letter-spacing: 0.01em !important;
+}
+.scholarium-root .mat-hero-chips {
+    display: flex !important;
+    gap: 8px !important;
+    margin-top: 14px !important;
+    flex-wrap: wrap !important;
+}
+.scholarium-root .mat-stat-chip {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    padding: 5px 12px !important;
+    border-radius: 20px !important;
+    background: var(--background-primary) !important;
+    border: 1px solid var(--background-modifier-border) !important;
+    font-size: 12px !important;
+    color: var(--text-secondary, var(--text-muted)) !important;
+    font-weight: 500 !important;
+}
+.scholarium-root .mat-stat-chip .dot {
+    width: 7px !important;
+    height: 7px !important;
+    border-radius: 50% !important;
+    flex-shrink: 0 !important;
+}
+
+/* ── Add Button ──────────────────────────────────── */
+.scholarium-root .mat-add-btn {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    padding: 7px 14px !important;
+    border: 1px solid color-mix(in srgb, var(--celn-accent, var(--interactive-accent)) 30%, transparent) !important;
+    border-radius: 8px !important;
+    background: color-mix(in srgb, var(--celn-accent, var(--interactive-accent)) 6%, var(--background-primary)) !important;
+    color: var(--celn-accent, var(--interactive-accent)) !important;
+    font-size: 12.5px !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: background 0.12s, border-color 0.12s !important;
+    flex-shrink: 0 !important;
+}
+.scholarium-root .mat-add-btn:hover {
+    background: color-mix(in srgb, var(--celn-accent, var(--interactive-accent)) 12%, var(--background-primary)) !important;
+    border-color: color-mix(in srgb, var(--celn-accent, var(--interactive-accent)) 50%, transparent) !important;
+}
+.scholarium-root .mat-add-btn svg {
+    width: 14px !important;
+    height: 14px !important;
+    stroke: currentColor !important;
+    fill: none !important;
+    stroke-width: 2 !important;
+    flex-shrink: 0 !important;
+}
+.scholarium-root .mat-folder-btn {
+    display: inline-flex !important; align-items: center !important; gap: 6px !important;
+    flex-shrink: 0 !important; padding: 7px 12px !important;
+    border: 1px solid color-mix(in srgb, #D97706 34%, var(--background-modifier-border)) !important;
+    border-radius: 8px !important; background: color-mix(in srgb, #D97706 7%, var(--background-primary)) !important;
+    color: #B45309 !important; font-size: 12px !important; font-weight: 600 !important;
+}
+.scholarium-root .mat-folder-btn:hover { border-color: #D97706 !important; background: color-mix(in srgb, #D97706 13%, var(--background-primary)) !important; }
+
+/* ── Sidebar (Redesigned) ────────────────────────── */
+.scholarium-root .mat-sidebar {
+    width: 200px !important;
+    padding: 16px 10px !important;
+}
+.scholarium-root .mat-sb-section-label {
+    font-size: 10px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+    color: var(--text-muted) !important;
+    padding: 0 10px !important;
+    margin-bottom: 8px !important;
+    font-weight: 600 !important;
+}
+.scholarium-root .mat-sb-item {
+    display: flex !important;
+    align-items: center !important;
+    gap: 9px !important;
+    padding: 8px 10px !important;
+    border-radius: 8px !important;
+    cursor: pointer !important;
+    transition: background 0.12s !important;
+    margin-bottom: 2px !important;
+    position: relative !important;
+}
+.scholarium-root .mat-sb-item:hover {
+    background: rgba(0,0,0,0.04) !important;
+}
+.scholarium-root .mat-sb-item.active {
+    background: color-mix(in srgb, var(--celn-accent, var(--interactive-accent)) 10%, transparent) !important;
+}
+.scholarium-root .mat-sb-dot {
+    width: 8px !important;
+    height: 8px !important;
+    border-radius: 50% !important;
+    flex-shrink: 0 !important;
+    opacity: 0.85 !important;
+}
+.scholarium-root .mat-sb-label {
+    font-size: 13px !important;
+    color: var(--text-secondary, var(--text-muted)) !important;
+    flex: 1 !important;
+    font-weight: 450 !important;
+}
+.scholarium-root .mat-sb-item.active .mat-sb-label {
+    color: var(--celn-accent, var(--interactive-accent)) !important;
+    font-weight: 550 !important;
+}
+.scholarium-root .mat-sb-count {
+    font-size: 11px !important;
+    font-weight: 500 !important;
+    color: var(--text-muted) !important;
+    background: rgba(0,0,0,0.04) !important;
+    padding: 1px 7px !important;
+    border-radius: 10px !important;
+    min-width: 22px !important;
+    text-align: center !important;
+}
+.scholarium-root .mat-sb-item.active .mat-sb-count {
+    background: color-mix(in srgb, var(--celn-accent, var(--interactive-accent)) 15%, transparent) !important;
+    color: var(--celn-accent, var(--interactive-accent)) !important;
+}
+.scholarium-root .mat-sb-bar {
+    position: absolute !important;
+    left: 0 !important;
+    top: 8px !important;
+    bottom: 8px !important;
+    width: 3px !important;
+    border-radius: 2px !important;
+    opacity: 0 !important;
+    transition: opacity 0.15s !important;
+}
+.scholarium-root .mat-sb-item.active .mat-sb-bar {
+    opacity: 1 !important;
+}
+.scholarium-root .mat-sb-divider {
+    height: 1px !important;
+    background: var(--background-modifier-border) !important;
+    margin: 12px 6px !important;
+}
+.scholarium-root .mat-sb-add {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 5px !important;
+    padding: 7px !important;
+    border: 1px dashed color-mix(in srgb, var(--celn-accent, var(--interactive-accent)) 30%, transparent) !important;
+    border-radius: 8px !important;
+    color: var(--celn-accent, var(--interactive-accent)) !important;
+    font-size: 12px !important;
+    cursor: pointer !important;
+    transition: background 0.12s, border-color 0.12s !important;
+    margin-top: 8px !important;
+    background: none !important;
+    width: 100% !important;
+    opacity: 0.7 !important;
+}
+.scholarium-root .mat-sb-add:hover {
+    background: color-mix(in srgb, var(--celn-accent, var(--interactive-accent)) 5%, transparent) !important;
+    border-color: color-mix(in srgb, var(--celn-accent, var(--interactive-accent)) 50%, transparent) !important;
+    opacity: 1 !important;
+}
+
+/* ── Gallery ─────────────────────────────────────── */
+.scholarium-root .mat-gallery {
+    padding: 20px 24px !important;
+}
+.scholarium-root .mat-gallery::-webkit-scrollbar { width: 5px !important; }
+.scholarium-root .mat-gallery::-webkit-scrollbar-track { background: transparent !important; }
+.scholarium-root .mat-gallery::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border-hover, rgba(0,0,0,0.15)) !important;
+    border-radius: 3px !important;
+}
+
+/* ── Grid mode ───────────────────────────────────── */
+.scholarium-root .mat-grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) !important;
+    gap: 14px !important;
+}
+.scholarium-root .mat-list-mode {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+}
+
+/* ── Card (Redesigned) ──────────────────────────── */
+.scholarium-root .mat-card {
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    cursor: pointer !important;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease !important;
+    position: relative !important;
+}
+.scholarium-root .mat-card:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04) !important;
+    border-color: var(--background-modifier-border-hover, rgba(0,0,0,0.15)) !important;
+}
+.scholarium-root .mat-card:active {
+    transform: translateY(0) !important;
+}
+
+/* Accent stripe on hover */
+.scholarium-root .mat-card::before {
+    content: '' !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    width: 3px !important;
+    background: var(--card-accent, var(--celn-accent, var(--interactive-accent))) !important;
+    border-radius: 3px 0 0 3px !important;
+    opacity: 0 !important;
+    transition: opacity 0.18s !important;
+    z-index: 2 !important;
+}
+.scholarium-root .mat-card:hover::before {
+    opacity: 1 !important;
+}
+
+/* File-type accent colors via data-type */
+.scholarium-root .mat-card[data-type="spreadsheet"] { --card-accent: var(--clr-spreadsheet, #66BB6A) !important; }
+.scholarium-root .mat-card[data-type="pdf"] { --card-accent: var(--clr-pdf, #EF5350) !important; }
+.scholarium-root .mat-card[data-type="image"] { --card-accent: var(--clr-image, #29B6F6) !important; }
+.scholarium-root .mat-card[data-type="data"] { --card-accent: var(--clr-data, #FF7043) !important; }
+.scholarium-root .mat-card[data-type="text"] { --card-accent: var(--clr-text, #78909C) !important; }
+.scholarium-root .mat-card[data-type="code"] { --card-accent: var(--clr-code, #42A5F5) !important; }
+
+/* Thumbnail zone */
+.scholarium-root .mat-card-thumb {
+    aspect-ratio: 16/10 !important;
+    position: relative !important;
+    overflow: hidden !important;
+    background: var(--background-secondary) !important;
+}
+.scholarium-root .mat-card-thumb img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    transition: transform 0.3s ease !important;
+}
+.scholarium-root .mat-card:hover .mat-card-thumb img {
+    transform: scale(1.03) !important;
+}
+
+/* File type thumb (non-image) */
+.scholarium-root .mat-card-file-thumb {
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    position: relative !important;
+}
+.scholarium-root .mat-card-file-thumb .bg-pattern {
+    position: absolute !important;
+    inset: 0 !important;
+    opacity: 0.06 !important;
+    background-image:
+        radial-gradient(circle at 20% 30%, currentColor 1px, transparent 1px),
+        radial-gradient(circle at 80% 70%, currentColor 1px, transparent 1px),
+        radial-gradient(circle at 50% 50%, currentColor 0.5px, transparent 0.5px) !important;
+    background-size: 24px 24px, 32px 32px, 16px 16px !important;
+}
+.scholarium-root .mat-card-file-icon {
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 10px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    position: relative !important;
+    z-index: 1 !important;
+}
+.scholarium-root .mat-card-file-icon svg {
+    width: 22px !important;
+    height: 22px !important;
+    stroke-width: 1.5 !important;
+}
+.scholarium-root .mat-card-file-ext {
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
+    font-family: var(--font-monospace, 'JetBrains Mono', 'Fira Code', monospace) !important;
+    position: relative !important;
+    z-index: 1 !important;
+}
+
+/* Hover overlay */
+.scholarium-root .mat-card-overlay {
+    position: absolute !important;
+    inset: 0 !important;
+    background: rgba(0,0,0,0.45) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    opacity: 0 !important;
+    transition: opacity 0.18s !important;
+    z-index: 3 !important;
+}
+.scholarium-root .mat-card:hover .mat-card-overlay {
+    opacity: 1 !important;
+}
+.scholarium-root .mat-card-actions {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+.scholarium-root .mat-action-btn {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 50% !important;
+    background: rgba(255,255,255,0.18) !important;
+    backdrop-filter: blur(6px) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid rgba(255,255,255,0.15) !important;
+    cursor: pointer !important;
+    transition: background 0.12s, transform 0.12s !important;
+    font-size: 14px !important;
+    padding: 0 !important;
+}
+.scholarium-root .mat-action-btn:hover {
+    background: rgba(255,255,255,0.3) !important;
+    transform: scale(1.08) !important;
+}
+
+/* Info zone */
+.scholarium-root .mat-card-info {
+    padding: 12px 14px !important;
+}
+.scholarium-root .mat-card-name {
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    color: var(--text-normal) !important;
+    line-height: 1.4 !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+    letter-spacing: -0.01em !important;
+}
+
+/* Meta row */
+.scholarium-root .mat-card-meta {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    margin-top: 8px !important;
+}
+.scholarium-root .mat-badge {
+    font-size: 10.5px !important;
+    font-weight: 500 !important;
+    padding: 2px 8px !important;
+    border-radius: 10px !important;
+    letter-spacing: 0.01em !important;
+    color: inherit !important;
+    background: inherit !important;
+}
+.scholarium-root .mat-card-date {
+    font-size: 11px !important;
+    color: var(--text-muted) !important;
+    font-family: var(--font-monospace, 'JetBrains Mono', 'Fira Code', monospace) !important;
+    letter-spacing: 0.01em !important;
+}
+.scholarium-root .mat-card-size {
+    font-size: 11px !important;
+    color: var(--text-muted) !important;
+    margin-left: auto !important;
+    font-family: var(--font-monospace, 'JetBrains Mono', 'Fira Code', monospace) !important;
+}
+
+/* ── List Mode ───────────────────────────────────── */
+.scholarium-root .mat-list-mode .mat-card {
+    display: flex !important;
+    flex-direction: row !important;
+    border-radius: 8px !important;
+}
+.scholarium-root .mat-list-mode .mat-card::before {
+    border-radius: 3px 0 0 3px !important;
+}
+.scholarium-root .mat-list-mode .mat-card:hover::before {
+    opacity: 1 !important;
+}
+.scholarium-root .mat-list-mode .mat-card-thumb {
+    width: 64px !important;
+    aspect-ratio: 1 !important;
+    flex-shrink: 0 !important;
+    border-radius: 8px 0 0 8px !important;
+}
+.scholarium-root .mat-list-mode .mat-card-info {
+    flex: 1 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    padding: 10px 14px !important;
+}
+.scholarium-root .mat-list-mode .mat-card-name {
+    flex: 1 !important;
+    -webkit-line-clamp: 1 !important;
+}
+.scholarium-root .mat-list-mode .mat-card-meta {
+    margin-top: 0 !important;
+}
+.scholarium-root .mat-list-mode .mat-card-overlay {
+    border-radius: 8px !important;
+}
+
+/* ── Dark mode adjustments ───────────────────────── */
+.theme-dark .scholarium-root .mat-sb-item:hover {
+    background: rgba(255,255,255,0.05) !important;
+}
+.theme-dark .scholarium-root .mat-sb-count {
+    background: rgba(255,255,255,0.06) !important;
+}
+.theme-dark .scholarium-root .mat-sb-item.active .mat-sb-count {
+    background: color-mix(in srgb, var(--celn-accent, var(--interactive-accent)) 20%, transparent) !important;
+}
+.theme-dark .scholarium-root .mat-card:hover {
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25), 0 2px 8px rgba(0,0,0,0.15) !important;
+}
+.theme-dark .scholarium-root .mat-card-overlay {
+    background: rgba(0,0,0,0.55) !important;
+}
+.theme-dark .scholarium-root .mat-card-file-thumb .bg-pattern {
+    opacity: 0.04 !important;
+}
+
+/* ── Defensive: prevent any SVG from expanding ──── */
+.scholarium-root .mat-root svg {
+    max-width: 100% !important;
+    vertical-align: middle !important;
+}
+
+/* Hero overflow containment */
+.scholarium-root .mat-hero {
+    overflow: hidden !important;
+}
+.scholarium-root .mat-hero-left {
+    flex: 1 !important;
+    min-width: 0 !important;
+}
+
+/* =====================================================
+   密度微调（用户反馈：图片/间距整体偏大）
+   Appended last so equal-specificity !important rules
+   win over the redesign block above.
+   ===================================================== */
+.scholarium-root .mat-hero { padding: 14px 20px 12px !important; }
+.scholarium-root .mat-hero-title { font-size: 17px !important; gap: 8px !important; }
+.scholarium-root .mat-hero-title svg { width: 18px !important; height: 18px !important; }
+.scholarium-root .mat-hero-sub { font-size: 12px !important; margin-top: 4px !important; }
+.scholarium-root .mat-hero-chips { margin-top: 9px !important; gap: 6px !important; }
+.scholarium-root .mat-stat-chip { padding: 3px 10px !important; font-size: 11.5px !important; }
+.scholarium-root .mat-add-btn { padding: 5px 11px !important; font-size: 12px !important; }
+
+.scholarium-root .mat-sidebar { width: 168px !important; padding: 10px 8px !important; }
+.scholarium-root .mat-sb-item { gap: 7px !important; padding: 5px 8px !important; }
+.scholarium-root .mat-sb-label { font-size: 12.5px !important; }
+
+.scholarium-root .mat-gallery { padding: 12px 16px !important; }
+.scholarium-root .mat-grid { grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)) !important; gap: 10px !important; }
+.scholarium-root .mat-list-mode { gap: 6px !important; }
+
+.scholarium-root .mat-card { border-radius: 9px !important; }
+.scholarium-root .mat-card-thumb { aspect-ratio: 16/9 !important; }
+.scholarium-root .mat-card-file-icon { width: 32px !important; height: 32px !important; border-radius: 8px !important; }
+.scholarium-root .mat-card-file-icon svg { width: 18px !important; height: 18px !important; }
+.scholarium-root .mat-card-file-ext { font-size: 9px !important; }
+.scholarium-root .mat-card-overlay { gap: 6px !important; }
+.scholarium-root .mat-action-btn { width: 28px !important; height: 28px !important; font-size: 12.5px !important; }
+.scholarium-root .mat-card-info { padding: 8px 11px !important; }
+.scholarium-root .mat-card-name { font-size: 12.5px !important; }
+.scholarium-root .mat-card-meta { margin-top: 5px !important; gap: 6px !important; }
+.scholarium-root .mat-badge { padding: 1px 7px !important; }
+.scholarium-root .mat-list-mode .mat-card-info { padding: 7px 12px !important; gap: 10px !important; }
+
+/* =====================================================
+   绘图弹窗 redesign — Agent 对话双栏模式
+   Prototype: design-refs/plot-redesign.html
+   ===================================================== */
+.plt-modal-el { width: min(980px, 95vw) !important; max-width: 95vw !important; }
+.plt-modal {
+    display: flex !important; flex-direction: column !important;
+    height: min(620px, 88vh) !important;
+    padding: 0 !important; overflow: hidden !important;
+    min-width: 0 !important;
+}
+.plt-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px 11px;
     border-bottom: 1px solid var(--background-modifier-border);
-    margin-bottom: 8px;
+    flex-shrink: 0;
 }
-.scholarium-weaver-context-status {
-    color: var(--text-faint); font-size: 0.85em; margin: 4px 0;
+.plt-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.plt-header-icon {
+    width: 26px; height: 26px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--interactive-accent) 9%, transparent);
+    border-radius: 7px;
 }
-.scholarium-weaver-context-status.is-error { color: var(--text-error); }
-.scholarium-weaver-picker-row {
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+.plt-header-icon svg { width: 15px; height: 15px; stroke: var(--interactive-accent); fill: none; stroke-width: 1.8; }
+.plt-title { font-size: 15px; font-weight: 700; color: var(--text-normal); white-space: nowrap; }
+.plt-header-status { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-muted); margin-left: 6px; white-space: nowrap; }
+.plt-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #3D9B6A; }
+.plt-close {
+    width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+    border: none; background: none; cursor: pointer; border-radius: 7px;
+    color: var(--text-muted); transition: background 0.15s; flex-shrink: 0;
 }
-.scholarium-weaver-project-select {
-    flex: 1 1 auto; min-width: 160px; padding: 4px 8px; border-radius: 4px;
+.plt-close:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.plt-close svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+.plt-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+
+/* ── Left config panel ── */
+.plt-config {
+    width: 272px; flex-shrink: 0;
+    border-right: 1px solid var(--background-modifier-border);
+    display: flex; flex-direction: column;
+    overflow-y: auto; padding: 12px 14px; gap: 8px;
+}
+.plt-dataset {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 10px; border-radius: 7px;
+    background: var(--background-secondary);
+    font-size: 11px; color: var(--text-muted);
+}
+.plt-dataset-icon { width: 13px; height: 13px; flex-shrink: 0; display: flex; }
+.plt-dataset-icon svg { width: 13px; height: 13px; stroke: var(--text-muted); fill: none; stroke-width: 1.6; }
+.plt-dataset-path {
+    font-family: var(--font-monospace); font-size: 10px; color: var(--text-normal);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.plt-field { display: flex; flex-direction: column; gap: 3px; }
+.plt-label { font-size: 10.5px; font-weight: 600; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+.plt-hint { font-weight: 400; font-size: 9.5px; opacity: 0.8; }
+.plt-input {
+    width: 100%; padding: 5px 8px; box-sizing: border-box;
+    border: 1px solid var(--background-modifier-border); border-radius: 6px;
+    background: var(--background-primary); font-size: 11.5px; color: var(--text-normal);
+    outline: none; transition: border-color 0.15s, box-shadow 0.15s; min-height: 0;
+}
+.plt-input:focus { border-color: var(--interactive-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 10%, transparent); }
+.plt-mono { font-family: var(--font-monospace); font-size: 11px; }
+.plt-ylist {
+    border: 1px solid var(--background-modifier-border); border-radius: 6px;
+    background: var(--background-primary);
+    max-height: 132px; overflow-y: auto;
+}
+.plt-y-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px; font-size: 11.5px; color: var(--text-normal);
+    cursor: pointer; transition: background 0.12s;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+.plt-y-item:last-child { border-bottom: none; }
+.plt-y-item:hover { background: color-mix(in srgb, var(--interactive-accent) 7%, transparent); }
+.plt-y-item.plt-selected { background: color-mix(in srgb, var(--interactive-accent) 9%, transparent); font-weight: 500; }
+.plt-y-check {
+    width: 13px; height: 13px; flex-shrink: 0;
+    border: 1.5px solid var(--background-modifier-border-hover); border-radius: 3px;
+    display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+}
+.plt-y-item.plt-selected .plt-y-check { background: var(--interactive-accent); border-color: var(--interactive-accent); }
+.plt-y-check svg { width: 8px; height: 8px; stroke: #fff; fill: none; stroke-width: 2.5; display: none; }
+.plt-y-item.plt-selected .plt-y-check svg { display: block; }
+.plt-divider { height: 1px; background: var(--background-modifier-border); margin: 2px 0; flex-shrink: 0; }
+.plt-check-row { display: flex; align-items: center; gap: 7px; padding: 2px 0; }
+.plt-check-row input[type="checkbox"] { width: 14px; height: 14px; margin: 0; accent-color: var(--interactive-accent); }
+.plt-check-label { font-size: 11.5px; color: var(--text-normal); cursor: pointer; }
+.plt-history { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
+.plt-config-actions { display: flex; gap: 6px; margin-top: auto; padding-top: 6px; flex-shrink: 0; }
+.plt-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+    padding: 6px 10px; border-radius: 6px;
+    font-size: 11.5px; font-weight: 500; font-family: inherit;
+    cursor: pointer; border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary); color: var(--text-normal);
+    transition: all 0.15s; box-shadow: none;
+}
+.plt-btn:hover { background: var(--background-secondary); }
+.plt-btn:disabled { opacity: 0.55; cursor: default; }
+.plt-btn-icon { width: 12px; height: 12px; display: flex; flex-shrink: 0; }
+.plt-btn-icon svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.plt-btn-primary { background: var(--interactive-accent); border-color: var(--interactive-accent); color: var(--text-on-accent); }
+.plt-btn-primary:hover { background: var(--interactive-accent-hover); border-color: var(--interactive-accent-hover); }
+.plt-btn-ghost { border-color: transparent; background: transparent; color: var(--text-muted); }
+.plt-btn-ghost:hover { background: var(--background-secondary); color: var(--text-normal); }
+.plt-btn-sm { padding: 5px 8px; font-size: 10.5px; }
+.plt-grow { flex: 1; }
+
+/* ── Right chat panel ── */
+.plt-chat { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--background-secondary); min-width: 0; }
+.plt-chat-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 16px; border-bottom: 1px solid var(--background-modifier-border);
+    flex-shrink: 0; background: var(--background-primary);
+}
+.plt-chat-header-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.plt-agent-avatar {
+    width: 24px; height: 24px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--interactive-accent); border-radius: 6px; overflow: hidden;
+}
+.plt-agent-avatar img { width: 16px; height: 16px; object-fit: contain; filter: brightness(0) invert(1); }
+.plt-agent-name { font-size: 13px; font-weight: 600; color: var(--text-normal); }
+.plt-agent-role { font-size: 11px; color: var(--text-muted); }
+.plt-tool-btn {
+    width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--background-modifier-border); border-radius: 6px;
+    background: var(--background-primary); cursor: pointer; color: var(--text-muted);
+    transition: all 0.15s; box-shadow: none;
+}
+.plt-tool-btn:hover { background: var(--background-secondary); color: var(--text-normal); }
+.plt-tool-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+
+.plt-messages {
+    flex: 1; overflow-y: auto; padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 12px;
+}
+.plt-msg-agent { display: flex; gap: 9px; max-width: 94%; }
+.plt-avatar {
+    width: 24px; height: 24px; flex-shrink: 0; margin-top: 2px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--interactive-accent); border-radius: 6px;
+}
+.plt-avatar svg { width: 12px; height: 12px; stroke: #fff; fill: none; stroke-width: 2; }
+.plt-msg-body { flex: 1; min-width: 0; }
+.plt-msg-text { font-size: 12.5px; line-height: 1.6; color: var(--text-normal); overflow-wrap: anywhere; }
+.plt-msg-text strong { font-weight: 600; }
+.plt-msg-text code {
+    font-family: var(--font-monospace); font-size: 11px;
+    background: var(--background-primary); padding: 1px 5px; border-radius: 4px;
+}
+.plt-msg-user { display: flex; justify-content: flex-end; max-width: 86%; align-self: flex-end; }
+.plt-user-bubble {
+    padding: 8px 13px; background: var(--interactive-accent); color: var(--text-on-accent);
+    border-radius: 12px 12px 4px 12px; font-size: 12.5px; line-height: 1.55;
+}
+.plt-thinking {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-radius: 8px;
+    background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+    font-size: 12px; color: var(--text-muted);
+}
+.plt-dots { display: flex; gap: 3px; }
+.plt-dots span {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--interactive-accent);
+    animation: plt-pulse 1.2s ease-in-out infinite;
+}
+.plt-dots span:nth-child(2) { animation-delay: 0.15s; }
+.plt-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes plt-pulse { 0%,100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1); } }
+
+/* Step chips */
+.plt-steps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.plt-step {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 500;
     border: 1px solid var(--background-modifier-border);
-    background: var(--background-secondary); color: var(--text-normal);
-    font-size: 0.85em;
+    background: var(--background-primary); color: var(--text-muted);
 }
-.scholarium-weaver-generate-btn {
-    padding: 4px 12px; border-radius: 4px; border: 1px solid var(--celn-accent-light);
-    background: rgba(var(--celn-accent-rgb), 0.12); color: var(--celn-accent);
-    font-size: 0.85em; font-weight: 600; cursor: pointer; white-space: nowrap;
+.plt-step-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.plt-step-done { border-color: rgba(61,155,106,0.35); background: rgba(61,155,106,0.08); color: #3D9B6A; }
+.plt-step-running { border-color: rgba(232,168,56,0.35); background: rgba(232,168,56,0.08); color: #C48A20; }
+.plt-step-running .plt-step-dot { animation: plt-pulse 1s ease-in-out infinite; }
+
+/* Chart preview card */
+.plt-chart-card {
+    margin-top: 10px; border: 1px solid var(--background-modifier-border);
+    border-radius: 10px; background: var(--background-primary); overflow: hidden;
 }
-.scholarium-weaver-generate-btn:hover:not(:disabled) { background: rgba(var(--celn-accent-rgb), 0.2); }
-.scholarium-weaver-generate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.scholarium-weaver-project-summary { margin-top: 6px; }
-.scholarium-weaver-project-summary p { margin: 2px 0; }
-.scholarium-weaver-project-counts { color: var(--text-muted); font-size: 0.82em; }
+.plt-chart-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 12px; border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+}
+.plt-chart-title { font-size: 11.5px; font-weight: 600; color: var(--text-normal); display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plt-ver-tag { font-family: var(--font-monospace); font-size: 10px; color: var(--text-muted); font-weight: 400; flex-shrink: 0; }
+.plt-chart-actions { display: flex; gap: 3px; flex-shrink: 0; }
+.plt-chart-actions button {
+    width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+    border: none; background: none; cursor: pointer; border-radius: 5px;
+    color: var(--text-muted); transition: all 0.12s; box-shadow: none; padding: 0;
+}
+.plt-chart-actions button:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.plt-chart-actions button svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.plt-chart-body { padding: 10px; }
+.plt-chart-body svg { width: 100%; height: auto; max-height: 210px; }
+
+/* Quick chips */
+.plt-quick-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.plt-quick {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 12px; font-size: 11px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary); color: var(--text-muted);
+    cursor: pointer; transition: all 0.12s; user-select: none;
+}
+.plt-quick:hover { border-color: var(--interactive-accent); color: var(--interactive-accent); }
+.plt-quick.plt-on { border-color: var(--interactive-accent); background: color-mix(in srgb, var(--interactive-accent) 9%, transparent); color: var(--interactive-accent); font-weight: 500; }
+
+/* Chat input */
+.plt-input-area {
+    padding: 10px 16px; border-top: 1px solid var(--background-modifier-border);
+    flex-shrink: 0; background: var(--background-primary);
+}
+.plt-input-row { display: flex; align-items: center; gap: 8px; }
+.plt-chat-input {
+    flex: 1; padding: 8px 13px; border: 1px solid var(--background-modifier-border);
+    border-radius: 10px; background: var(--background-secondary);
+    font-size: 12.5px; font-family: inherit; color: var(--text-normal);
+    outline: none; transition: border-color 0.15s, box-shadow 0.15s; min-height: 0;
+}
+.plt-chat-input:focus { border-color: var(--interactive-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 10%, transparent); }
+.plt-send-btn {
+    width: 34px; height: 34px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border: none; border-radius: 10px; background: var(--interactive-accent);
+    cursor: pointer; transition: background 0.15s; box-shadow: none;
+}
+.plt-send-btn:hover { background: var(--interactive-accent-hover); }
+.plt-send-btn svg { width: 15px; height: 15px; stroke: var(--text-on-accent); fill: none; stroke-width: 2; }
+.plt-input-hint { font-size: 10.5px; color: var(--text-muted); margin-top: 6px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.plt-input-hint kbd {
+    font-family: var(--font-monospace); font-size: 10px; padding: 1px 4px;
+    border: 1px solid var(--background-modifier-border); border-radius: 3px;
+    background: var(--background-secondary);
+}
+
+@media (max-width: 860px) {
+    .plt-modal { height: auto !important; max-height: 92vh !important; }
+    .plt-body { flex-direction: column; overflow-y: auto; }
+    .plt-config { width: 100%; border-right: none; border-bottom: 1px solid var(--background-modifier-border); max-height: 42vh; }
+    .plt-chat { min-height: 300px; }
+}
+
+/* 绘图弹窗：视图区间 / 标注线 / 系列颜色控件 */
+.plt-range-row { display: flex; gap: 5px; align-items: center; }
+.plt-range-row .plt-input { flex: 1; min-width: 0; }
+.plt-range-row .plt-btn { flex-shrink: 0; }
+.plt-ann-list { display: flex; flex-direction: column; gap: 5px; }
+.plt-ann-list:empty { display: none; }
+.plt-ann-row { display: flex; gap: 4px; align-items: center; }
+.plt-ann-row .plt-ann-type { width: 58px; flex-shrink: 0; padding: 4px 4px; }
+.plt-ann-row .plt-ann-value { width: 62px; flex-shrink: 0; padding: 4px 6px; }
+.plt-ann-row .plt-ann-label { flex: 1; min-width: 0; padding: 4px 6px; }
+.plt-ann-row .plt-ann-del { flex-shrink: 0; padding: 4px 6px; }
+.plt-color-list { display: flex; flex-direction: column; gap: 4px; }
+.plt-color-list:empty { display: none; }
+.plt-color-row { display: flex; align-items: center; gap: 7px; }
+.plt-color-picker { width: 26px; height: 20px; padding: 0; border: 1px solid var(--background-modifier-border); border-radius: 4px; background: var(--background-primary); cursor: pointer; flex-shrink: 0; }
+/* Chromium renders input[type=color] as a wrapper around an inner swatch with
+ * its own padding, so the element's own background shows as a ring around the
+ * colour. Against a light theme that ring is invisible; against a dark one it
+ * reads as a white halo that looks like a rendering fault. Collapse the inner
+ * padding and let the swatch fill the control. */
+.plt-color-picker::-webkit-color-swatch-wrapper { padding: 0; }
+.plt-color-picker::-webkit-color-swatch { border: none; border-radius: 3px; }
+.plt-color-picker::-moz-color-swatch { border: none; border-radius: 3px; }
+.plt-color-name { font-size: 11px; color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+
+/* 四边框选择：脱离低对比度主题默认样式，明确区分开/关状态 */
+.plt-check-row input[type="checkbox"][id^="plt-spine-"] {
+    appearance: none; -webkit-appearance: none;
+    width: 17px; height: 17px; margin: 0 1px 0 0;
+    display: inline-grid; place-content: center; flex: 0 0 17px;
+    border: 2px solid #747B86; border-radius: 5px;
+    background: var(--background-primary);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, #747B86 12%, transparent);
+    cursor: pointer; transition: background .12s, border-color .12s, box-shadow .12s, transform .12s;
+}
+.plt-check-row input[type="checkbox"][id^="plt-spine-"]:hover {
+    border-color: #2563EB; transform: scale(1.06);
+    box-shadow: 0 0 0 3px color-mix(in srgb, #2563EB 16%, transparent);
+}
+.plt-check-row input[type="checkbox"][id^="plt-spine-"]:checked {
+    border-color: #2563EB; background: #2563EB;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #2563EB 18%, transparent);
+}
+.plt-check-row input[type="checkbox"][id^="plt-spine-"]:checked::after {
+    content: "✓"; color: #FFFFFF; font: 800 12px/1 sans-serif;
+    transform: translateY(-.5px);
+}
+.plt-check-row input[type="checkbox"][id^="plt-spine-"]:focus-visible {
+    outline: 2px solid #2563EB; outline-offset: 2px;
+}
+.plt-check-row input[type="checkbox"][id^="plt-spine-"] + .plt-check-label {
+    min-width: 17px; margin-right: 3px; color: var(--text-muted);
+    font-weight: 600; transition: color .12s;
+}
+.plt-check-row input[type="checkbox"][id^="plt-spine-"]:checked + .plt-check-label {
+    color: #2563EB; font-weight: 800;
+}
+
+/* 绘图弹窗：固定预览区（出图位置固定，原地替换） */
+.plt-preview {
+    flex-shrink: 0; display: flex; flex-direction: column;
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    max-height: 46%; min-height: 120px;
+}
+.plt-preview-body {
+    padding: 8px 12px; overflow: auto; flex: 1; min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+}
+.plt-preview-body svg { width: 100%; height: auto; max-height: 250px; }
+.plt-preview-empty .plt-preview-body { background: var(--background-secondary); }
+.plt-preview-placeholder {
+    font-size: 11.5px; color: var(--text-muted); text-align: center;
+    padding: 18px 20px; line-height: 1.6;
+}
+
+/* =====================================================
+   素材库内嵌工作台 — 素材上下文 / 参数 / 画布 / Agent / 审计日志
+   ===================================================== */
+.mat-browser {
+    display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0;
+    overflow: hidden; background: var(--background-primary);
+}
+.mat-workbench { display: none; min-width: 0; min-height: 0; overflow: hidden; }
+.mat-root.mat-workbench-open { flex-direction: row; }
+.mat-root.mat-workbench-open .mat-browser {
+    flex: 0 0 320px; border-right: 1px solid var(--background-modifier-border);
+}
+.mat-root.mat-workbench-open .mat-workbench { display: flex; flex: 1; }
+.mat-root.mat-workbench-open .mat-hero { padding: 16px 18px 8px !important; }
+.mat-root.mat-workbench-open .mat-hero-sub,
+.mat-root.mat-workbench-open .mat-hero-chips { display: none !important; }
+.mat-root.mat-workbench-open .mat-toolbar { padding: 9px 12px !important; gap: 6px !important; }
+.mat-root.mat-workbench-open .mat-search-wrap { min-width: 100px; }
+.mat-root.mat-workbench-open .mat-add-btn span { display: none; }
+.mat-root.mat-workbench-open .mat-add-btn { width: 32px; justify-content: center; padding: 5px !important; }
+.mat-root.mat-workbench-open .mat-sidebar { width: 92px !important; padding: 8px 5px !important; }
+.mat-root.mat-workbench-open .mat-sb-section-label { display: none; }
+.mat-root.mat-workbench-open .mat-sb-item { padding: 7px 7px !important; }
+.mat-root.mat-workbench-open .mat-sb-dot { display: none; }
+.mat-root.mat-workbench-open .mat-gallery { padding: 9px !important; }
+.mat-root.mat-workbench-open .mat-grid { display: flex !important; flex-direction: column; gap: 7px !important; }
+.mat-root.mat-workbench-open .mat-card { display: grid; grid-template-columns: 54px minmax(0, 1fr); min-height: 68px; }
+.mat-root.mat-workbench-open .mat-card-thumb { aspect-ratio: auto !important; min-height: 68px; }
+.mat-root.mat-workbench-open .mat-card-file-thumb { aspect-ratio: auto !important; width: auto; min-height: 68px; gap: 2px; }
+.mat-root.mat-workbench-open .mat-card-file-icon { width: 28px !important; height: 28px !important; }
+.mat-root.mat-workbench-open .mat-card-info { padding: 10px 8px !important; min-width: 0; }
+.mat-root.mat-workbench-open .mat-card-overlay { padding: 3px; flex-wrap: wrap; }
+.mat-root.mat-workbench-open .mat-action-btn { width: 23px !important; height: 23px !important; font-size: 10px !important; }
+
+.plt-workbench {
+    position: relative; width: 100%; height: 100% !important; max-height: none !important;
+    min-height: 0; border-radius: 0; background: var(--background-primary);
+}
+.plt-workbench .plt-header { min-height: 52px; padding: 8px 13px; }
+.plt-header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.plt-header-btn {
+    height: 30px; padding: 0 10px; display: inline-flex; align-items: center; gap: 5px;
+    border: 1px solid var(--background-modifier-border); border-radius: 7px;
+    background: var(--background-primary); color: var(--text-muted); box-shadow: none;
+    font-size: 10.5px; cursor: pointer;
+}
+.plt-header-btn:hover { color: var(--interactive-accent); border-color: var(--interactive-accent); background: color-mix(in srgb, var(--interactive-accent) 8%, transparent); }
+.plt-context {
+    margin-left: 8px; padding-left: 10px; border-left: 1px solid var(--background-modifier-border);
+    display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 10px; color: var(--text-faint);
+}
+.plt-context strong { max-width: 220px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.plt-workbench .plt-body,
+.plt-modal:not(.plt-workbench) .plt-body {
+    display: grid; grid-template-columns: 238px minmax(360px, 1fr) 340px;
+    flex: 1; min-height: 0; overflow: hidden;
+}
+.plt-workbench .plt-config { width: auto; min-width: 0; }
+.plt-canvas {
+    min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column;
+    background: var(--background-secondary);
+}
+.plt-canvas-tabs {
+    height: 38px; flex-shrink: 0; display: flex; align-items: flex-end; gap: 2px;
+    padding: 0 12px; border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+}
+.plt-canvas-tab { padding: 9px 10px 7px; font-size: 11px; color: var(--text-muted); border-bottom: 2px solid transparent; }
+.plt-canvas-tab.plt-active { color: var(--interactive-accent); border-color: var(--interactive-accent); font-weight: 600; }
+.plt-canvas .plt-preview {
+    flex: 1; max-height: none; min-height: 0; margin: 14px;
+    border: 1px solid var(--background-modifier-border); border-radius: 10px;
+    overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
+.plt-canvas .plt-preview-body { padding: 18px; background: var(--background-primary); }
+.plt-canvas .plt-preview-body svg { width: 100%; height: 100%; max-height: none; }
+.plt-data-pane {
+    display: none; flex: 1; min-height: 0; margin: 14px; overflow: hidden;
+    border: 1px solid var(--background-modifier-border); border-radius: 10px;
+    background: var(--background-primary);
+}
+.plt-data-note { padding: 9px 12px; border-bottom: 1px solid var(--background-modifier-border); color: var(--text-muted); font-size: 10.5px; }
+.plt-data-preview { height: calc(100% - 38px); margin: 0; padding: 12px; overflow: auto; white-space: pre; color: var(--text-normal); background: var(--background-primary); font: 10.5px/1.55 var(--font-monospace); }
+.plt-canvas.plt-show-data .plt-data-pane { display: block; }
+.plt-canvas.plt-show-data .plt-preview { display: none; }
+.plt-workbench .plt-chat { border-left: 1px solid var(--background-modifier-border); background: var(--background-primary); }
+.plt-agent-context {
+    display: flex; gap: 5px; flex-wrap: wrap; padding: 7px 11px;
+    border-bottom: 1px solid var(--background-modifier-border); background: var(--background-secondary);
+}
+.plt-agent-context span {
+    padding: 2px 7px; border: 1px solid var(--background-modifier-border); border-radius: 10px;
+    background: var(--background-primary); color: var(--text-muted); font-size: 9.5px;
+}
+.plt-agent-context .plt-agent-skill { color: #7C5CFC; border-color: color-mix(in srgb, #7C5CFC 30%, var(--background-modifier-border)); background: color-mix(in srgb, #7C5CFC 8%, var(--background-primary)); }
+.plt-agent-collapse { font-size: 16px; }
+.plt-agent-collapsed .plt-body { grid-template-columns: 238px minmax(360px, 1fr) 44px; }
+.plt-agent-collapsed .plt-chat-header { justify-content: center; padding: 8px; }
+.plt-agent-collapsed .plt-chat-header-left,
+.plt-agent-collapsed .plt-chat-header .plt-tool-btn:not(.plt-agent-collapse),
+.plt-agent-collapsed .plt-agent-context,
+.plt-agent-collapsed .plt-messages,
+.plt-agent-collapsed .plt-input-area { display: none; }
+
+.plt-skill-popover {
+    display: none; position: absolute; z-index: 40; top: 48px; right: 48px; width: 310px;
+    padding: 9px; border: 1px solid var(--background-modifier-border); border-radius: 10px;
+    background: var(--background-primary); box-shadow: 0 10px 32px rgba(0,0,0,.18);
+}
+.plt-skills-open .plt-skill-popover { display: block; }
+.plt-skill-title { padding: 3px 5px 8px; font-size: 12px; font-weight: 700; color: var(--text-normal); }
+.plt-skill-item {
+    width: 100%; padding: 9px; display: flex; align-items: flex-start; gap: 9px; text-align: left;
+    border: 0; border-radius: 7px; background: transparent; color: var(--text-normal); box-shadow: none; cursor: pointer;
+}
+.plt-skill-item:hover { background: var(--background-secondary); }
+.plt-skill-icon { width: 28px; height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: #7C5CFC; background: color-mix(in srgb, #7C5CFC 10%, var(--background-primary)); }
+.plt-skill-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.plt-skill-copy strong { font-size: 11px; }
+.plt-skill-copy > span { font-size: 9.5px; line-height: 1.4; color: var(--text-muted); }
+.plt-skill-empty { padding: 18px 10px; color: var(--text-muted); font-size: 10.5px; line-height: 1.55; text-align: center; }
+
+.plt-save-mode-label { margin-top: 9px; }
+.plt-save-mode { border-color: color-mix(in srgb, var(--interactive-accent) 42%, var(--background-modifier-border)) !important; }
+.plt-save-mode-hint { margin-top: 4px; color: var(--text-muted); font-size: 9.5px; line-height: 1.45; }
+.plt-btn.plt-dirty {
+    border-color: #D97706; background: #D97706; color: #fff;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #D97706 18%, transparent);
+}
+
+/* 设置页：素材 Agent Skill 白名单 */
+.sch-material-skill-settings {
+    margin: 14px 0 22px; padding: 14px;
+    border: 1px solid var(--background-modifier-border); border-radius: 10px;
+    background: var(--background-secondary);
+}
+.sch-material-skill-settings-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.sch-material-skill-settings-head strong { color: var(--text-normal); font-size: 14px; }
+.sch-material-skill-settings-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.sch-material-skill-settings-actions button { padding: 4px 9px; font-size: 11px; }
+.sch-material-skill-status { margin: 10px 0 7px; color: var(--text-muted); font-size: 11px; }
+.sch-material-skill-list {
+    max-height: 270px; overflow: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px;
+}
+.sch-material-skill-row {
+    min-width: 0; padding: 9px 10px; display: flex; align-items: flex-start; gap: 9px;
+    border: 1px solid var(--background-modifier-border); border-radius: 8px;
+    background: var(--background-primary); cursor: pointer;
+}
+.sch-material-skill-row:hover { border-color: var(--interactive-accent); }
+.sch-material-skill-row input { margin-top: 2px; accent-color: var(--interactive-accent); }
+.sch-material-skill-row-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sch-material-skill-row-copy strong { overflow: hidden; color: var(--text-normal); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.sch-material-skill-row-copy > span { color: var(--text-muted); font-size: 9.5px; line-height: 1.4; }
+
+.plt-audit-drawer {
+    height: 38px; flex: 0 0 auto; overflow: hidden; border-top: 1px solid var(--background-modifier-border);
+    background: var(--background-primary); transition: height .2s ease;
+}
+.plt-audit-open .plt-audit-drawer { height: 220px; }
+.plt-audit-head { height: 38px; padding: 0 13px; display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+.plt-audit-head strong { font-size: 11px; }
+.plt-audit-count { padding: 1px 6px; border-radius: 8px; background: var(--background-secondary); color: var(--text-faint); font-size: 9px; }
+.plt-audit-tabs { display: flex; gap: 2px; margin-left: 9px; }
+.plt-audit-tab { padding: 3px 7px; border-radius: 4px; font-size: 9.5px; color: var(--text-muted); }
+.plt-audit-tab.plt-active { color: var(--interactive-accent); background: color-mix(in srgb, var(--interactive-accent) 9%, transparent); }
+.plt-audit-chevron { margin-left: auto; color: var(--text-faint); transition: transform .2s; }
+.plt-audit-open .plt-audit-chevron { transform: rotate(180deg); }
+.plt-audit-list { height: 182px; overflow: auto; padding: 0 13px 10px; border-top: 1px solid var(--background-modifier-border); }
+.plt-audit-row { min-height: 36px; display: grid; grid-template-columns: 58px 54px minmax(0, 1fr) auto; gap: 9px; align-items: center; border-bottom: 1px solid var(--background-modifier-border); font-size: 10px; }
+.plt-audit-time { color: var(--text-faint); font-family: var(--font-monospace); }
+.plt-audit-actor { color: var(--interactive-accent); font-weight: 600; }
+.plt-audit-detail { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plt-audit-version { padding: 2px 7px; border-radius: 9px; color: #7C5CFC; background: color-mix(in srgb, #7C5CFC 9%, transparent); }
+.plt-audit-error .plt-audit-version { color: var(--text-error); background: color-mix(in srgb, var(--text-error) 8%, transparent); }
+.plt-audit-empty { padding: 22px; text-align: center; color: var(--text-faint); font-size: 10.5px; }
+
+@media (max-width: 1280px) {
+    .mat-root.mat-workbench-open .mat-browser { flex-basis: 250px; }
+    .mat-root.mat-workbench-open .mat-sidebar { display: none; }
+    .plt-workbench .plt-body { grid-template-columns: 210px minmax(320px, 1fr) 300px; }
+    .plt-agent-collapsed .plt-body { grid-template-columns: 210px minmax(320px, 1fr) 44px; }
+    .plt-context { display: none; }
+}
+@media (max-width: 980px) {
+    .mat-root.mat-workbench-open .mat-browser { display: none; }
+    .plt-workbench .plt-body { grid-template-columns: 210px minmax(300px, 1fr) 280px; }
+    .plt-agent-collapsed .plt-body { grid-template-columns: 210px minmax(300px, 1fr) 44px; }
+}
+
+/* 素材文件管理最终覆盖：为真实文件名、路径和拖放操作保留足够空间。 */
+.scholarium-root .mat-grid-mode { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)) !important; }
+.scholarium-root .mat-card-name {
+    display: block !important; overflow: visible !important; white-space: normal !important;
+    overflow-wrap: anywhere !important; -webkit-line-clamp: unset !important;
+}
+.scholarium-root .mat-card-path {
+    display: block !important; width: 100% !important; min-height: 26px;
+    color: var(--text-faint) !important; white-space: normal !important; overflow-wrap: anywhere !important;
+}
+.scholarium-root .mat-card-file-name {
+    position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2;
+    padding: 4px 6px; border-radius: 5px; background: rgba(0, 0, 0, .58);
+    color: #fff; font-size: 10px; font-weight: 650; line-height: 1.25;
+    text-align: center; overflow-wrap: anywhere; pointer-events: none;
+}
+.scholarium-root .sch-material-normalize-modal .sch-material-normalize-fields {
+    display: flex; flex-direction: column; gap: 8px; margin: 14px 0;
+}
+.scholarium-root .sch-material-normalize-modal input,
+.scholarium-root .sch-material-normalize-modal select {
+    width: 100%; box-sizing: border-box;
+}
+.scholarium-root .mat-card-actions { flex-wrap: wrap !important; max-width: 180px; }
+.scholarium-root .mat-card-img { object-fit: contain !important; background: #fff !important; }
+
+/* 数据集 → 图表版本：图表作为数据的子项显示在右侧，不再铺满素材网格。 */
+.scholarium-root .mat-content-split { flex: 1; min-width: 0; min-height: 0; display: flex; overflow: hidden; }
+.scholarium-root .mat-content-split > .mat-gallery { flex: 1; min-width: 260px; }
+.scholarium-root .mat-data-detail {
+    display: none; flex: 0 0 min(430px, 38%); min-width: 330px; min-height: 0;
+    border-left: 1px solid var(--background-modifier-border); background: var(--background-primary);
+}
+.scholarium-root .mat-data-detail.mat-data-detail-open { display: flex; flex-direction: column; }
+.scholarium-root .mat-data-detail-head {
+    display: flex; align-items: flex-start; gap: 10px; padding: 13px 14px;
+    border-bottom: 1px solid var(--background-modifier-border); background: var(--background-secondary);
+}
+.scholarium-root .mat-data-detail-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.scholarium-root .mat-data-detail-title strong { font-size: 13px; overflow-wrap: anywhere; }
+.scholarium-root .mat-data-detail-title span { color: var(--text-muted); font: 9.5px/1.4 var(--font-monospace); overflow-wrap: anywhere; }
+.scholarium-root .mat-data-detail-close {
+    width: 28px; height: 28px; padding: 0; flex-shrink: 0; border-radius: 7px;
+    background: var(--background-primary); color: var(--text-muted);
+}
+.scholarium-root .mat-data-plot-list { flex: 1; min-height: 0; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 11px; }
+.scholarium-root .mat-data-plot-card {
+    overflow: hidden; flex-shrink: 0; border: 1px solid var(--background-modifier-border);
+    border-radius: 10px; background: var(--background-primary); box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
+.scholarium-root .mat-data-plot-image { height: 170px; padding: 7px; overflow: hidden; background: #fff; cursor: zoom-in; }
+.scholarium-root .mat-data-plot-image img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.scholarium-root .mat-data-plot-body { padding: 9px 11px 7px; display: flex; flex-direction: column; gap: 3px; }
+.scholarium-root .mat-data-plot-body strong { font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.scholarium-root .mat-data-plot-body span { color: var(--text-muted); font-size: 10px; }
+.scholarium-root .mat-data-plot-body code { color: var(--text-faint); font-size: 9px; white-space: normal; overflow-wrap: anywhere; }
+.scholarium-root .mat-data-plot-actions { padding: 7px 10px 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.scholarium-root .mat-data-plot-actions button { padding: 4px 8px; font-size: 10px; }
+.scholarium-root .mat-data-plot-actions .mat-data-plot-delete { margin-left: auto; color: var(--text-error); }
+.scholarium-root .mat-data-detail-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 28px; text-align: center; }
+.scholarium-root .mat-data-detail-empty span { color: var(--text-muted); font-size: 11px; }
+.scholarium-root .mat-card-selected { border-color: var(--interactive-accent) !important; box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 18%, transparent) !important; }
+.scholarium-root .mat-card-plot-count {
+    position: absolute; right: 7px; bottom: 7px; z-index: 2; padding: 2px 7px;
+    border-radius: 10px; background: rgba(35,44,62,.78); color: #fff; font-size: 9px; font-weight: 700;
+}
+
+/* 真正的居中放大弹窗：关闭按钮始终位于白色弹窗内部。 */
+.mat-lightbox-dialog.modal {
+    width: min(1180px, 92vw) !important; height: min(860px, 90vh) !important;
+    max-width: 92vw !important; max-height: 90vh !important; padding: 0 !important;
+    overflow: hidden !important; border: 1px solid var(--background-modifier-border) !important;
+    border-radius: 12px !important; background: var(--background-primary) !important;
+    box-shadow: 0 24px 80px rgba(0,0,0,.38) !important;
+}
+.mat-lightbox-dialog > .modal-close-button { display: none !important; }
+.mat-lightbox-dialog .modal-content {
+    width: 100%; height: 100%; max-height: none !important; padding: 0 !important;
+    overflow: hidden !important; background: var(--background-primary) !important;
+}
+.mat-lightbox-dialog .mat-lightbox-modal {
+    width: 100%; height: 100%; max-width: none; max-height: none; padding: 46px 22px 16px;
+    display: grid; grid-template-rows: minmax(0, 1fr) auto auto; align-items: center;
+    color: var(--text-normal); background: var(--background-primary); box-sizing: border-box;
+}
+.mat-lightbox-dialog .mat-lb-close {
+    top: 10px; right: 12px; z-index: 20; width: 32px; height: 32px;
+    border: 1px solid var(--background-modifier-border); border-radius: 8px;
+    background: var(--background-secondary); color: var(--text-normal); font-size: 16px;
+}
+.mat-lightbox-dialog .mat-lb-close:hover { background: var(--background-modifier-hover); }
+.mat-lightbox-dialog .mat-lb-counter { position: absolute; top: 17px; left: 20px; margin: 0; color: var(--text-muted); }
+.mat-lightbox-dialog .mat-lb-img {
+    width: 100%; height: 100%; min-height: 0; max-width: 100%; max-height: 100%;
+    object-fit: contain; border-radius: 8px; background: #fff; box-shadow: none;
+}
+.mat-lightbox-dialog .mat-lb-title { margin-top: 10px; color: var(--text-normal); font-size: 13px; text-align: center; }
+.mat-lightbox-dialog .mat-lb-meta { color: var(--text-muted); font: 9.5px/1.4 var(--font-monospace); text-align: center; overflow-wrap: anywhere; }
+.mat-lightbox-dialog .mat-lb-nav {
+    position: absolute; top: 50%; width: 38px; height: 52px; z-index: 15;
+    border: 1px solid var(--background-modifier-border); border-radius: 8px;
+    background: rgba(255,255,255,.92); color: #253047; font-size: 22px;
+}
+.mat-lightbox-dialog .mat-lb-prev { left: 10px; }
+.mat-lightbox-dialog .mat-lb-next { right: 10px; }
+@media (max-width: 1050px) {
+    .scholarium-root .mat-data-detail { flex-basis: 360px; min-width: 300px; }
+}
+
+/* 绘图工作台最终布局：五列网格包含两个可拖动分隔条，避免窄栏内容互相覆盖。 */
+.plt-workbench,
+.plt-modal:not(.plt-workbench) {
+    --plt-config-width: 270px;
+    --plt-agent-width: 340px;
+}
+.plt-workbench .plt-body,
+.plt-modal:not(.plt-workbench) .plt-body {
+    display: grid !important;
+    grid-template-columns: minmax(220px, var(--plt-config-width)) 7px minmax(320px, 1fr) 7px minmax(260px, var(--plt-agent-width)) !important;
+}
+.plt-workbench .plt-config,
+.plt-modal:not(.plt-workbench) .plt-config {
+    width: auto !important; min-width: 0 !important; max-width: none !important;
+    overflow-x: hidden; box-sizing: border-box;
+}
+.plt-pane-resizer {
+    position: relative; z-index: 8; min-width: 7px; cursor: col-resize;
+    background: var(--background-primary); touch-action: none; user-select: none;
+}
+.plt-pane-resizer::after {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px;
+    background: var(--background-modifier-border); transition: width .12s, left .12s, background .12s;
+}
+.plt-pane-resizer:hover::after,
+.plt-resizing .plt-pane-resizer::after {
+    left: 2px; width: 3px; background: var(--interactive-accent);
+}
+.plt-resizing, .plt-resizing * { cursor: col-resize !important; user-select: none !important; }
+.plt-agent-collapsed .plt-body {
+    grid-template-columns: minmax(220px, var(--plt-config-width)) 7px minmax(320px, 1fr) 0 44px !important;
+}
+.plt-agent-collapsed .plt-pane-resizer-right { visibility: hidden; pointer-events: none; }
+.plt-config .plt-field,
+.plt-config .plt-history,
+.plt-config .plt-range-row { min-width: 0; max-width: 100%; }
+.plt-config .plt-check-row { flex-wrap: wrap; row-gap: 7px; }
+.plt-config-actions {
+    position: sticky; z-index: 12; bottom: -12px; margin: 6px -14px -12px !important;
+    padding: 10px 14px 12px !important; border-top: 1px solid var(--background-modifier-border);
+    background: color-mix(in srgb, var(--background-primary) 96%, transparent);
+    box-shadow: 0 -8px 16px color-mix(in srgb, var(--background-primary) 90%, transparent);
+}
+.plt-config-actions .plt-btn-primary { min-height: 34px; font-weight: 750; }
+.mat-root.mat-workbench-open .mat-browser { min-width: 230px; overflow: hidden; }
+.mat-root.mat-workbench-open .mat-content-split,
+.mat-root.mat-workbench-open .mat-gallery,
+.mat-root.mat-workbench-open .mat-grid,
+.mat-root.mat-workbench-open .mat-card { min-width: 0 !important; max-width: 100% !important; }
+
+/* 所有绘图复选框使用同一高对比度实心状态；网格与四边框即时显示开/关。 */
+.plt-check-row input[type="checkbox"] {
+    appearance: none !important; -webkit-appearance: none !important;
+    width: 18px !important; height: 18px !important; flex: 0 0 18px !important; margin: 0 !important;
+    display: inline-grid !important; place-content: center !important;
+    border: 2px solid #667085 !important; border-radius: 5px !important;
+    background-color: #FFFFFF !important; background-image: none !important;
+    box-shadow: none !important; cursor: pointer;
+}
+.theme-dark .plt-check-row input[type="checkbox"] { background-color: #20242C !important; border-color: #98A2B3 !important; }
+.plt-check-row input[type="checkbox"]:checked {
+    border-color: #1D4ED8 !important; background-color: #2563EB !important;
+    box-shadow: 0 0 0 3px rgba(37,99,235,.18) !important;
+}
+.plt-check-row input[type="checkbox"]:checked::after {
+    content: "✓" !important; color: #FFFFFF !important; font: 900 13px/1 sans-serif !important;
+}
+.plt-check-row input[type="checkbox"]:focus-visible { outline: 2px solid #60A5FA !important; outline-offset: 2px; }
+.plt-check-row input[type="checkbox"]:checked + .plt-check-label { color: #1D4ED8 !important; font-weight: 800 !important; }
+
+@media (max-width: 1280px) {
+    .plt-workbench, .plt-modal:not(.plt-workbench) { --plt-config-width: 230px; --plt-agent-width: 300px; }
+}
+@media (max-width: 980px) {
+    .plt-workbench, .plt-modal:not(.plt-workbench) { --plt-config-width: 220px; --plt-agent-width: 280px; }
+}
+
+/* =====================================================
+   Final theme contract
+
+   The academic-blue preview layer above intentionally used a paper-white
+   palette, but it was not scoped to the light theme.  Because it is loaded
+   after the normal theme mappings, its literal colours won the cascade even
+   when applyThemeAttributes() had selected dark mode.  Keep the structural
+   work from that layer, while making colour ownership explicit again.
+   ===================================================== */
+.scholarium-root[data-theme="dark"] {
+    color-scheme: dark;
+    --sch-bg: var(--bg-base) !important;
+    --sch-bg-deep: var(--bg-panel) !important;
+    --sch-surface: var(--bg-surface) !important;
+    --sch-surface2: var(--bg-elevated) !important;
+    --sch-paper: var(--bg-surface) !important;
+    --sch-line: var(--border) !important;
+    --sch-line-soft: var(--border-soft) !important;
+    --sch-ink: var(--text-primary) !important;
+    --sch-ink2: var(--text-secondary) !important;
+    --sch-mute: var(--text-muted) !important;
+    --sch-mute-soft: var(--text-placeholder) !important;
+    --background-primary: var(--bg-base) !important;
+    --background-primary-alt: var(--bg-panel) !important;
+    --background-secondary: var(--bg-surface) !important;
+    --background-secondary-alt: var(--bg-elevated) !important;
+    --background-modifier-border: var(--border) !important;
+    --background-modifier-hover: var(--bg-elevated) !important;
+    --background-modifier-active-hover: var(--accent-dim) !important;
+    --text-normal: var(--text-primary) !important;
+    --text-muted: var(--text-secondary) !important;
+    --text-faint: var(--text-muted) !important;
+    --interactive-accent: var(--accent) !important;
+    --interactive-accent-hover: var(--accent-deep) !important;
+    color: var(--text-primary) !important;
+}
+
+.scholarium-root[data-theme="dark"].scholarium-dashboard,
+.scholarium-root[data-theme="dark"].scholarium-settings,
+.vertical-tab-content-container.scholarium-root[data-theme="dark"],
+.scholarium-root[data-theme="dark"] .scholarium-main,
+.scholarium-root[data-theme="dark"] .scholarium-panel,
+.scholarium-root[data-theme="dark"] .exp-dashboard-panel,
+.scholarium-root[data-theme="dark"] .rss-root,
+.scholarium-root[data-theme="dark"] .rss-stream,
+.scholarium-root[data-theme="dark"] .rss-filter-bar,
+.scholarium-root[data-theme="dark"] .deduction-room,
+.scholarium-root[data-theme="dark"] .project-profile-drawer,
+.scholarium-root[data-theme="dark"] .mat-root,
+.scholarium-root[data-theme="dark"] .mat-main,
+.scholarium-root[data-theme="dark"] .mat-browser,
+.scholarium-root[data-theme="dark"] .mat-gallery,
+.scholarium-root[data-theme="dark"] .rtl-root,
+.scholarium-root[data-theme="dark"] .rtl-main,
+.scholarium-root[data-theme="dark"] .rtl-grid-wrap,
+.scholarium-root[data-theme="dark"] .ws2-root,
+.scholarium-root[data-theme="dark"] .ws2-layout,
+.scholarium-root[data-theme="dark"] .ws2-content,
+.scholarium-root[data-theme="dark"] .ws2-page,
+.scholarium-root[data-theme="dark"] .ws2-page-body {
+    background: var(--bg-base) !important;
+    color: var(--text-primary) !important;
+}
+
+.scholarium-root[data-theme="dark"] .scholarium-panel.left-panel,
+.scholarium-root[data-theme="dark"] .mat-toolbar,
+.scholarium-root[data-theme="dark"] .mat-sidebar,
+.scholarium-root[data-theme="dark"] .mat-data-detail,
+.scholarium-root[data-theme="dark"] .rtl-hero,
+.scholarium-root[data-theme="dark"] .rtl-nav,
+.scholarium-root[data-theme="dark"] .ws2-sidebar,
+.scholarium-root[data-theme="dark"] .ws2-sidebar-header,
+.scholarium-root[data-theme="dark"] .ws2-page-hero,
+.scholarium-root[data-theme="dark"] .deduction-list-pane.deduction-list-pane-refactored {
+    background: var(--bg-panel) !important;
+    border-color: var(--border) !important;
+    color: var(--text-primary) !important;
+}
+
+.scholarium-root[data-theme="dark"] :is(
+    .scholarium-card,
+    .rss-card,
+    .rss-radar-bar,
+    .rss-radar-controls,
+    .rss-radar-review,
+    .rss-radar-metric,
+    .exp-item,
+    .exp-board-stat,
+    .exp-note-card,
+    .detail-section,
+    .deduction-design-card,
+    .deduction-plan-card,
+    .deduction-message,
+    .deduction-tool-card,
+    .deduction-downloader-card,
+    .deduction-session-card,
+    .project-profile-card,
+    .project-profile-summary-grid > div,
+    .mat-card,
+    .mat-data-plot-card,
+    .rtl-card,
+    .ws2-card,
+    .ws2-snapshot-card,
+    .ws2-summary-card,
+    .ws2-big-num-card,
+    .ws2-period-card,
+    .ws2-timeblock-item,
+    .ws2-task-item,
+    .ws2-food-item,
+    .ws2-sub-card,
+    .ws2-kanban-col,
+    .ws2-chart,
+    .ws2-stack-chart-card,
+    .sch-card,
+    .sch-inset
+) {
+    background: var(--bg-surface) !important;
+    border-color: var(--border) !important;
+    color: var(--text-primary) !important;
+    box-shadow: none !important;
+}
+
+.scholarium-root[data-theme="dark"] :is(
+    .scholarium-card,
+    .rss-card,
+    .exp-item,
+    .exp-note-card,
+    .deduction-design-card,
+    .deduction-session-card,
+    .project-profile-card,
+    .mat-card,
+    .rtl-card,
+    .ws2-card,
+    .ws2-summary-card,
+    .ws2-big-num-card,
+    .ws2-period-card,
+    .ws2-sub-card
+):hover {
+    background: var(--bg-elevated) !important;
+    border-color: var(--border-strong, var(--border)) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .24) !important;
+}
+
+.scholarium-root[data-theme="dark"] .exp-note-card {
+    --exp-status-soft: color-mix(in srgb, var(--exp-status-border) 12%, var(--bg-surface));
+}
+.scholarium-root[data-theme="dark"] .exp-note-card-head,
+.scholarium-root[data-theme="dark"] .exp-note-card-top {
+    background: var(--exp-status-soft) !important;
+    border-color: var(--border-soft) !important;
+}
+.scholarium-root[data-theme="dark"] .exp-note-card-footer,
+.scholarium-root[data-theme="dark"] .exp-board-empty {
+    background: var(--bg-surface) !important;
+    border-color: var(--border) !important;
+}
+.scholarium-root[data-theme="dark"] .exp-note-card-scroll::-webkit-scrollbar-thumb {
+    background: var(--border-strong, var(--border)) !important;
+    border-color: var(--bg-surface) !important;
+}
+.scholarium-root[data-theme="dark"] .exp-item.selected,
+.scholarium-root[data-theme="dark"] .exp-item.active,
+.scholarium-root[data-theme="dark"] .filter-tab.active,
+.scholarium-root[data-theme="dark"] .rss-feed-item.active,
+.scholarium-root[data-theme="dark"] .rss-filter.active {
+    background: var(--accent-dim) !important;
+    border-color: color-mix(in srgb, var(--accent) 46%, transparent) !important;
+    color: var(--text-primary) !important;
+}
+
+.scholarium-root[data-theme="dark"] :is(
+    h1,
+    h2,
+    h3,
+    .sch-brandbar strong,
+    .panel-title,
+    .detail-title,
+    .exp-board-title,
+    .exp-board-stat-value,
+    .exp-note-card-title,
+    .exp-note-card-top strong,
+    .exp-note-card-section p,
+    .exp-note-card-text,
+    .exp-item strong,
+    .exp-item-title-row,
+    .exp-item-title,
+    .rss-card-title,
+    .rss-radar-title,
+    .rss-radar-metric-value,
+    .deduction-session-card strong,
+    .project-profile-banner strong,
+    .project-profile-card strong,
+    .rtl-hero-title,
+    .rtl-section-title,
+    .rtl-card-title,
+    .mat-card-name,
+    .ws2-logo-title,
+    .ws2-page-hero-title,
+    .ws2-overview-title,
+    .ws2-card-title,
+    .ws2-card-value
+) {
+    color: var(--text-primary) !important;
+}
+
+.scholarium-root[data-theme="dark"] :is(
+    small,
+    .section-title,
+    .exp-board-subtitle,
+    .exp-board-stat-label,
+    .exp-note-card-date,
+    .exp-note-card-meta,
+    .exp-note-card-section h4,
+    .exp-item-date,
+    .exp-day-label,
+    .exp-day-count,
+    .rss-sidebar-title,
+    .rss-card-date,
+    .rss-radar-description,
+    .rss-radar-stats,
+    .rss-empty-hint,
+    .deduction-pane-head p,
+    .deduction-project-label,
+    .deduction-session-scope,
+    .deduction-session-card small,
+    .deduction-empty,
+    .project-profile-card small,
+    .mat-empty,
+    .mat-empty-hint,
+    .mat-card-path,
+    .rtl-hero-sub,
+    .rtl-card-desc,
+    .rtl-card-link,
+    .ws2-logo-subtitle,
+    .ws2-logo-datetime,
+    .ws2-page-hero-sub
+) {
+    color: var(--text-secondary) !important;
+}
+
+.scholarium-root[data-theme="dark"] :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+    textarea,
+    select,
+    .project-profile-editor
+) {
+    background: var(--bg-elevated) !important;
+    border-color: var(--border) !important;
+    color: var(--text-primary) !important;
+    color-scheme: dark;
+}
+.scholarium-root[data-theme="dark"] :is(input, textarea)::placeholder {
+    color: var(--text-placeholder) !important;
+}
+.scholarium-root[data-theme="dark"] :is(.scholarium-btn, button.scholarium-btn, .rss-btn, .rss-card-btn, .rss-radar-button) {
+    background: var(--bg-surface) !important;
+    border-color: var(--border) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Obsidian mounts the native plugin-settings tab outside the dashboard.  Its
+   academic-paper layout remains useful in light mode, but its earlier literal
+   white surfaces must not win over Obsidian's dark theme.  Cover both the
+   live data-theme attribute and Obsidian's body class so a just-opened tab is
+   correct even before the plugin's theme observer has run. */
+.theme-dark .scholarium-settings,
+.scholarium-root[data-theme="dark"].scholarium-settings {
+    color-scheme: dark;
+    --sch-academic-ink: var(--text-primary, #edf1f7) !important;
+    --sch-academic-muted: var(--text-secondary, #aab3c2) !important;
+    --sch-academic-line: var(--border, rgba(255, 255, 255, .12)) !important;
+    --sch-academic-paper: var(--bg-surface, #20242c) !important;
+    background: linear-gradient(135deg, var(--bg-base, #16181d) 0%, var(--bg-panel, #1b1e24) 58%, var(--bg-surface, #20242c) 100%) !important;
+    color: var(--text-primary, #edf1f7) !important;
+}
+
+.theme-dark .vertical-tab-content-container:has(.scholarium-settings),
+.vertical-tab-content-container.scholarium-root[data-theme="dark"]:has(.scholarium-settings) {
+    background: var(--bg-base, #16181d) !important;
+}
+
+.theme-dark .scholarium-settings > .setting-item-heading,
+.scholarium-root[data-theme="dark"].scholarium-settings > .setting-item-heading {
+    border-bottom-color: var(--border, rgba(255, 255, 255, .12)) !important;
+}
+
+.theme-dark .scholarium-settings > .setting-item-heading .setting-item-name,
+.theme-dark .scholarium-settings .sch-settings-section-summary .setting-item-name,
+.theme-dark .scholarium-settings .sch-settings-section-body .setting-item-name,
+.scholarium-root[data-theme="dark"].scholarium-settings > .setting-item-heading .setting-item-name,
+.scholarium-root[data-theme="dark"].scholarium-settings .sch-settings-section-summary .setting-item-name,
+.scholarium-root[data-theme="dark"].scholarium-settings .sch-settings-section-body .setting-item-name {
+    color: var(--text-primary, #edf1f7) !important;
+}
+
+.theme-dark .scholarium-settings .sch-settings-section-description,
+.theme-dark .scholarium-settings .sch-settings-section-body .setting-item-description,
+.theme-dark .scholarium-settings .setting-item-description,
+.scholarium-root[data-theme="dark"].scholarium-settings .sch-settings-section-description,
+.scholarium-root[data-theme="dark"].scholarium-settings .sch-settings-section-body .setting-item-description,
+.scholarium-root[data-theme="dark"].scholarium-settings .setting-item-description {
+    color: var(--text-secondary, #aab3c2) !important;
+}
+
+.theme-dark .scholarium-settings .sch-settings-section,
+.scholarium-root[data-theme="dark"].scholarium-settings .sch-settings-section {
+    background: var(--bg-surface, #20242c) !important;
+    border-color: var(--border, rgba(255, 255, 255, .12)) !important;
+    box-shadow: none !important;
+}
+
+.theme-dark .scholarium-settings .sch-settings-section:hover,
+.scholarium-root[data-theme="dark"].scholarium-settings .sch-settings-section:hover {
+    background: var(--bg-elevated, #282d36) !important;
+    border-color: color-mix(in srgb, var(--accent, #4d9fff) 48%, var(--border, #394150)) !important;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, .22) !important;
+}
+
+.theme-dark .scholarium-settings .sch-settings-section-summary::before,
+.scholarium-root[data-theme="dark"].scholarium-settings .sch-settings-section-summary::before {
+    color: var(--text-secondary, #aab3c2) !important;
+    border-color: var(--border-strong, var(--border, rgba(255, 255, 255, .18))) !important;
+}
+
+.theme-dark .scholarium-settings .sch-settings-section-summary::after,
+.scholarium-root[data-theme="dark"].scholarium-settings .sch-settings-section-summary::after {
+    color: var(--text-secondary, #aab3c2) !important;
+}
+
+.theme-dark .scholarium-settings .sch-settings-section-body,
+.theme-dark .scholarium-settings .sch-settings-section-body .setting-item,
+.scholarium-root[data-theme="dark"].scholarium-settings .sch-settings-section-body,
+.scholarium-root[data-theme="dark"].scholarium-settings .sch-settings-section-body .setting-item {
+    border-color: var(--border-soft, var(--border, rgba(255, 255, 255, .1))) !important;
+}
+
+.theme-dark .scholarium-settings :is(input, select, textarea),
+.scholarium-root[data-theme="dark"].scholarium-settings :is(input, select, textarea) {
+    background: var(--bg-elevated, #282d36) !important;
+    border-color: var(--border, rgba(255, 255, 255, .14)) !important;
+    color: var(--text-primary, #edf1f7) !important;
+    color-scheme: dark;
+}
+
+.theme-dark .scholarium-settings :is(input, textarea)::placeholder,
+.scholarium-root[data-theme="dark"].scholarium-settings :is(input, textarea)::placeholder {
+    color: var(--text-placeholder, #778195) !important;
+}
+
+.theme-dark .scholarium-settings .sch-visual-style-choice,
+.scholarium-root[data-theme="dark"].scholarium-settings .sch-visual-style-choice {
+    background: var(--bg-elevated, #282d36) !important;
+    border-color: var(--border, rgba(255, 255, 255, .14)) !important;
+    color: var(--text-primary, #edf1f7) !important;
+}
+
+.theme-dark .scholarium-settings .sch-visual-style-choice :is(.sch-visual-style-choice-title, .sch-visual-style-choice-desc),
+.scholarium-root[data-theme="dark"].scholarium-settings .sch-visual-style-choice :is(.sch-visual-style-choice-title, .sch-visual-style-choice-desc) {
+    color: var(--text-primary, #edf1f7) !important;
+}
+
+/* Material Agent Skill allowlist: native checkbox dimensions inherit compact
+   settings input rules, producing a tall rectangle with no dependable checked
+   mark.  This control is intentionally self-drawn, so its shape and state are
+   equally clear in both Obsidian themes. */
+.sch-material-skill-row input[type="checkbox"] {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    box-sizing: border-box !important;
+    display: inline-grid !important;
+    place-content: center !important;
+    flex: 0 0 20px !important;
+    width: 20px !important;
+    min-width: 20px !important;
+    max-width: 20px !important;
+    height: 20px !important;
+    min-height: 20px !important;
+    max-height: 20px !important;
+    margin: 2px 0 0 !important;
+    padding: 0 !important;
+    border: 1px solid var(--border-strong, var(--background-modifier-border)) !important;
+    border-radius: 5px !important;
+    background: var(--bg-elevated, var(--background-primary-alt)) !important;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent) !important;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.sch-material-skill-row input[type="checkbox"]:hover {
+    border-color: var(--interactive-accent) !important;
+}
+
+.sch-material-skill-row input[type="checkbox"]:checked {
+    border-color: var(--interactive-accent) !important;
+    background: var(--interactive-accent) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 20%, transparent) !important;
+}
+
+.sch-material-skill-row input[type="checkbox"]:checked::after {
+    content: "✓";
+    color: #fff !important;
+    font: 800 14px/1 var(--font-interface, sans-serif) !important;
+}
+
+.sch-material-skill-row input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--interactive-accent) !important;
+    outline-offset: 2px;
+}
+
+.sch-material-skill-row.is-enabled,
+.sch-material-skill-row:has(input[type="checkbox"]:checked) {
+    background: color-mix(in srgb, var(--interactive-accent) 9%, var(--bg-surface, var(--background-primary))) !important;
+    border-color: color-mix(in srgb, var(--interactive-accent) 48%, var(--border, var(--background-modifier-border))) !important;
+}
+
+.sch-material-skill-row.is-enabled .sch-material-skill-row-copy strong,
+.sch-material-skill-row:has(input[type="checkbox"]:checked) .sch-material-skill-row-copy strong {
+    color: var(--text-primary, var(--text-normal)) !important;
+}
+
+/* Zotero library selection. Native checkboxes are rendered as the same white
+   rounded square in some dark Obsidian themes, so draw both states explicitly. */
+.scholarium-root .rss-zotero-check[type="checkbox"] {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    box-sizing: border-box !important;
+    display: inline-grid !important;
+    place-content: center !important;
+    flex: 0 0 19px !important;
+    width: 19px !important;
+    min-width: 19px !important;
+    max-width: 19px !important;
+    height: 19px !important;
+    min-height: 19px !important;
+    max-height: 19px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 1.5px solid var(--text-faint, #697386) !important;
+    border-radius: 5px !important;
+    background: color-mix(in srgb, var(--background-primary, #111318) 88%, #fff 12%) !important;
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, .22) !important;
+    cursor: pointer !important;
+    transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 100ms ease !important;
+}
+
+.scholarium-root .rss-zotero-check[type="checkbox"]:hover {
+    border-color: var(--interactive-accent) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 16%, transparent) !important;
+}
+
+.scholarium-root .rss-zotero-check[type="checkbox"]:active {
+    transform: scale(.9);
+}
+
+.scholarium-root .rss-zotero-check[type="checkbox"]:checked {
+    border-color: var(--interactive-accent) !important;
+    background: var(--interactive-accent) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 24%, transparent) !important;
+}
+
+.scholarium-root .rss-zotero-check[type="checkbox"]:checked::after {
+    content: "✓" !important;
+    color: var(--text-on-accent, #fff) !important;
+    font: 900 14px/1 var(--font-interface, sans-serif) !important;
+    transform: translateY(-.5px);
+}
+
+.scholarium-root .rss-zotero-check[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--interactive-accent) !important;
+    outline-offset: 2px;
+}
+
+.scholarium-root .rss-zotero-item {
+    border-radius: 7px;
+    padding-inline: 5px !important;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 86px;
+    transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.scholarium-root .rss-zotero-item.is-selected,
+.scholarium-root .rss-zotero-item:has(.rss-zotero-check:checked) {
+    background: color-mix(in srgb, var(--interactive-accent) 10%, transparent) !important;
+    box-shadow: inset 3px 0 0 var(--interactive-accent);
+}
+.scholarium-root[data-theme="dark"] :is(.scholarium-btn, button.scholarium-btn, .rss-btn, .rss-card-btn, .rss-radar-button):hover:not(:disabled) {
+    background: var(--bg-elevated) !important;
+    border-color: var(--accent) !important;
+    color: var(--accent) !important;
+}
+.scholarium-root[data-theme="dark"] :is(.scholarium-btn.primary, button.scholarium-btn.primary, .rss-btn-primary) {
+    background: var(--accent) !important;
+    border-color: var(--accent) !important;
+    color: var(--accent-text) !important;
+}
+
+.scholarium-root[data-theme="dark"] .project-profile-banner {
+    background: linear-gradient(115deg,
+        color-mix(in srgb, var(--accent) 16%, var(--bg-surface)),
+        color-mix(in srgb, #009688 13%, var(--bg-surface))) !important;
+    border-color: var(--border) !important;
+    color: var(--text-primary) !important;
+}
+.scholarium-root[data-theme="dark"] .project-profile-tags span {
+    background: var(--accent-dim) !important;
+    border-color: color-mix(in srgb, var(--accent) 36%, transparent) !important;
+    color: var(--accent) !important;
+}
+
+.scholarium-root[data-theme="dark"] .deduction-divider,
+.scholarium-root[data-theme="dark"] .deduction-divider::after {
+    background: var(--border) !important;
+}
+.scholarium-root[data-theme="dark"] .sch-agent-select option,
+.scholarium-root[data-theme="dark"] .sch-deduction-agent-select option {
+    background: var(--bg-elevated) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Ketcher's chemical drawing canvas deliberately remains neutral so black bond
+   strokes stay legible.  Its host and chrome, however, must not become a white
+   page-sized slab in dark mode. */
+.scholarium-root[data-theme="dark"] .sch-chem-ketcher-host,
+.scholarium-root[data-theme="dark"] .sch-chem-ketcher-host > div,
+.scholarium-root[data-theme="dark"] .sch-chem-ketcher-webview {
+    background: var(--bg-panel) !important;
+    color: var(--text-primary) !important;
+}
+.scholarium-root[data-theme="dark"] .Ketcher-polymer-editor-root {
+    --color-background-primary: var(--bg-surface) !important;
+    --color-background-secondary: var(--bg-elevated) !important;
+    --color-tab-regular: var(--bg-surface) !important;
+    --color-tab-active: var(--bg-elevated) !important;
+    --color-tab-content: var(--bg-panel) !important;
+    --color-text-primary: var(--text-primary) !important;
+    --color-text-light: var(--text-secondary) !important;
+    --color-text-lightgrey: var(--text-muted) !important;
+    --color-border-primary: var(--border) !important;
+    --color-border-secondary: var(--border-strong, var(--border)) !important;
+    --color-input-background-primary: var(--bg-elevated) !important;
+    --color-input-background-default: var(--bg-panel) !important;
+    --color-dropdown-primary: var(--text-primary) !important;
+    --color-dropdown-secondary: var(--bg-elevated) !important;
+    --color-dropdown-hover: var(--bg-panel) !important;
+    --color-tooltip-background: var(--bg-elevated) !important;
+    --color-tooltip-text: var(--text-primary) !important;
+}
+
+/* Images, publication plots, external web pages and molecule depictions are
+   content canvases rather than application chrome.  White is intentional only
+   inside these bounded regions. */
+.scholarium-root[data-theme="dark"] :is(
+    .sch-chem-preview,
+    .sch-chem-svg,
+    .sch-chem-svg svg,
+    .sch-chem-canvas,
+    .mat-card-img,
+    .mat-data-plot-image,
+    .mat-lb-img,
+    .rss-webview
+) {
+    background: #ffffff !important;
+    color: #1f2328 !important;
+}

@@ -54,13 +54,53 @@ const ENUMS = {
     review_status: ["pending", "confirmed", "rejected", "demonstration"],
   },
   experiment: {
-    status: ["idea", "designed", "ready", "running", "data_pending", "analyzing", "concluded", "integrated"],
+    // `invalidated` is deliberately outside the forward experiment workflow.
+    // It records that a result once existed in the research chain but was
+    // later withdrawn after an audit; it is reached only through the dedicated
+    // provenance-invalidation transaction, never by an ordinary transition.
+    status: ["idea", "designed", "ready", "running", "data_pending", "analyzing", "concluded", "integrated", "invalidated"],
     // `data_origin` is deliberately about provenance, not confidence.  An AI
     // may help analyse a record, but it must never make simulated output look
     // like a measurement from the laboratory.
-    data_origin: ["planned", "measured", "simulated", "imported"],
+    // `demonstration` and `unknown` were added 2026-09-05. `demonstration` is
+    // the acceptance-rehearsal counterpart of Evidence's review_status of the
+    // same name: EXP-011 existed for months with no way to say in the schema
+    // what it actually was. `unknown` exists so that "nobody declared this"
+    // becomes a state the gate can refuse, instead of an absence that every
+    // downstream check silently skipped.
+    // `unverifiable` is not a synonym for unknown. unknown means no researcher
+    // has finished classifying the record; unverifiable means a researcher did
+    // complete a provenance audit and recorded why the source cannot be
+    // established. It is therefore allowed only on an invalidated record.
+    data_origin: ["planned", "measured", "simulated", "imported", "demonstration", "unknown", "unverifiable"],
   },
 };
+
+/* --- provenance gate ------------------------------------------------
+   Only these two origins may back a formal Evidence object. Everything
+   else — including a record that never declared an origin at all — is
+   barred from the evidence chain until a human declares otherwise.
+
+   The distinction that matters is NOT confidence but authorship of the
+   number: `measured` and `imported` name a physical or external source
+   that someone can go back to; `planned`, `simulated`, `demonstration`
+   and `unknown` do not. EXP-001 is the case this was written for: it
+   reached `concluded`, produced EVD-024, and carried no data_origin at
+   all, so every provenance check in validateObject was skipped by the
+   `!== undefined` guard. Treating that absence as `unknown` — rather
+   than as "legacy, therefore probably fine" — is the whole point. */
+const EVIDENCE_GRADE_ORIGINS = new Set(["measured", "imported"]);
+function experimentProvenance(experiment) {
+  const declared = experiment && experiment.data_origin;
+  return declared === undefined || declared === null || declared === ""
+    ? "unknown"
+    : String(declared);
+}
+function isEvidenceGrade(experiment) {
+  return Boolean(experiment)
+    && experiment.status !== "invalidated"
+    && EVIDENCE_GRADE_ORIGINS.has(experimentProvenance(experiment));
+}
 const REQUIRED = {
   project: ["title"],
   question: ["project_uid", "statement"],
@@ -78,7 +118,12 @@ const REQUIRED = {
   // evidence_summary（文字说明）+ evidence_refs（真 uid 数组）+ source_types
   // 三项一起，呼应 evidence 对象"无来源不得写入"的同一条纪律——一条经验，
   // 和一条证据一样，没有来源就不可信。
-  lesson: ["title", "statement", "scope", "evidence_summary", "evidence_refs", "source_types"],
+  // A Lesson may be grounded either in live schema objects (`evidence_refs`)
+  // or in immutable run-audit files (`audit_refs`).  Requiring only the former
+  // made an honest lesson invalid as soon as its source Experiment was deleted:
+  // the operator then had to choose between destroying the audit trail and
+  // keeping the whole vault red.  Both channels remain explicit and typed.
+  lesson: ["title", "statement", "scope", "evidence_summary", "source_types"],
 };
 const LIST_KEYS = new Set([
   "authors", "keywords", "tags", "projects", "active_hypothesis_uids",
@@ -87,7 +132,7 @@ const LIST_KEYS = new Set([
   "contradicting_evidence", "assumptions", "alternative_explanations", "required_tests",
   "tests_hypotheses", "produced_evidence", "raw_data_refs",
   "hotspots", "key_papers", "gaps",
-  "relates_to",
+  "relates_to", "retired_object_uids", "retired_display_ids", "audit_refs",
   "evidence_refs", "source_types",
 ]);
 
@@ -266,12 +311,32 @@ function validateObject(object) {
       add("decided_at 如果填写，必须是 ISO8601");
   }
 
+  // Deleted schema objects and operational run files are evidence about the
+  // past, but they are not live graph relations.  Keep them in dedicated
+  // fields so validateVault() can continue to enforce that every true relation
+  // resolves while audit records remain readable after a test fixture or a
+  // superseded object is deliberately removed.
+  if (type === "decision" || type === "lesson") {
+    for (const uid of Array.isArray(object.retired_object_uids) ? object.retired_object_uids : [])
+      if (!UUID_V7.test(String(uid))) add("retired_object_uids 的每一项都必须是 UUIDv7：" + JSON.stringify(uid));
+    for (const displayId of Array.isArray(object.retired_display_ids) ? object.retired_display_ids : [])
+      if (!Object.values(PREFIX).some((prefix) => new RegExp(`^${prefix}-\\d+$`).test(String(displayId))))
+        add("retired_display_ids 的每一项都必须是已注册前缀的 display_id：" + JSON.stringify(displayId));
+    for (const ref of Array.isArray(object.audit_refs) ? object.audit_refs : []) {
+      const value = String(ref || "").replace(/\\/g, "/");
+      if (!/^Research\/_runs\/(?:actions|queue-archive|recovery)\/[^/]+$/.test(value) || value.includes(".."))
+        add("audit_refs 必须是 Research/_runs 下 actions、queue-archive 或 recovery 文件的 Vault 相对路径：" + JSON.stringify(ref));
+    }
+  }
+
   if (type === "lesson") {
     // §evidence 的"无来源不得写入"纪律搬到经验候选上：REQUIRED 已经挡掉
     // "整个字段缺失"，这里补上 REQUIRED 挡不住的"字段存在但是空数组"——
     // 一条经验候选如果一条真实证据都不引用，就是空口下结论，必须挡住。
     const refs = Array.isArray(object.evidence_refs) ? object.evidence_refs : [];
-    if (!refs.length) add("evidence_refs 不能为空——经验候选必须至少引用一条真实证据（EXP/DEC 等对象的 uid）");
+    const auditRefs = Array.isArray(object.audit_refs) ? object.audit_refs : [];
+    if (!refs.length && !auditRefs.length)
+      add("evidence_refs 与 audit_refs 不能同时为空——经验候选必须引用活对象或不可变运行审计");
     for (const uid of refs)
       if (!UUID_V7.test(String(uid))) add("evidence_refs 的每一项都必须是 UUIDv7：" + JSON.stringify(uid));
     const sources = Array.isArray(object.source_types) ? object.source_types : [];
@@ -425,11 +490,64 @@ function validateObject(object) {
       }
       if (origin === "simulated" && !substantive(object.data_provenance_note))
         add("模拟数据必须说明 data_provenance_note，避免与实测混淆");
-      if (["concluded", "integrated"].includes(object.status) && origin === "planned")
-        add("尚未产生数据（planned）的 Experiment 不能进入 concluded 或 integrated");
-      if (object.status === "integrated" && origin === "simulated")
-        add("模拟数据可用于流程演练，但 Experiment 不能进入 integrated");
+      if (origin === "unverifiable" && !substantive(object.data_provenance_note))
+        add("无法核实的数据必须说明 data_provenance_note，记录已检查的范围和失败原因");
+      if (object.raw_data_sha256 !== undefined && !SHA256.test(String(object.raw_data_sha256 || "")))
+        add("raw_data_sha256 必须是 64 位 SHA-256");
     }
+
+    /* --- provenance gate ------------------------------------------------
+       These run whether or not data_origin was declared, because the case
+       they exist for is precisely the record that declared nothing. EXP-001
+       reached `concluded` and produced EVD-024 while every check above was
+       skipped by the `!== undefined` guard; DEC-005 had to be written by hand
+       to say what the schema should have refused to allow in the first place.
+
+       `unknown` is therefore an explicit block, never a default pass: an
+       absent declaration is the one state from which you genuinely cannot
+       tell a measurement from a demonstration, so it is the one state that
+       must not be allowed to back a conclusion. Clearing it costs a human
+       one field, which is the correct price. */
+    const origin = experimentProvenance(object);
+    // `simulated` deliberately keeps its existing latitude: a simulation study
+    // legitimately concludes, it just never becomes integrated research. What
+    // changes here is that `demonstration` and `unknown` join `planned` in
+    // being unable to reach a terminal status at all.
+    const terminal = ["concluded", "integrated"].includes(object.status);
+    if (origin === "planned" && terminal)
+      add("尚未产生数据（planned）的 Experiment 不能进入 concluded 或 integrated");
+    if (origin === "demonstration" && terminal)
+      add("data_origin 为 demonstration 的 Experiment 不得进入 concluded 或 integrated："
+        + "验收演练记录不是研究结论");
+    if (origin === "unknown" && terminal)
+      add("data_origin 为 unknown 的 Experiment 不得进入 concluded 或 integrated："
+        + "unknown 表示无人声明数据来源，必须由研究者显式判定，不得默认视为实测");
+    if (object.status === "integrated" && origin === "simulated")
+      add("模拟数据可用于流程演练，但 Experiment 不能进入 integrated");
+    if (origin === "unverifiable" && object.status !== "invalidated")
+      add("data_origin 为 unverifiable 时 Experiment 必须进入 invalidated："
+        + "unverifiable 是完成追溯后的审计终态，不是继续保留结论的标签");
+    if (object.status === "invalidated") {
+      if (!String(object.invalidation_reason || "").trim())
+        add("invalidated Experiment 必须记录 invalidation_reason");
+      if (!ISO.test(String(object.invalidated_at || "")))
+        add("invalidated Experiment 必须记录 invalidated_at");
+      if (object.invalidated_by !== "user")
+        add("Experiment 失效必须由研究者确认，invalidated_by 必须为 user");
+      if ((object.produced_evidence || []).length)
+        add("invalidated Experiment 的 produced_evidence 必须为空：下游 Evidence 必须同步降级");
+    }
+    /* Producing an Evidence object is barred only for `planned` and `unknown`.
+       `simulated` and `demonstration` may still produce one, on purpose: the
+       rehearsal lane needs a real object to rehearse with, and EVD-033/034
+       already live there. What keeps them harmless is not this rule but the
+       cross-object gate in validateVault(), which refuses to let such an
+       Evidence be confirmed or enter a hypothesis's formal support lists.
+       Blocking creation here instead would delete a working lane to solve a
+       problem that belongs one level up. */
+    if ((object.produced_evidence || []).length && ["planned", "unknown"].includes(origin))
+      add("data_origin 为 " + origin + " 的 Experiment 不得产出 Evidence："
+        + "先由研究者声明数据来源（measured / imported）并补齐 raw_data_refs");
   }
 
   return errors;
@@ -449,10 +567,13 @@ function uuidV7(now = Date.now(), random = require("crypto").randomBytes) {
 }
 
 function nextDisplayId(existing, type) {
-  const used = new Set(existing);
-  let n = 1, id;
-  do { id = PREFIX[type] + "-" + String(n++).padStart(3, "0"); } while (used.has(id));
-  return id;
+  const prefix = PREFIX[type];
+  let highWater = 0;
+  for (const value of existing) {
+    const match = new RegExp(`^${prefix}-(\\d+)$`).exec(String(value));
+    if (match) highWater = Math.max(highWater, Number(match[1]));
+  }
+  return prefix + "-" + String(highWater + 1).padStart(3, "0");
 }
 
 function createObject(type, fields, options = {}) {
@@ -616,6 +737,54 @@ function validateVault(vault) {
     for (const [key, uid] of refs)
       if (!byUid.has(uid)) problems.push({ path: p, message: key + " 指向不存在的 uid：" + uid });
   }
+
+  /* --- provenance gate, cross-object ----------------------------------
+     validateObject() can only see one record. Whether an Evidence rests on
+     a real measurement is a question about a DIFFERENT object, so it can
+     only be answered here, with the whole vault in hand.
+
+     Two rules, both aimed at the same failure: a confirmed-looking evidence
+     card sitting on a source nobody can go back to.
+       1. `confirmed` requires an evidence-grade source. EVD-024 is
+          review_status: confirmed and verified_by_user: true, resting on
+          EXP-001, which declares no data_origin at all — a human did confirm
+          it, but confirmed *what*, against which measurement?
+       2. A non-evidence-grade source may not enter a Hypothesis's formal
+          supporting/contradicting arrays. Demonstration data exists to
+          rehearse the workflow; the moment it can settle a hypothesis, the
+          rehearsal has become indistinguishable from the result. */
+  const objectByUid = new Map();
+  for (const { object } of objects) if (object.uid) objectByUid.set(object.uid, object);
+  const nonGradeEvidence = new Map();
+  for (const { path: p, object } of objects) {
+    if (object.type !== "evidence" || object.source_type !== "experiment") continue;
+    const source = objectByUid.get(object.source_uid);
+    if (!source || source.type !== "experiment") continue;
+    const origin = experimentProvenance(source);
+    if (isEvidenceGrade(source)) continue;
+    const provenanceState = source.status === "invalidated" ? origin + "/invalidated" : origin;
+    nonGradeEvidence.set(object.uid, { origin: provenanceState, display: source.display_id || source.uid });
+    if (object.review_status === "confirmed")
+      problems.push({
+        path: p,
+        message: "review_status 为 confirmed，但来源实验 " + (source.display_id || source.uid)
+          + " 的 data_origin 为 " + origin + "：已确认证据必须绑定可复核的实测或导入来源",
+      });
+  }
+  for (const { path: p, object } of objects) {
+    if (object.type !== "hypothesis") continue;
+    for (const key of ["supporting_evidence", "contradicting_evidence"])
+      for (const uid of object[key] || []) {
+        const bad = nonGradeEvidence.get(uid);
+        if (bad)
+          problems.push({
+            path: p,
+            message: key + " 引用的 Evidence 来自 data_origin 为 " + bad.origin + " 的实验 "
+              + bad.display + "：演示、模拟、计划中或来源未声明的数据不得进入假设的正式支持/反驳关系",
+          });
+      }
+  }
+
   const counts = {};
   for (const { object } of objects) counts[object.type] = (counts[object.type] || 0) + 1;
   return { valid: problems.length === 0, problems, counts, scanned: objects.length };
@@ -635,4 +804,5 @@ module.exports = {
   splitFrontmatter, createObject, applyHypothesisChange, linkEvidence, unlinkEvidence,
   uuidV7, nextDisplayId, PREFIX, ENUMS,
   SUPPORTING_RELATIONS, CONTRADICTING_RELATIONS,
+  EVIDENCE_GRADE_ORIGINS, experimentProvenance, isEvidenceGrade,
 };

@@ -1,0 +1,11 @@
+--- /mnt/user-data/outputs/round2/package.json.before-agent-bridge-20260814.bak	2026-08-14 08:47:21.861011985 +0000
++++ agent-canvas-demo/package.json	2026-08-14 08:44:54.975854868 +0000
+@@ -6,7 +6,7 @@
+   "scripts": {
+     "start": "node start-local.js",
+     "bridge": "node bridge/server.js",
+-    "check": "node --check app.js && node --check bridge-ui.js && node --check shell-ui.js && node --check bridge/server.js && node --check start-local.js && node --check skills/scansci-institutional/scripts/scansci_download.js && node --check skills/paper-downloader/scripts/browser_downloader.js && node --check skills/paper-downloader/scripts/api_resolver.js",
++    "check": "node --check app.js && node --check bridge-ui.js && node --check shell-ui.js && node --check bridge/server.js && node --check start-local.js && node --check skills/scansci-institutional/scripts/scansci_download.js && node --check skills/paper-downloader/scripts/browser_downloader.js && node --check skills/paper-downloader/scripts/api_resolver.js && node --check skills/rss-refresh-and-score/scripts/request_and_wait.js",
+     "test": "node --test tests/*.test.js",
+     "verify": "npm run check && npm test"
+   },

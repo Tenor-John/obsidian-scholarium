@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scholarium Materials Panel - Redesign Prototype</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg-base: #F8F8F6;
+    --bg-panel: #F2F1EE;
+    --bg-surface: #FFFFFF;
+    --bg-elevated: #FDFDFC;
+    --border: rgba(0,0,0,0.08);
+    --border-soft: rgba(0,0,0,0.05);
+    --border-strong: rgba(0,0,0,0.15);
+    --text-primary: #1A1A18;
+    --text-secondary: #6B6B66;
+    --text-muted: #9C9C96;
+    --text-placeholder: #C5C5BE;
+    --accent: #3D6149;
+    --accent-rgb: 61, 97, 73;
+    --accent-dim: #557A63;
+    --accent-deep: #2B4733;
+    --accent-text: #FFFFFF;
+
+    /* File type colors */
+    --clr-image: #29B6F6;
+    --clr-spreadsheet: #66BB6A;
+    --clr-pdf: #EF5350;
+    --clr-text: #78909C;
+    --clr-archive: #AB47BC;
+    --clr-data: #FF7043;
+    --clr-code: #42A5F5;
+
+    /* Category colors */
+    --cat-hplc: #FF7043;
+    --cat-xrd: #42A5F5;
+    --cat-sem: #66BB6A;
+    --cat-xps: #AB47BC;
+    --cat-uv: #29B6F6;
+    --cat-tem: #EC407A;
+
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-hover: 0 8px 24px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04);
+    --shadow-float: 0 12px 32px rgba(0,0,0,0.12);
+    --font-sans: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-base);
+    color: var(--text-primary);
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── Layout ─────────────────────────────────────── */
+  .app-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  /* ── Top Bar ─────────────────────────────────────── */
+  .topbar {
+    background: #0d0d0d;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    height: 42px;
+    flex-shrink: 0;
+    gap: 2px;
+  }
+  .topbar-tab {
+    padding: 8px 14px;
+    font-size: 13px;
+    color: #888;
+    cursor: pointer;
+    border-radius: 6px 6px 0 0;
+    transition: color .15s;
+    letter-spacing: 0.01em;
+  }
+  .topbar-tab:hover { color: #bbb; }
+  .topbar-tab.active {
+    color: #fff;
+    background: rgba(255,255,255,0.08);
+    font-weight: 500;
+  }
+  .topbar-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 12px;
+    color: #777;
+  }
+  .topbar-icon {
+    width: 18px; height: 18px;
+    stroke: #666;
+    fill: none;
+    stroke-width: 1.6;
+    cursor: pointer;
+    transition: stroke .15s;
+  }
+  .topbar-icon:hover { stroke: #aaa; }
+
+  /* ── Main Content ────────────────────────────────── */
+  .content {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── Left File Tree (abbreviated) ────────────────── */
+  .file-tree {
+    width: 220px;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border);
+    padding: 12px 8px;
+    overflow-y: auto;
+    flex-shrink: 0;
+    font-size: 12.5px;
+  }
+  .ft-folder {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background .12s;
+  }
+  .ft-folder:hover { background: rgba(0,0,0,0.04); }
+  .ft-folder svg { width: 14px; height: 14px; stroke: var(--text-muted); fill: none; stroke-width: 1.5; flex-shrink: 0; }
+  .ft-folder.active { background: rgba(var(--accent-rgb), 0.1); color: var(--accent); }
+  .ft-folder.active svg { stroke: var(--accent); }
+  .ft-file {
+    padding: 4px 8px 4px 28px;
+    color: var(--text-muted);
+    font-size: 11.5px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background .12s;
+  }
+  .ft-file:hover { background: rgba(0,0,0,0.03); color: var(--text-secondary); }
+  .ft-file.highlight { background: rgba(var(--accent-rgb), 0.08); color: var(--accent); }
+  .ft-divider { height: 1px; background: var(--border); margin: 8px 4px; }
+
+  /* ── Materials Panel ─────────────────────────────── */
+  .mat-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-base);
+  }
+
+  /* Header / Hero */
+  .mat-hero {
+    padding: 24px 28px 18px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .mat-hero-left {}
+  .mat-hero-title {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .mat-hero-title svg {
+    width: 22px; height: 22px;
+    stroke: var(--accent);
+    fill: none;
+    stroke-width: 1.6;
+  }
+  .mat-hero-sub {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+    letter-spacing: 0.01em;
+  }
+  .mat-hero-chips {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .mat-stat-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+  .mat-stat-chip .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Toolbar */
+  .mat-toolbar {
+    display: flex;
+    align-items: center;
+    padding: 8px 28px;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg-panel);
+  }
+  .mat-search-wrap {
+    flex: 1;
+    position: relative;
+  }
+  .mat-search-wrap svg {
+    position: absolute;
+    left: 12px; top: 50%;
+    transform: translateY(-50%);
+    width: 15px; height: 15px;
+    stroke: var(--text-placeholder);
+    fill: none; stroke-width: 1.8;
+    pointer-events: none;
+  }
+  .mat-search-input {
+    width: 100%;
+    padding: 8px 14px 8px 36px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    font-size: 13px;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .mat-search-input::placeholder { color: var(--text-placeholder); }
+  .mat-search-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.1);
+  }
+  .mat-view-btns {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 2px;
+  }
+  .mat-view-btn {
+    width: 32px; height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background .12s;
+  }
+  .mat-view-btn svg { width: 15px; height: 15px; stroke: var(--text-muted); fill: none; stroke-width: 1.6; }
+  .mat-view-btn.active { background: rgba(var(--accent-rgb), 0.12); }
+  .mat-view-btn.active svg { stroke: var(--accent); }
+  .mat-add-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border: 1px solid rgba(var(--accent-rgb), 0.3);
+    border-radius: var(--radius-md);
+    background: rgba(var(--accent-rgb), 0.06);
+    color: var(--accent);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    transition: background .12s, border-color .12s;
+  }
+  .mat-add-btn:hover {
+    background: rgba(var(--accent-rgb), 0.12);
+    border-color: rgba(var(--accent-rgb), 0.5);
+  }
+  .mat-add-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+  /* Main body */
+  .mat-body {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── Sidebar (Redesigned) ─────────────────────── */
+  .mat-sidebar {
+    width: 200px;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border);
+    padding: 16px 10px;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .mat-sb-section-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    padding: 0 10px;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .mat-sb-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background .12s;
+    margin-bottom: 2px;
+    position: relative;
+  }
+  .mat-sb-item:hover { background: rgba(0,0,0,0.04); }
+  .mat-sb-item.active {
+    background: rgba(var(--accent-rgb), 0.1);
+  }
+  .mat-sb-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+  .mat-sb-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    flex: 1;
+    font-weight: 450;
+  }
+  .mat-sb-item.active .mat-sb-label { color: var(--accent); font-weight: 550; }
+  .mat-sb-count {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: rgba(0,0,0,0.04);
+    padding: 1px 7px;
+    border-radius: 10px;
+    min-width: 22px;
+    text-align: center;
+  }
+  .mat-sb-item.active .mat-sb-count {
+    background: rgba(var(--accent-rgb), 0.15);
+    color: var(--accent);
+  }
+  .mat-sb-bar {
+    position: absolute;
+    left: 0; top: 8px; bottom: 8px;
+    width: 3px;
+    border-radius: 2px;
+    opacity: 0;
+    transition: opacity .15s;
+  }
+  .mat-sb-item.active .mat-sb-bar { opacity: 1; }
+  .mat-sb-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 12px 6px;
+  }
+  .mat-sb-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 7px;
+    border: 1px dashed rgba(var(--accent-rgb), 0.3);
+    border-radius: var(--radius-md);
+    color: var(--accent-dim);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+    margin-top: 8px;
+    background: none;
+    font-family: var(--font-sans);
+    width: 100%;
+  }
+  .mat-sb-add:hover {
+    background: rgba(var(--accent-rgb), 0.05);
+    border-color: rgba(var(--accent-rgb), 0.5);
+  }
+
+  /* ── Gallery ──────────────────────────────────── */
+  .mat-gallery {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 24px;
+  }
+  .mat-gallery::-webkit-scrollbar { width: 5px; }
+  .mat-gallery::-webkit-scrollbar-track { background: transparent; }
+  .mat-gallery::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+
+  /* Grid mode */
+  .mat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+  }
+
+  /* ── Card (Redesigned) ─────────────────────── */
+  .mat-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    position: relative;
+  }
+  .mat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+    border-color: var(--border-strong);
+  }
+  .mat-card:active {
+    transform: translateY(0);
+  }
+
+  /* Accent stripe */
+  .mat-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--card-accent, var(--accent));
+    border-radius: 3px 0 0 3px;
+    opacity: 0;
+    transition: opacity .18s;
+  }
+  .mat-card:hover::before { opacity: 1; }
+
+  /* Thumbnail zone */
+  .mat-card-thumb {
+    aspect-ratio: 16/10;
+    position: relative;
+    overflow: hidden;
+    background: var(--bg-panel);
+  }
+  .mat-card-thumb img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transition: transform .3s ease;
+  }
+  .mat-card:hover .mat-card-thumb img { transform: scale(1.03); }
+
+  /* File type thumb (non-image) */
+  .mat-card-file-thumb {
+    width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    position: relative;
+  }
+  .mat-card-file-thumb .bg-pattern {
+    position: absolute;
+    inset: 0;
+    opacity: 0.06;
+    background-image:
+      radial-gradient(circle at 20% 30%, currentColor 1px, transparent 1px),
+      radial-gradient(circle at 80% 70%, currentColor 1px, transparent 1px),
+      radial-gradient(circle at 50% 50%, currentColor 0.5px, transparent 0.5px);
+    background-size: 24px 24px, 32px 32px, 16px 16px;
+  }
+  .mat-card-file-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+  }
+  .mat-card-file-icon svg {
+    width: 22px; height: 22px;
+    stroke-width: 1.5;
+  }
+  .mat-card-file-ext {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-family: var(--font-mono);
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Hover overlay */
+  .mat-card-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    opacity: 0;
+    transition: opacity .18s;
+  }
+  .mat-card:hover .mat-card-overlay { opacity: 1; }
+  .mat-card-action {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.18);
+    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255,255,255,0.15);
+    cursor: pointer;
+    transition: background .12s, transform .12s;
+  }
+  .mat-card-action:hover {
+    background: rgba(255,255,255,0.3);
+    transform: scale(1.08);
+  }
+  .mat-card-action svg { width: 15px; height: 15px; stroke: #fff; fill: none; stroke-width: 1.8; }
+
+  /* Info zone */
+  .mat-card-info {
+    padding: 12px 14px;
+  }
+  .mat-card-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    letter-spacing: -0.01em;
+  }
+  .mat-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .mat-badge {
+    font-size: 10.5px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 10px;
+    letter-spacing: 0.01em;
+  }
+  .mat-card-date {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    letter-spacing: 0.01em;
+  }
+  .mat-card-size {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: auto;
+    font-family: var(--font-mono);
+  }
+
+  /* ── File type specific ─────────────────────── */
+  .mat-card[data-type="spreadsheet"] { --card-accent: var(--clr-spreadsheet); }
+  .mat-card[data-type="pdf"] { --card-accent: var(--clr-pdf); }
+  .mat-card[data-type="image"] { --card-accent: var(--clr-image); }
+  .mat-card[data-type="data"] { --card-accent: var(--clr-data); }
+  .mat-card[data-type="text"] { --card-accent: var(--clr-text); }
+  .mat-card[data-type="code"] { --card-accent: var(--clr-code); }
+
+  /* ── List Mode ──────────────────────────────── */
+  .mat-list .mat-card {
+    display: flex;
+    flex-direction: row;
+    border-radius: var(--radius-md);
+  }
+  .mat-list .mat-card::before { border-radius: 3px 0 0 3px; }
+  .mat-list .mat-card:hover::before { opacity: 1; }
+  .mat-list .mat-card-thumb {
+    width: 64px;
+    aspect-ratio: 1;
+    flex-shrink: 0;
+    border-radius: var(--radius-md) 0 0 var(--radius-md);
+  }
+  .mat-list .mat-card-info {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+  }
+  .mat-list .mat-card-name {
+    flex: 1;
+    -webkit-line-clamp: 1;
+  }
+  .mat-list .mat-card-meta { margin-top: 0; }
+  .mat-list .mat-card-overlay { border-radius: var(--radius-md); }
+
+  /* ── Comparison Toggle ──────────────────────── */
+  .compare-bar {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #0d0d0d;
+    color: #fff;
+    padding: 8px 6px;
+    border-radius: 24px;
+    display: flex;
+    gap: 4px;
+    z-index: 100;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  }
+  .compare-btn {
+    padding: 7px 18px;
+    border: none;
+    border-radius: 18px;
+    background: transparent;
+    color: #888;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    transition: all .15s;
+  }
+  .compare-btn:hover { color: #bbb; }
+  .compare-btn.active {
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+  }
+
+  /* ── "Before" state (current design simulation) ── */
+  .is-before .mat-hero { padding: 18px 24px 12px; }
+  .is-before .mat-hero-title { font-size: 18px; }
+  .is-before .mat-hero-chips { display: none; }
+  .is-before .mat-sidebar { width: 150px; padding: 12px 6px; }
+  .is-before .mat-sb-dot { display: none; }
+  .is-before .mat-sb-bar { display: none; }
+  .is-before .mat-sb-section-label { display: none; }
+  .is-before .mat-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+  .is-before .mat-card { border-radius: 5px; }
+  .is-before .mat-card::before { display: none; }
+  .is-before .mat-card:hover { transform: none; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+  .is-before .mat-card-thumb { aspect-ratio: 4/3; }
+  .is-before .mat-card-info { padding: 8px 10px; }
+  .is-before .mat-card-name { font-size: 12px; -webkit-line-clamp: 1; }
+  .is-before .mat-card-meta { margin-top: 4px; }
+  .is-before .mat-card-date { display: none; }
+  .is-before .mat-card-size { display: none; }
+  .is-before .mat-card-overlay { display: none; }
+  .is-before .mat-add-btn span { display: none; }
+  .is-before .mat-toolbar { padding: 8px 20px; }
+  .is-before .mat-gallery { padding: 14px; }
+
+  /* ── Responsive ──────────────────────────────── */
+  @media (max-width: 900px) {
+    .file-tree { display: none; }
+    .mat-sidebar { width: 170px; }
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <!-- Top Bar -->
+  <div class="topbar">
+    <div class="topbar-tab">Scholarium</div>
+    <div class="topbar-tab">织研者</div>
+    <div class="topbar-tab">实验记录</div>
+    <div class="topbar-tab">文献订阅</div>
+    <div class="topbar-tab">博士工作台</div>
+    <div class="topbar-tab active">素材库</div>
+    <div class="topbar-tab">科研库</div>
+    <div class="topbar-right">
+      <span>2026年8月19日 星期三</span>
+      <svg class="topbar-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <svg class="topbar-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      <svg class="topbar-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </div>
+  </div>
+
+  <div class="content">
+    <!-- Left File Tree (abbreviated) -->
+    <div class="file-tree">
+      <div class="ft-folder">
+        <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        _attachments
+      </div>
+      <div class="ft-folder">
+        <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        00-MOC
+      </div>
+      <div class="ft-folder">
+        <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        03-Projects
+      </div>
+      <div class="ft-folder">
+        <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        08-Assets
+      </div>
+      <div class="ft-divider"></div>
+      <div class="ft-folder">
+        <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        downloaded-pdfs
+      </div>
+      <div class="ft-file">Gao2021_Vacancy.pdf</div>
+      <div class="ft-file">Guo2022_Dual.pdf</div>
+      <div class="ft-file highlight">Hu2023_Near.pdf</div>
+      <div class="ft-file">Li2024_Plasmon.pdf</div>
+      <div class="ft-file">Wang2022_CO2RR.pdf</div>
+      <div class="ft-file">Zhang2023_BiVO4.pdf</div>
+    </div>
+
+    <!-- Materials Panel -->
+    <div class="mat-panel" id="matPanel">
+      <!-- Hero Header -->
+      <div class="mat-hero">
+        <div class="mat-hero-left">
+          <div class="mat-hero-title">
+            <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            素材库
+          </div>
+          <div class="mat-hero-sub">集中管理 PDF / 图片 / 协议 / 数据文件，随云端同步</div>
+          <div class="mat-hero-chips">
+            <div class="mat-stat-chip">
+              <div class="dot" style="background: var(--accent)"></div>
+              全部 <strong style="margin-left:2px">8</strong>
+            </div>
+            <div class="mat-stat-chip">
+              <div class="dot" style="background: var(--clr-image)"></div>
+              图片 <strong style="margin-left:2px">2</strong>
+            </div>
+            <div class="mat-stat-chip">
+              <div class="dot" style="background: var(--clr-spreadsheet)"></div>
+              数据 <strong style="margin-left:2px">3</strong>
+            </div>
+            <div class="mat-stat-chip">
+              <div class="dot" style="background: var(--clr-pdf)"></div>
+              PDF <strong style="margin-left:2px">3</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="mat-toolbar">
+        <div class="mat-search-wrap">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input class="mat-search-input" placeholder="搜索名称、分类、文件类型..." />
+        </div>
+        <div class="mat-view-btns">
+          <button class="mat-view-btn active" onclick="setView('grid')" title="网格">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          </button>
+          <button class="mat-view-btn" onclick="setView('list')" title="列表">
+            <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+          </button>
+        </div>
+        <button class="mat-add-btn">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          <span>添加素材</span>
+        </button>
+      </div>
+
+      <!-- Body: Sidebar + Gallery -->
+      <div class="mat-body">
+        <!-- Sidebar -->
+        <div class="mat-sidebar">
+          <div class="mat-sb-section-label">分类筛选</div>
+
+          <div class="mat-sb-item active" onclick="filterCat(this, 'all')">
+            <div class="mat-sb-bar" style="background: var(--accent)"></div>
+            <div class="mat-sb-dot" style="background: var(--accent)"></div>
+            <div class="mat-sb-label">全部</div>
+            <div class="mat-sb-count">8</div>
+          </div>
+
+          <div class="mat-sb-divider"></div>
+
+          <div class="mat-sb-item" onclick="filterCat(this, 'hplc')">
+            <div class="mat-sb-bar" style="background: var(--cat-hplc)"></div>
+            <div class="mat-sb-dot" style="background: var(--cat-hplc)"></div>
+            <div class="mat-sb-label">HPLC</div>
+            <div class="mat-sb-count">2</div>
+          </div>
+
+          <div class="mat-sb-item" onclick="filterCat(this, 'xrd')">
+            <div class="mat-sb-bar" style="background: var(--cat-xrd)"></div>
+            <div class="mat-sb-dot" style="background: var(--cat-xrd)"></div>
+            <div class="mat-sb-label">XRD</div>
+            <div class="mat-sb-count">1</div>
+          </div>
+
+          <div class="mat-sb-item" onclick="filterCat(this, 'sem')">
+            <div class="mat-sb-bar" style="background: var(--cat-sem)"></div>
+            <div class="mat-sb-dot" style="background: var(--cat-sem)"></div>
+            <div class="mat-sb-label">SEM</div>
+            <div class="mat-sb-count">2</div>
+          </div>
+
+          <div class="mat-sb-item" onclick="filterCat(this, 'xps')">
+            <div class="mat-sb-bar" style="background: var(--cat-xps)"></div>
+            <div class="mat-sb-dot" style="background: var(--cat-xps)"></div>
+            <div class="mat-sb-label">XPS</div>
+            <div class="mat-sb-count">1</div>
+          </div>
+
+          <div class="mat-sb-item" onclick="filterCat(this, 'uv')">
+            <div class="mat-sb-bar" style="background: var(--cat-uv)"></div>
+            <div class="mat-sb-dot" style="background: var(--cat-uv)"></div>
+            <div class="mat-sb-label">UV-Vis</div>
+            <div class="mat-sb-count">1</div>
+          </div>
+
+          <div class="mat-sb-item" onclick="filterCat(this, 'tem')">
+            <div class="mat-sb-bar" style="background: var(--cat-tem)"></div>
+            <div class="mat-sb-dot" style="background: var(--cat-tem)"></div>
+            <div class="mat-sb-label">TEM</div>
+            <div class="mat-sb-count">1</div>
+          </div>
+
+          <div class="mat-sb-divider"></div>
+          <button class="mat-sb-add">+ 新建分类</button>
+        </div>
+
+        <!-- Gallery -->
+        <div class="mat-gallery">
+          <div class="mat-grid" id="matGrid">
+
+            <!-- Card 1: CSV / HPLC -->
+            <div class="mat-card" data-type="spreadsheet" data-cat="hplc">
+              <div class="mat-card-thumb">
+                <div class="mat-card-file-thumb" style="color: var(--clr-spreadsheet); background: linear-gradient(135deg, color-mix(in srgb, var(--clr-spreadsheet) 8%, var(--bg-panel)), var(--bg-panel));">
+                  <div class="bg-pattern"></div>
+                  <div class="mat-card-file-icon" style="background: color-mix(in srgb, var(--clr-spreadsheet) 14%, transparent);">
+                    <svg viewBox="0 0 24 24" stroke="var(--clr-spreadsheet)"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+                  </div>
+                  <div class="mat-card-file-ext" style="color: var(--clr-spreadsheet);">CSV</div>
+                </div>
+                <div class="mat-card-overlay">
+                  <div class="mat-card-action" title="预览"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
+                  <div class="mat-card-action" title="重命名"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div>
+                  <div class="mat-card-action" title="移动分类"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+                </div>
+              </div>
+              <div class="mat-card-info">
+                <div class="mat-card-name">1.25mM苯甲醇--信号文件</div>
+                <div class="mat-card-meta">
+                  <span class="mat-badge" style="background: color-mix(in srgb, var(--cat-hplc) 15%, transparent); color: var(--cat-hplc);">HPLC</span>
+                  <span class="mat-card-date">08-15</span>
+                  <span class="mat-card-size">2.4 MB</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 2: CSV / HPLC -->
+            <div class="mat-card" data-type="spreadsheet" data-cat="hplc">
+              <div class="mat-card-thumb">
+                <div class="mat-card-file-thumb" style="color: var(--clr-spreadsheet); background: linear-gradient(135deg, color-mix(in srgb, var(--clr-spreadsheet) 8%, var(--bg-panel)), var(--bg-panel));">
+                  <div class="bg-pattern"></div>
+                  <div class="mat-card-file-icon" style="background: color-mix(in srgb, var(--clr-spreadsheet) 14%, transparent);">
+                    <svg viewBox="0 0 24 24" stroke="var(--clr-spreadsheet)"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+                  </div>
+                  <div class="mat-card-file-ext" style="color: var(--clr-spreadsheet);">CSV</div>
+                </div>
+                <div class="mat-card-overlay">
+                  <div class="mat-card-action" title="预览"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
+                  <div class="mat-card-action" title="重命名"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div>
+                  <div class="mat-card-action" title="移动分类"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+                </div>
+              </div>
+              <div class="mat-card-info">
+                <div class="mat-card-name">0.5mM苯甲醛--标准曲线</div>
+                <div class="mat-card-meta">
+                  <span class="mat-badge" style="background: color-mix(in srgb, var(--cat-hplc) 15%, transparent); color: var(--cat-hplc);">HPLC</span>
+                  <span class="mat-card-date">08-12</span>
+                  <span class="mat-card-size">1.1 MB</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 3: Image / SEM -->
+            <div class="mat-card" data-type="image" data-cat="sem">
+              <div class="mat-card-thumb">
+                <div style="width:100%;height:100%;background: linear-gradient(135deg, #e8e8e5 0%, #d5d5d0 50%, #c8c8c2 100%); display:flex;align-items:center;justify-content:center;">
+                  <svg viewBox="0 0 80 60" width="80" height="60" fill="none" stroke="#999" stroke-width="0.8">
+                    <rect x="5" y="5" width="70" height="50" rx="3" fill="#f0f0ed"/>
+                    <circle cx="25" cy="22" r="8" fill="#ddd"/>
+                    <path d="M10 45 L25 30 L40 38 L55 22 L70 35 L70 50 L10 50Z" fill="#ccc" opacity="0.6"/>
+                    <text x="40" y="56" text-anchor="middle" font-size="5" fill="#aaa" font-family="monospace">SEM</text>
+                  </svg>
+                </div>
+                <div class="mat-card-overlay">
+                  <div class="mat-card-action" title="预览"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
+                  <div class="mat-card-action" title="重命名"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div>
+                  <div class="mat-card-action" title="移动分类"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+                </div>
+              </div>
+              <div class="mat-card-info">
+                <div class="mat-card-name">BiVO4_SEM_50kx_01</div>
+                <div class="mat-card-meta">
+                  <span class="mat-badge" style="background: color-mix(in srgb, var(--cat-sem) 15%, transparent); color: var(--cat-sem);">SEM</span>
+                  <span class="mat-card-date">08-10</span>
+                  <span class="mat-card-size">4.7 MB</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 4: Image / SEM -->
+            <div class="mat-card" data-type="image" data-cat="sem">
+              <div class="mat-card-thumb">
+                <div style="width:100%;height:100%;background: linear-gradient(135deg, #e2e5e0 0%, #d0d5cd 50%, #c2c8be 100%); display:flex;align-items:center;justify-content:center;">
+                  <svg viewBox="0 0 80 60" width="80" height="60" fill="none" stroke="#999" stroke-width="0.8">
+                    <rect x="5" y="5" width="70" height="50" rx="3" fill="#edf0eb"/>
+                    <circle cx="40" cy="28" r="14" fill="#dde0da" stroke="#bbb"/>
+                    <circle cx="40" cy="28" r="6" fill="#ccd0c8" stroke="#aaa"/>
+                    <text x="40" y="56" text-anchor="middle" font-size="5" fill="#aaa" font-family="monospace">SEM</text>
+                  </svg>
+                </div>
+                <div class="mat-card-overlay">
+                  <div class="mat-card-action" title="预览"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
+                  <div class="mat-card-action" title="重命名"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div>
+                  <div class="mat-card-action" title="移动分类"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+                </div>
+              </div>
+              <div class="mat-card-info">
+                <div class="mat-card-name">AuNP_BiVO4_TEM_100kx</div>
+                <div class="mat-card-meta">
+                  <span class="mat-badge" style="background: color-mix(in srgb, var(--cat-sem) 15%, transparent); color: var(--cat-sem);">SEM</span>
+                  <span class="mat-card-date">08-08</span>
+                  <span class="mat-card-size">6.2 MB</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 5: PDF / XRD -->
+            <div class="mat-card" data-type="pdf" data-cat="xrd">
+              <div class="mat-card-thumb">
+                <div class="mat-card-file-thumb" style="color: var(--clr-pdf); background: linear-gradient(135deg, color-mix(in srgb, var(--clr-pdf) 8%, var(--bg-panel)), var(--bg-panel));">
+                  <div class="bg-pattern"></div>
+                  <div class="mat-card-file-icon" style="background: color-mix(in srgb, var(--clr-pdf) 14%, transparent);">
+                    <svg viewBox="0 0 24 24" stroke="var(--clr-pdf)"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  </div>
+                  <div class="mat-card-file-ext" style="color: var(--clr-pdf);">XRD</div>
+                </div>
+                <div class="mat-card-overlay">
+                  <div class="mat-card-action" title="预览"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
+                  <div class="mat-card-action" title="重命名"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div>
+                  <div class="mat-card-action" title="移动分类"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+                </div>
+              </div>
+              <div class="mat-card-info">
+                <div class="mat-card-name">BiVO4_XRD_patterns_raw</div>
+                <div class="mat-card-meta">
+                  <span class="mat-badge" style="background: color-mix(in srgb, var(--cat-xrd) 15%, transparent); color: var(--cat-xrd);">XRD</span>
+                  <span class="mat-card-date">08-05</span>
+                  <span class="mat-card-size">890 KB</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 6: Data / XPS -->
+            <div class="mat-card" data-type="data" data-cat="xps">
+              <div class="mat-card-thumb">
+                <div class="mat-card-file-thumb" style="color: var(--clr-archive); background: linear-gradient(135deg, color-mix(in srgb, var(--clr-archive) 8%, var(--bg-panel)), var(--bg-panel));">
+                  <div class="bg-pattern"></div>
+                  <div class="mat-card-file-icon" style="background: color-mix(in srgb, var(--clr-archive) 14%, transparent);">
+                    <svg viewBox="0 0 24 24" stroke="var(--clr-archive)"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                  </div>
+                  <div class="mat-card-file-ext" style="color: var(--clr-archive);">VMS</div>
+                </div>
+                <div class="mat-card-overlay">
+                  <div class="mat-card-action" title="预览"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
+                  <div class="mat-card-action" title="重命名"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div>
+                  <div class="mat-card-action" title="移动分类"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+                </div>
+              </div>
+              <div class="mat-card-info">
+                <div class="mat-card-name">Au4f_XPS_scan_survey</div>
+                <div class="mat-card-meta">
+                  <span class="mat-badge" style="background: color-mix(in srgb, var(--cat-xps) 15%, transparent); color: var(--cat-xps);">XPS</span>
+                  <span class="mat-card-date">07-28</span>
+                  <span class="mat-card-size">3.1 MB</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 7: CSV / UV-Vis -->
+            <div class="mat-card" data-type="spreadsheet" data-cat="uv">
+              <div class="mat-card-thumb">
+                <div class="mat-card-file-thumb" style="color: var(--clr-image); background: linear-gradient(135deg, color-mix(in srgb, var(--clr-image) 8%, var(--bg-panel)), var(--bg-panel));">
+                  <div class="bg-pattern"></div>
+                  <div class="mat-card-file-icon" style="background: color-mix(in srgb, var(--clr-image) 14%, transparent);">
+                    <svg viewBox="0 0 24 24" stroke="var(--clr-image)"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                  </div>
+                  <div class="mat-card-file-ext" style="color: var(--clr-image);">CSV</div>
+                </div>
+                <div class="mat-card-overlay">
+                  <div class="mat-card-action" title="预览"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
+                  <div class="mat-card-action" title="重命名"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div>
+                  <div class="mat-card-action" title="移动分类"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+                </div>
+              </div>
+              <div class="mat-card-info">
+                <div class="mat-card-name">UV-Vis_absorption_AuNP_series</div>
+                <div class="mat-card-meta">
+                  <span class="mat-badge" style="background: color-mix(in srgb, var(--cat-uv) 15%, transparent); color: var(--cat-uv);">UV-Vis</span>
+                  <span class="mat-card-date">07-22</span>
+                  <span class="mat-card-size">580 KB</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 8: Image / TEM -->
+            <div class="mat-card" data-type="image" data-cat="tem">
+              <div class="mat-card-thumb">
+                <div style="width:100%;height:100%;background: linear-gradient(135deg, #1a1a18 0%, #2a2a28 50%, #3a3a38 100%); display:flex;align-items:center;justify-content:center;">
+                  <svg viewBox="0 0 80 60" width="80" height="60" fill="none" stroke="#666" stroke-width="0.6">
+                    <rect x="5" y="5" width="70" height="50" rx="3" fill="#222"/>
+                    <circle cx="40" cy="28" r="12" fill="none" stroke="#555" stroke-width="0.5"/>
+                    <circle cx="40" cy="28" r="5" fill="#444" stroke="#666"/>
+                    <circle cx="35" cy="32" r="2" fill="#555"/>
+                    <circle cx="46" cy="25" r="1.5" fill="#555"/>
+                    <text x="40" y="56" text-anchor="middle" font-size="5" fill="#666" font-family="monospace">TEM</text>
+                  </svg>
+                </div>
+                <div class="mat-card-overlay">
+                  <div class="mat-card-action" title="预览"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
+                  <div class="mat-card-action" title="重命名"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div>
+                  <div class="mat-card-action" title="移动分类"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+                </div>
+              </div>
+              <div class="mat-card-info">
+                <div class="mat-card-name">AuNP_lattice_HRTEM_02</div>
+                <div class="mat-card-meta">
+                  <span class="mat-badge" style="background: color-mix(in srgb, var(--cat-tem) 15%, transparent); color: var(--cat-tem);">TEM</span>
+                  <span class="mat-card-date">07-18</span>
+                  <span class="mat-card-size">8.4 MB</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Comparison toggle bar -->
+<div class="compare-bar">
+  <button class="compare-btn active" onclick="toggleMode('after')">改进方案</button>
+  <button class="compare-btn" onclick="toggleMode('before')">当前版本</button>
+</div>
+
+<script>
+  // View mode toggle (grid / list)
+  function setView(mode) {
+    const grid = document.getElementById('matGrid');
+    const btns = document.querySelectorAll('.mat-view-btn');
+    btns.forEach(b => b.classList.remove('active'));
+    if (mode === 'list') {
+      grid.classList.add('mat-list');
+      btns[1].classList.add('active');
+    } else {
+      grid.classList.remove('mat-list');
+      btns[0].classList.add('active');
+    }
+  }
+
+  // Category filter
+  function filterCat(el, cat) {
+    document.querySelectorAll('.mat-sb-item').forEach(i => i.classList.remove('active'));
+    el.classList.add('active');
+    document.querySelectorAll('.mat-card').forEach(card => {
+      if (cat === 'all' || card.dataset.cat === cat) {
+        card.style.display = '';
+      } else {
+        card.style.display = 'none';
+      }
+    });
+  }
+
+  // Before/After comparison
+  function toggleMode(mode) {
+    const panel = document.getElementById('matPanel');
+    const btns = document.querySelectorAll('.compare-btn');
+    btns.forEach(b => b.classList.remove('active'));
+    if (mode === 'before') {
+      panel.classList.add('is-before');
+      btns[1].classList.add('active');
+    } else {
+      panel.classList.remove('is-before');
+      btns[0].classList.add('active');
+    }
+  }
+</script>
+</body>
+</html>

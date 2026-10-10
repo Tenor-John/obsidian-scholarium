@@ -1,0 +1,20 @@
+{
+  "uid": "01927d40-1b22-7d11-9a61-111111111111",
+  "display_id": "HYP-001",
+  "schema_version": 1,
+  "type": "hypothesis",
+  "created_at": "2026-08-09T00:00:00Z",
+  "updated_at": "2026-08-09T00:00:00Z",
+  "project_uid": "01927d3f-8a41-7c62-b5e0-9f3a2c1d4e5b",
+  "statement": "Condition A changes outcome B.",
+  "status": "supported",
+  "confidence": 0.6,
+  "confidence_set_by": "user",
+  "supporting_evidence": ["01927d40-1b24-7d13-bc83-444444444444"],
+  "contradicting_evidence": [],
+  "assumptions": [],
+  "alternative_explanations": [],
+  "required_tests": ["Replicate under a control condition."],
+  "next_test": "01927d40-1b25-7d14-8d94-555555555555",
+  "history": []
+}

@@ -313,11 +313,70 @@ function nameMatches(candidate, target) {
   return candidate === target;
 }
 
+/* Resolve the journal partition whitelist directory.
+
+   Until 2026-09-05 this was one developer's drive letter, written literally:
+   '<developer-drive>\\journal-whitelist'.
+   On any other machine that path does not exist, so loadJournalWhitelist fell
+   straight through to `official_partition_whitelist_missing` and returned an
+   EMPTY allow list — silently. Literature admission (the gate behind DEC-003
+   and DEC-004) therefore had no whitelist at all and nothing said so.
+
+   The 2026-09-05 replacement then had its own hole, found the same day by a
+   real 0/35 run. The comment below used to say "`root` is the vault root",
+   but it is not: the pipeline invokes this skill with the PROJECT folder
+   (…/Research_mod/Au-TiO2), because that is where literature/downloaded-pdfs
+   lives. So `<root>/Scholarium/journal-whitelist` resolved to
+   …/Au-TiO2/Scholarium/journal-whitelist, which does not exist, and every
+   record was again blocked as venue_not_whitelisted with an empty allow list.
+   Measured: with root=<project> 35 of 35 blocked; with root=<vault> 0 blocked.
+
+   The whitelist is vault-wide, not per-project — one copy per research project
+   would be seven megabytes each and would drift apart. So ancestors of `root`
+   are searched too, which finds the vault-level copy from any project folder
+   without the caller having to know where the vault root is.
+
+   Resolution order, first hit wins:
+     1. SCHOLARIUM_JOURNAL_WHITELIST_DIR   (explicit override)
+     2. <root>/Scholarium/journal-whitelist
+     3. each ancestor of <root>: <ancestor>/Scholarium/journal-whitelist
+     4. <repo>/agent-canvas-demo/skills/paper-downloader/journal-whitelist */
+function journalWhitelistAncestors(root) {
+  const out = [];
+  if (!root) return out;
+  let current = path.resolve(root);
+  // Bounded walk: a vault nested more than eight levels below the project
+  // folder is not a layout worth guessing at, and an unbounded loop here would
+  // stat its way to the drive root on every download.
+  for (let depth = 0; depth < 8; depth += 1) {
+    const parent = path.dirname(current);
+    if (!parent || parent === current) break;
+    current = parent;
+    out.push(path.join(current, 'Scholarium', 'journal-whitelist'));
+  }
+  return out;
+}
+
+function resolveJournalWhitelistDir(root) {
+  const candidates = [
+    process.env.SCHOLARIUM_JOURNAL_WHITELIST_DIR,
+    root ? path.join(root, 'Scholarium', 'journal-whitelist') : null,
+    ...journalWhitelistAncestors(root),
+    path.join(__dirname, '..', 'journal-whitelist'),
+  ].filter(Boolean);
+  for (const dir of candidates) {
+    try { if (fs.existsSync(path.join(dir, 'whitelist_journals.json'))) return { dir, candidates }; }
+    catch (_) { /* unreadable candidate is simply not a hit */ }
+  }
+  return { dir: null, candidates };
+}
+
 function loadJournalWhitelist(root) {
-  const officialDir = 'T:\\Presentation_Meeting\\Dual-Excitation Kinetic Coupling Theory\\期刊分区白名单';
-  const officialFile = path.join(officialDir, 'whitelist_journals.json');
-  const officialBlacklist = path.join(officialDir, 'blacklist.json');
-  const officialNames = path.join(officialDir, 'whitelist_names.txt');
+  const resolved = resolveJournalWhitelistDir(root);
+  const officialDir = resolved.dir || '';
+  const officialFile = officialDir ? path.join(officialDir, 'whitelist_journals.json') : '';
+  const officialBlacklist = officialDir ? path.join(officialDir, 'blacklist.json') : '';
+  const officialNames = officialDir ? path.join(officialDir, 'whitelist_names.txt') : '';
   const out = {
     enabled: true,
     source: 'official_partition_whitelist_missing',
@@ -328,6 +387,16 @@ function loadJournalWhitelist(root) {
     blacklistNames: [],
     error: null
   };
+  // Say so. An empty whitelist admits nothing and looks identical to a
+  // whitelist that legitimately matched nothing; the caller must be able to
+  // tell those apart, and so must whoever reads the run log afterwards.
+  if (!officialDir) {
+    out.error = '未找到期刊分区白名单目录。已尝试：' + resolved.candidates.join(' | ')
+      + '。请设置 SCHOLARIUM_JOURNAL_WHITELIST_DIR，或把 whitelist_journals.json 放到 '
+      + '<vaultRoot>/Scholarium/journal-whitelist/ 下。当前白名单为空，文献准入不会放行任何期刊。';
+    out.searched = resolved.candidates;
+    return out;
+  }
 
   try {
     if (fs.existsSync(officialFile)) {
@@ -532,8 +601,50 @@ function createBatchProgress(root, runtime, total, requestedFile) {
   };
 }
 
+/* --- 人工确认后抓取当前页（单篇） -----------------------------------------
+ *
+ * 出版商的反爬挑战挡住自动下载时，原来的结局是：截图、报 anti_bot_challenge、
+ * 结束。可研究员就坐在屏幕前，页面就开着，却没有任何入口能说"我已经过了，
+ * 抓吧"。这个模式补的就是这一环。
+ *
+ * 三条设计约束，都是有意为之：
+ *
+ * 1) 严格单篇。入参只接受一个 doi/url，给数组直接拒绝，抓完即止、绝不自动
+ *    推进下一篇。理由不是技术限制：让自动化复用人工通过的反爬验证，单篇等同
+ *    于研究员自己点"下载 PDF"；一旦挂上队列循环，就变成了拿人工验证给批量
+ *    爬虫开路，性质完全不同，多数出版商的条款也明确禁止批量下载。
+ *
+ * 2) 由人在页面里决定。浮层直接注入文章页，"抓取本篇"和"跳过本篇"两个按钮
+ *    经 exposeBinding 回传。不猜"挑战是不是过了"——只有研究员知道自己看到了
+ *    什么。跳过是一等公民，不是超时的副产品。
+ *
+ * 3) 抓取走页面自己的会话。page.request 继承该上下文的 cookie（含刚拿到的
+ *    Cloudflare clearance），所以不需要把凭据搬到别处，也不会二次触发挑战。
+ *
+ * PDF 拿不到时退而存 Markdown，但证据等级降一档：HTML 正文常缺图表和补充
+ * 材料，下游不该把它当成和 PDF 同等的证据。
+ */
 function isPdfBuffer(buffer) {
   return Buffer.isBuffer(buffer) && buffer.length >= 4 && buffer.subarray(0, 4).equals(Buffer.from('%PDF'));
+}
+
+const MANUAL_CAPTURE_OVERLAY_ID = 'scholarium-manual-capture';
+
+async function extractReadableMarkdown(page) {
+  return page.evaluate(() => {
+    const selectors = ['article', 'main', '[role="main"]', '#content', '.article-content', '.fulltext'];
+    let host = null;
+    for (const selector of selectors) {
+      const candidate = document.querySelector(selector);
+      if (candidate?.innerText?.trim().length > 400) { host = candidate; break; }
+    }
+    host ||= document.body;
+    const clone = host.cloneNode(true);
+    for (const junk of clone.querySelectorAll(`script,style,nav,footer,noscript,iframe,#${MANUAL_CAPTURE_OVERLAY_ID}`)) junk.remove();
+    const title = (document.querySelector('h1') || {}).innerText || document.title || '';
+    const text = (clone.innerText || '').replace(/\n{3,}/g, '\n\n').trim();
+    return { title: String(title).trim(), text };
+  });
 }
 
 function absoluteUrl(href, baseUrl) {
@@ -563,12 +674,51 @@ function loadPlaywright(root) {
         install_commands: [
           `cd "${path.join(root, '.obsidian', 'plugins', 'obsidian-scholarium', 'agent-canvas-demo')}"`,
           'npm install',
-          'npx playwright install chrome'
+          'npx playwright install chromium'
         ],
-        note: 'If Chrome is already installed, npm install is usually enough; the script uses channel=chrome by default.'
+        note: 'After npm install, the downloader tries Chrome, Edge, and the Playwright Chromium browser in that order.'
       }
     };
   }
+}
+
+function writeWebvpnLoginStatus(root, manifest) {
+  try {
+    const runtimeDir = ensureDir(path.join(root, 'Scholarium', 'runtime'));
+    fs.writeFileSync(
+      path.join(runtimeDir, 'webvpn-login-status.json'),
+      JSON.stringify(manifest, null, 2),
+      'utf8'
+    );
+  } catch { /* status file is best-effort */ }
+}
+
+function browserChannelCandidates(input) {
+  if (input.channel === false) return [false];
+  const requested = input.channel || 'chrome';
+  const candidates = [requested];
+  // Chrome is the historical default, but a clean Windows machine may only
+  // have Edge. Keep the requested channel first, then use the Playwright
+  // Chromium binary if it was installed by the portable setup step.
+  if (requested === 'chrome') candidates.push('msedge');
+  candidates.push(false);
+  return [...new Set(candidates)];
+}
+
+async function launchResearchBrowser(playwright, profileDir, launchOptions, input) {
+  let lastError = null;
+  for (const channel of browserChannelCandidates(input)) {
+    const options = { ...launchOptions };
+    if (channel === false) delete options.channel;
+    else options.channel = channel;
+    try {
+      const context = await playwright.chromium.launchPersistentContext(profileDir, options);
+      return { context, channel: channel || 'playwright-chromium' };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('No supported browser channel is available.');
 }
 
 function runLegacyCookieJar(root, inputArg) {
@@ -779,6 +929,20 @@ async function main() {
   const root = path.resolve(process.argv[2] || process.cwd());
   const inputArg = process.argv[3] || '';
   let input = expandInputFiles(readJson(inputArg));
+  const loginStartedAt = new Date().toISOString();
+
+  // The login runner is launched detached by the Bridge. Stamp the run before
+  // loading optional dependencies, otherwise a missing Playwright package can
+  // leave the UI polling the previous auto-login result indefinitely.
+  if (input.mode === 'login') {
+    writeWebvpnLoginStatus(root, {
+      skill: 'paper-downloader',
+      mode: 'login',
+      status: 'starting',
+      started_at: loginStartedAt,
+      logged_in: false
+    });
+  }
 
   if (input.mode === 'direct_cookie_jar') {
     console.log(JSON.stringify(runLegacyCookieJar(root, inputArg), null, 2));
@@ -807,7 +971,9 @@ async function main() {
   const screenshots = ensureDir(path.join(runtime, 'download-screenshots'));
   const downloadArtifacts = ensureDir(path.join(runtime, 'download-artifacts'));
   const dirs = { out, logs, screenshots, downloadArtifacts };
-  const isBatchDownload = !['login', 'session_status', 'status', 'dry_run'].includes(input.mode) && input.action !== 'session_status';
+  // A manual capture is a researcher-confirmed single-paper action. It must not
+  // overwrite or impersonate the progress ledger of an unattended batch.
+  const isBatchDownload = !['login', 'session_status', 'status', 'dry_run', 'manual_capture'].includes(input.mode) && input.action !== 'session_status';
   // Calculate this once, before Chromium starts.  It both gives immediate UI
   // feedback and makes the progress total stable for the complete fallback.
   const batchUrls = isBatchDownload ? urlsFrom(input) : null;
@@ -838,7 +1004,7 @@ async function main() {
 
   const { playwright, error } = loadPlaywright(root);
   if (!playwright) {
-    console.log(JSON.stringify({
+    const manifest = {
       skill: 'paper-downloader',
       run_at: new Date().toISOString(),
       mode: input.mode || 'download',
@@ -846,7 +1012,16 @@ async function main() {
       profile_dir: relative(root, profileDir),
       results: [],
       error
-    }, null, 2));
+    };
+    if (input.mode === 'login') {
+      writeWebvpnLoginStatus(root, {
+        ...manifest,
+        status: 'login_failed',
+        logged_in: false,
+        next_step: '请在该演示 Vault 的 agent-canvas-demo 目录执行 npm install；随后执行 npx playwright install chromium，再重试。'
+      });
+    }
+    console.log(JSON.stringify(manifest, null, 2));
     return;
   }
 
@@ -859,21 +1034,27 @@ async function main() {
   // window. Default that path to headless so a Pipeline run doesn't pop open
   // one browser tab per paper; still respect an explicit {"headless": false}
   // for debugging a stuck download.
+  // login 和 manual_capture 都必须有头：整个流程的前提就是研究员要能看见页面、
+  // 亲手过验证。headless 传 true 也不迁就——那会让浮层永远等不到点击。
   const isLoginMode = input.mode === 'login';
+  const isHumanInLoop = isLoginMode || input.mode === 'manual_capture';
   const launchOptions = {
-    headless: isLoginMode ? (input.headless === true) : (input.headless !== false),
+    // Human-in-the-loop modes always stay visible; accepting headless=true here
+    // would create a dialog that can never receive the required human click.
+    headless: isHumanInLoop ? false : (input.headless !== false),
     acceptDownloads: true,
     downloadsPath: downloadArtifacts,
     viewport: { width: 1360, height: 900 }
   };
-  if (input.channel !== false) launchOptions.channel = input.channel || 'chrome';
-
   let context;
+  let browserChannel = null;
   try {
-    context = await playwright.chromium.launchPersistentContext(profileDir, launchOptions);
+    const launched = await launchResearchBrowser(playwright, profileDir, launchOptions, input);
+    context = launched.context;
+    browserChannel = launched.channel;
   } catch (error) {
     batchProgress?.finish('error');
-    console.log(JSON.stringify({
+    const manifest = {
       skill: 'paper-downloader',
       run_at: new Date().toISOString(),
       mode: input.mode || 'download',
@@ -884,11 +1065,21 @@ async function main() {
         status: 'browser_launch_failed',
         message: error.message,
         recovery: [
-          'Install Chrome or run: npx playwright install chrome',
-          'If Chrome is unavailable, call with {"channel": false} after installing Playwright Chromium.'
+          'Install dependencies with: npm install',
+          'Install the portable browser with: npx playwright install chromium',
+          'Alternatively install Chrome or Edge and retry.'
         ]
       }
-    }, null, 2));
+    };
+    if (input.mode === 'login') {
+      writeWebvpnLoginStatus(root, {
+        ...manifest,
+        status: 'login_failed',
+        logged_in: false,
+        next_step: '未能启动 Chrome、Edge 或 Playwright Chromium；请先安装运行依赖和 Chromium，再重试。'
+      });
+    }
+    console.log(JSON.stringify(manifest, null, 2));
     return;
   }
 
@@ -922,18 +1113,142 @@ async function main() {
       return;
     }
 
+    if (input.mode === 'manual_capture') {
+      // Enforce the single-paper boundary here as well as at the Bridge. Never
+      // silently take the first item from a batch-shaped request.
+      if (Array.isArray(input.urls) || Array.isArray(input.records) || Array.isArray(input.dois)) {
+        throw new Error('manual_capture 只接受单篇（url 或 doi）；批量入参已拒绝');
+      }
+      const target = String(input.url || (input.doi
+        ? `https://doi.org/${String(input.doi).replace(/^https?:\/\/(dx\.)?doi\.org\//i, '')}`
+        : '')).trim();
+      if (!target) throw new Error('manual_capture 需要 url 或 doi');
+
+      const page = await context.newPage();
+      await page.goto(target, { waitUntil: 'domcontentloaded', timeout: DEFAULT_NAV_TIMEOUT_MS }).catch(() => {});
+
+      // 决定权交给页面里的人。不去猜挑战过没过——只有他知道自己看到了什么。
+      let decision = null;
+      const decided = new Promise((resolve) => {
+        page.exposeBinding('__scholariumManualDecision', async (_source, value) => {
+          if (decision) return;
+          decision = String(value || '').trim() || 'skip';
+          resolve(decision);
+        }).catch(() => {});
+      });
+      const renderOverlay = async () => {
+        await page.evaluate((overlayId) => {
+          if (document.getElementById(overlayId)) return;
+          const box = document.createElement('div');
+          box.id = overlayId;
+          box.setAttribute('style', [
+            'position:fixed', 'right:16px', 'bottom:16px', 'z-index:2147483647',
+            'background:#1c1c1e', 'color:#fff', 'padding:14px 16px', 'border-radius:12px',
+            'font:13px/1.5 system-ui,sans-serif', 'box-shadow:0 8px 28px rgba(0,0,0,.45)',
+            'max-width:320px',
+          ].join(';'));
+          box.innerHTML = '<div style="font-weight:600;margin-bottom:6px">织研者 · 人工确认抓取</div>'
+            + '<div style="opacity:.8;margin-bottom:10px">通过验证 / 登录后再点抓取。只处理这一篇，不会自动继续下一篇。</div>'
+            + `<button id="${overlayId}-go" style="background:#30d158;border:0;color:#000;padding:6px 12px;border-radius:8px;font-weight:600;cursor:pointer">抓取本篇</button>`
+            + `<button id="${overlayId}-skip" style="background:transparent;border:1px solid #666;color:#ddd;padding:6px 12px;border-radius:8px;margin-left:8px;cursor:pointer">跳过本篇</button>`;
+          document.body.appendChild(box);
+          document.getElementById(`${overlayId}-go`).onclick = () => window.__scholariumManualDecision('capture');
+          document.getElementById(`${overlayId}-skip`).onclick = () => window.__scholariumManualDecision('skip');
+        }, MANUAL_CAPTURE_OVERLAY_ID).catch(() => {});
+      };
+      await renderOverlay();
+      // 人工过验证往往要跳转好几次，每次导航都把浮层重新贴上去。
+      page.on('domcontentloaded', () => { renderOverlay(); });
+
+      const waitMs = Number(input.waitMs) || 15 * 60 * 1000;
+      const closed = new Promise((resolve) => context.once('close', () => resolve('closed')));
+      const timedOut = new Promise((resolve) => setTimeout(() => resolve('timeout'), waitMs));
+      const outcome = await Promise.race([decided, closed, timedOut]);
+      const manifest = {
+        skill: 'paper-downloader', run_at: new Date().toISOString(), mode: 'manual_capture',
+        single_item: true, auto_advance: false,
+        requested: target, decision: outcome,
+        profile_dir: relative(root, profileDir),
+        results: [], downloaded_paths: [],
+      };
+
+      if (outcome !== 'capture') {
+        manifest.status = outcome === 'skip' ? 'skipped_by_researcher'
+          : outcome === 'closed' ? 'window_closed_before_decision' : 'no_decision_within_wait';
+        manifest.next_step = outcome === 'skip'
+          ? '已按研究员意愿跳过这一篇；它不会再回到待处理队列。'
+          : '没有收到抓取决定，本篇保持未处理。';
+        await context.close().catch(() => {});
+        console.log(JSON.stringify(manifest, null, 2));
+        return;
+      }
+
+      // Use the page request context so the just-established session/cookies
+      // stay attached. A response is accepted only after the PDF magic bytes.
+      const pageUrl = page.url();
+      let saved = null;
+      const candidates = await page.evaluate(() => Array.from(document.querySelectorAll('a[href]'))
+        .map((anchor) => anchor.getAttribute('href'))
+        .filter((href) => href && /\.pdf(\?|$)|\/pdf\/|pdfdirect|type=printable|\/doi\/pdf\//i.test(href))
+        .slice(0, 12)).catch(() => []);
+      const tried = [];
+      for (const href of [...new Set(candidates)]) {
+        const absolute = absoluteUrl(href, pageUrl);
+        if (!absolute) continue;
+        tried.push(absolute);
+        try {
+          const response = await page.request.get(absolute, { timeout: 90000 });
+          const buffer = Buffer.from(await response.body());
+          if (isPdfBuffer(buffer)) {
+            saved = await savePdfBuffer(root, out, absolute, 0, buffer, absolute);
+            break;
+          }
+        } catch { /* try the next candidate */ }
+      }
+
+      if (saved) {
+        manifest.status = 'downloaded';
+        manifest.evidence_tier = 'publisher_pdf';
+        manifest.results = [{ status: 'downloaded', url: pageUrl, path: saved.path, via: 'manual_capture_pdf' }];
+        manifest.downloaded_paths = [saved.path];
+        manifest.next_step = '已保存 PDF；可直接进入证据卡片步骤。';
+      } else if (input.allow_markdown_fallback === true) {
+        const article = await extractReadableMarkdown(page);
+        if (!article.text || article.text.length < 400) {
+          manifest.status = 'no_fulltext_on_page';
+          manifest.tried_pdf_urls = tried;
+          manifest.next_step = '页面上既没有可取的 PDF，正文也太短，未保存任何内容。';
+        } else {
+          const mdDir = ensureDir(path.join(root, 'literature', 'captured-html'));
+          const file = uniqueTarget(mdDir, safeName(article.title || pageUrl, 0).replace(/\.pdf$/i, '') + '.md');
+          fs.writeFileSync(file, `---\nsource_url: ${JSON.stringify(pageUrl)}\ncaptured_at: ${JSON.stringify(new Date().toISOString())}\nevidence_tier: html_fulltext\n---\n\n# ${article.title}\n\n${article.text}\n`, 'utf8');
+          manifest.status = 'captured_html';
+          // 明确降一档：HTML 正文常缺图表与补充材料，下游不能当 PDF 用。
+          manifest.evidence_tier = 'html_fulltext';
+          manifest.results = [{ status: 'captured_html', url: pageUrl, path: relative(root, file), via: 'manual_capture_markdown' }];
+          manifest.captured_paths = [relative(root, file)];
+          manifest.next_step = '未取到 PDF，已保存页面正文为 Markdown（证据等级低于 PDF：可能缺图表与补充材料）。';
+        }
+      } else {
+        manifest.status = 'no_pdf_found';
+        manifest.tried_pdf_urls = tried;
+        manifest.next_step = '页面上没有找到可下载的 PDF 链接；如需保存正文，请在调用时开启 allow_markdown_fallback。';
+      }
+      await context.close().catch(() => {});
+      console.log(JSON.stringify(manifest, null, 2));
+      return;
+    }
+
     if (input.mode === 'login') {
       const page = await context.newPage();
       const startUrl = input.url || 'https://wvpn.ustc.edu.cn/';
       // Stamp "running" before anything can fail, so a poller never mistakes the
       // previous run's result for this one's.
-      const loginStatusFile = path.join(runtime, 'webvpn-login-status.json');
-      try {
-        fs.writeFileSync(loginStatusFile, JSON.stringify({
-          skill: 'paper-downloader', mode: 'login', status: 'running',
-          started_at: new Date().toISOString(), logged_in: false
-        }, null, 2), 'utf8');
-      } catch { /* status file is best-effort */ }
+      writeWebvpnLoginStatus(root, {
+        skill: 'paper-downloader', mode: 'login', status: 'running',
+        started_at: loginStartedAt, logged_in: false,
+        browser_channel: browserChannel
+      });
       await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: DEFAULT_NAV_TIMEOUT_MS }).catch(() => {});
 
       // Finish as soon as the WebVPN ticket cookie appears, rather than sitting
@@ -974,6 +1289,7 @@ async function main() {
           ? 'webvpn_portal_reachable_with_ticket_cookie'
           : reason === 'closed' ? 'login_window_closed_before_sign_in' : 'still_on_cas_login_when_wait_expired',
         profile_dir: relative(root, profileDir),
+        browser_channel: browserChannel,
         scansci_session: scansciExport,
         next_step: reason === 'ticket'
           ? 'WebVPN/CARSI session verified and exported to scansci-pdf. Rerun the Pipeline; the institutional tier will reuse it.'
@@ -983,9 +1299,7 @@ async function main() {
       // blocked for the whole wait, which means this stdout goes nowhere. Drop
       // the same manifest on disk so the UI can poll it and report the real
       // outcome instead of optimistically turning the button green.
-      try {
-        fs.writeFileSync(loginStatusFile, JSON.stringify(manifest, null, 2), 'utf8');
-      } catch { /* status file is best-effort */ }
+      writeWebvpnLoginStatus(root, manifest);
       console.log(JSON.stringify(manifest, null, 2));
       return;
     }

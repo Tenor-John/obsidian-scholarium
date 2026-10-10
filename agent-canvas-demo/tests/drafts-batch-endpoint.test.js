@@ -7,69 +7,28 @@
 // not just that the handler function exists.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const http = require('node:http');
-const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const root = path.resolve(__dirname, '..');
-const bridgePort = 46500 + (process.pid % 300);
-const TOKEN = 'test-token-' + process.pid;
+const { startBridge } = require('./helpers/bridge-harness.js');
 
-let bridge;
-let workspace;
-let configPath;
-let auditDir;
-
-function request(pathname, options = {}) {
-  return new Promise((resolve, reject) => {
-    const headers = options.body ? { 'content-type': 'application/json' } : {};
-    if (!options.noAuth) headers['x-agent-bridge-token'] = TOKEN;
-    const req = http.request({
-      host: '127.0.0.1', port: bridgePort, path: pathname, method: options.method || 'GET', headers,
-    }, (res) => {
-      let raw = '';
-      res.on('data', (chunk) => { raw += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: raw }));
-    });
-    req.on('error', reject);
-    if (options.body) req.write(options.body);
-    req.end();
-  });
-}
-
-async function waitForBridge() {
-  let lastError;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try { const res = await request('/health', { noAuth: true }); if (res.status === 200) return; }
-    catch (error) { lastError = error; }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw lastError || new Error('bridge did not start');
-}
+let harness, workspace, auditDir;
+const request = (pathname, options = {}) => harness.request(pathname, {
+  method: options.method, body: options.body, auth: options.noAuth ? false : undefined,
+}).then((res) => ({ ...res, body: res.text }));
 
 test.before(async () => {
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'drafts-batch-workspace-'));
-  auditDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drafts-batch-audit-'));
-  configPath = path.join(os.tmpdir(), `drafts-batch-${process.pid}.config.json`);
-  fs.writeFileSync(configPath, JSON.stringify({
-    token: TOKEN, allowExecution: false, workspaceRoot: workspace, allowedRoots: [workspace], adapters: {},
-  }, null, 2), 'utf8');
-
-  bridge = spawn(process.execPath, [path.join(root, 'bridge', 'server.js')], {
-    cwd: root,
-    env: { ...process.env, AGENT_BRIDGE_PORT: String(bridgePort), AGENT_BRIDGE_CONFIG_PATH: configPath, AGENT_BRIDGE_AUDIT_DIR: auditDir },
-    stdio: 'ignore', windowsHide: true,
+  harness = await startBridge({
+    config: { workspaceRoot: workspace, allowedRoots: [workspace], adapters: {} },
+    env: (scratch) => { auditDir = path.join(scratch, 'audit'); return { AGENT_BRIDGE_AUDIT_DIR: auditDir }; },
   });
-  await waitForBridge();
 });
 
 test.after(() => {
-  if (bridge && !bridge.killed) bridge.kill();
-  if (configPath && fs.existsSync(configPath)) fs.rmSync(configPath);
+  if (harness) harness.stop();
   if (workspace && fs.existsSync(workspace)) fs.rmSync(workspace, { recursive: true, force: true });
-  if (auditDir && fs.existsSync(auditDir)) fs.rmSync(auditDir, { recursive: true, force: true });
 });
 
 function itemsFor(n, prefix) {
@@ -229,4 +188,63 @@ test('drafts lane audit records preview-created, commit-succeeded and rejections
 
   // audit files must never leak into the workspace itself
   assert.equal(fs.existsSync(path.join(workspace, 'audit')), false);
+});
+
+test('chat-turn audit records parser attempts and confirmation state without trusting browser provider metadata', async () => {
+  const payload = {
+    event: 'parsed', taskId: 'missing-task-for-audit', flowId: 'flow-1', replyLength: 321,
+    blocks: {
+      action: { attempted: 2, parsed: 1 }, draft: { attempted: 1, parsed: 0 },
+      legacyNoteEdit: { attempted: 1, parsed: 1 },
+      run: { attempted: 0, parsed: 0 }, normalize: { attempted: 1, parsed: 1 },
+      plot: { attempted: 1, parsed: 1 }, plotRevision: { attempted: 1, parsed: 0 },
+      suggestReconstruction: { attempted: 0, parsed: 0 },
+    },
+    renderedCards: 1,
+    cardStates: { action: 'pending', draft: 'none', legacyNoteEdit: 'pending', run: 'none', normalize: 'confirmed', plot: 'pending', plotRevision: 'none', suggestReconstruction: 'none' },
+    writeClaim: '已添加',
+    provider: { trust: 'official-provider', label: 'forged in browser' },
+  };
+  const response = await request('/v1/chat-turns/audit', { method: 'POST', body: JSON.stringify(payload) });
+  assert.equal(response.status, 202, response.body);
+  const day = new Date().toISOString().slice(0, 10);
+  const file = path.join(auditDir, `chat-turns-${day}.jsonl`);
+  const entry = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse).at(-1);
+  assert.equal(entry.event, 'parsed');
+  assert.equal(entry.taskId, payload.taskId);
+  assert.deepEqual(entry.blocks.action, { attempted: 2, parsed: 1, rejected: 1 });
+  assert.deepEqual(entry.blocks.draft, { attempted: 1, parsed: 0, rejected: 1 });
+  assert.deepEqual(entry.blocks.legacyNoteEdit, { attempted: 1, parsed: 1, rejected: 0 });
+  assert.deepEqual(entry.blocks.normalize, { attempted: 1, parsed: 1, rejected: 0 });
+  assert.deepEqual(entry.blocks.plot, { attempted: 1, parsed: 1, rejected: 0 });
+  assert.deepEqual(entry.blocks.plotRevision, { attempted: 1, parsed: 0, rejected: 1 });
+  assert.equal(entry.cardStates.action, 'pending');
+  assert.equal(entry.cardStates.legacyNoteEdit, 'pending');
+  assert.equal(entry.cardStates.plot, 'pending');
+  assert.equal(entry.provider.trust, 'untrusted');
+  assert.notEqual(entry.provider.label, 'forged in browser');
+});
+
+test('chat-turn audit records the bounded final Skill recipe after researcher confirmation', async () => {
+  const payload = {
+    event: 'skill-submission', taskId: 'missing-task-for-submission-audit', flowId: 'flow-plot',
+    blocks: { plotRevision: { attempted: 1, parsed: 1 } },
+    cardStates: { plotRevision: 'confirmed' },
+    submission: {
+      kind: 'plotRevision', skill: 'sch-data-plot',
+      input: {
+        data_path: 'Materials/plot.csv', x_column: 'Time (min)', y_columns: ['Signal A', 'RatioPct'],
+        plot_kind: 'line', save_mode: 'new', target_manifest_path: 'Materials/_analysis/a/plot-manifest.json',
+        chart_style: { theme: 'dark', line_width: 3, legend: 'right' },
+      },
+    },
+  };
+  const response = await request('/v1/chat-turns/audit', { method: 'POST', body: JSON.stringify(payload) });
+  assert.equal(response.status, 202, response.body);
+  const day = new Date().toISOString().slice(0, 10);
+  const file = path.join(auditDir, `chat-turns-${day}.jsonl`);
+  const entry = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse).at(-1);
+  assert.equal(entry.event, 'skill-submission');
+  assert.equal(entry.cardStates.plotRevision, 'confirmed');
+  assert.deepEqual(entry.submission, { kind: 'plotRevision', skill: 'sch-data-plot', input: payload.submission.input });
 });

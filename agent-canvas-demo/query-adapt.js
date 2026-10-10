@@ -7,9 +7,9 @@
  * query syntax differs (confirmed by reading each skill's scripts folder):
  *   - OpenAlex (open-access-literature / nature-academic-search /
  *     pop8-scholar-search): Boolean AND/OR/NOT + parens + quoted phrases,
- *     native support via the `search=` param. openalex_search.py already has
- *     its own sanitize_for_openalex()/term_bag_for_openalex() fallback, so
- *     this adapter passes the canonical query through unchanged.
+ *     native support via the `search=` param. Wildcards are not portable to
+ *     this endpoint, so they are removed defensively before the underlying
+ *     script's sanitize_for_openalex()/term_bag_for_openalex() fallback.
  *   - PubMed (pubmed-search): E-utilities' `term=` param supports Boolean
  *     AND/OR/NOT and field tags ([tiab], [mesh], [au]) — but ONLY when the
  *     operators are UPPERCASE; lowercase "and"/"or"/"not" are treated as
@@ -56,18 +56,25 @@ function stripBooleanToFreeText(query) {
   return text;
 }
 
+function stripUnsupportedWildcards(query) {
+  return String(query || "")
+    .replace(/[?*]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function adaptQueryForSource(query, source) {
   const q = String(query || "").trim();
   if (!q) return q;
   switch (source) {
-    case "openalex": return q;
+    case "openalex": return stripUnsupportedWildcards(q);
     case "pubmed": return upperBooleanOperators(q);
-    case "semantic-scholar": return stripBooleanToFreeText(q);
+    case "semantic-scholar": return stripUnsupportedWildcards(stripBooleanToFreeText(q));
     case "scopus": return q;
     default: return q;
   }
 }
 
-const queryAdaptApi = { SOURCES, adaptQueryForSource, upperBooleanOperators, stripBooleanToFreeText };
+const queryAdaptApi = { SOURCES, adaptQueryForSource, upperBooleanOperators, stripBooleanToFreeText, stripUnsupportedWildcards };
 if (typeof module !== "undefined" && module.exports) module.exports = queryAdaptApi;
 if (typeof window !== "undefined") window.weaverQueryAdapt = queryAdaptApi;

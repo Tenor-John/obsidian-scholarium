@@ -1,0 +1,19 @@
+{
+  "uid": "01927d40-1b23-7d12-ab72-333333333333",
+  "display_id": "PAPER-001",
+  "schema_version": 1,
+  "type": "paper",
+  "created_at": "2026-08-09T00:00:00Z",
+  "updated_at": "2026-08-09T00:00:00Z",
+  "title": "Example paper",
+  "source": "https://doi.org/10.0000/example",
+  "doi": "10.0000/example",
+  "journal": "Example Journal",
+  "year": 2026,
+  "authors": ["Example Author"],
+  "keywords": [],
+  "projects": ["01927d3f-8a41-7c62-b5e0-9f3a2c1d4e5b"],
+  "source_raw_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "source_clean_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "markdown_source": "rendered_dom"
+}

@@ -57,7 +57,14 @@ manifest.
 `overwrite`, `target_manifest_path` is required and must name an existing
 `Materials/_analysis/.../plot-manifest.json` belonging to the same source
 dataset. Overwrite rewrites only that version's SVG, report, and manifest;
-it never rewrites the source dataset or another version.
+it never rewrites the source dataset or another version. Before any overwrite
+is written, the tool stores the target's exact prior manifest bytes alongside
+it and records that snapshot path in the new manifest. This is **conditional
+reproducibility, not an absolute rollback**: the snapshot is a recipe, not a
+copy of the SVG or source data. To recreate the earlier SVG, first verify that
+the current source file still exists and its SHA-256 equals
+`snapshot.source.sha256`. If it differs, any rerender is a new chart that may
+look similar, never a restoration of the prior artifact.
 
 `chart_style` is optional and visual-only: `theme` is `publication`, `soft`,
 or `dark`; `markers` is `auto`, `all`, or `none`; `show_grid` is a boolean;

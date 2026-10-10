@@ -196,6 +196,10 @@ Agent：`claude-full` 只查找并报告开放获取 PDF 直链，Bridge 负责�
 检测均按预期完成；`claude-full` 的读/写基线、无 permission denial、联网、检测式边界探测全部通过。
 `npm run verify` 243/243 通过，`npm run verify:live` 全绿。修正提交：`22955e3`。
 
+**后续更正（2026-09-10）**：这段是历史验收记录，不再是当前科研车道契约。绝对路径、`..`
+相对穿越和 PowerShell 探针后来确证 cwd 边界不存在；科研车道现已移除 Bash/PowerShell/Write/Edit。
+当前联网探针改为 WebFetch + WebSearch，路径探针的通过条件改为直接写能力不可达且哨兵不存在。
+
 **教训（以后每一个操作类别都适用）**：
 
 - 验收必须以系统可观察、不可由模型自由措辞伪造的事实为准：Bridge/工具事件、退出码、文件 hash、

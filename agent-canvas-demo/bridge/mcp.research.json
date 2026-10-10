@@ -7,6 +7,15 @@
         "run"
       ],
       "env": {}
+    },
+    "scholarium": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "-e",
+        "require(process.env.SCHOLARIUM_MCP_SERVER_PATH)"
+      ],
+      "env": {}
     }
   }
 }
