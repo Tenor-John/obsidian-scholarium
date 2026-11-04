@@ -19,21 +19,24 @@ This package was assembled from the installed test-Vault plugin artifact and san
 
 The existing source snapshot remains in the repository for development, but it is not evidence that it reproduces this preview artifact. Source alignment is a separate formal-release gate.
 
-## Acceptance coverage
+## Acceptance coverage — overall BLOCKED
 
-Independent review supports:
+The fixed ZIP was retested on Windows 11 x64 with Obsidian 1.15.0 on 2026-11-04.
 
-- clean installation;
-- the minimum functional workflow.
+| Check | Result and boundary |
+| --- | --- |
+| Clean installation and minimum functional workflow | PASS from the preceding independent review |
+| 2.0.8 → 3.0.0 upgrade | PASS within startup, settings retention, synthetic literature reading, and note-saving checks |
+| Rollback to 2.0.8 | PASS within the same local scope; the upgraded `data.json` was retained without restoring the old configuration |
+| Complete external AI workflow after version switching | NOT RETESTED in the upgrade/rollback copies |
+| Manual stop while partial response text is visibly streaming | **BLOCKED / NOT COVERED**: two long responses completed, but the required observable state was not captured |
+| Stop during the thinking phase | PASS as an auxiliary check |
+| Same-session request recovery after stopping | PASS; no duplicate writes or cross-session writes were observed in the recorded scope |
+| Linux x64 real-machine acceptance | PENDING |
 
-The following are **not covered** by the current acceptance result:
+The blocked streaming-stop result does not establish a product defect: the test did not reach the state needed to evaluate that behavior. It also must not be counted as a pass. The overall three-item follow-up gate remains **BLOCKED**, and this preview must not be described as having passed all acceptance gates.
 
-- upgrade from a previous installed version;
-- rollback to the previous version;
-- manually stopping an in-progress streaming response;
-- Linux x64 real-machine acceptance.
-
-This preview must not be described as having passed those tests. Upgrade, rollback, and manual streaming-stop tests against this same ZIP are required before a formal release.
+See [ACCEPTANCE-RESULT-2026-11-04.md](ACCEPTANCE-RESULT-2026-11-04.md) for the sanitized result summary.
 
 ## Clean installation
 
@@ -46,13 +49,11 @@ This preview must not be described as having passed those tests. Upgrade, rollba
 
 No `data.json` is supplied. A clean installation starts without personal settings or credentials.
 
-## Upgrade and rollback procedure — not yet validated
+## Validated upgrade and rollback scope
 
-The following procedure describes what the remaining test must exercise; it is not a claim that upgrade or rollback has passed.
+The 2.0.8 → 3.0.0 upgrade retained the existing `data.json` and passed startup, settings, synthetic literature reading, and note-saving checks. Rollback restored the 2.0.8 three-file artifact while retaining the upgraded `data.json`; startup, settings, existing notes, and continued note editing passed.
 
-Before upgrading, back up the existing plugin directory. Replace only the three package files and keep the existing `data.json`. Restart Obsidian and verify settings and plugin behavior.
-
-To roll back, disable Scholarium, restore the previously backed-up `main.js`, `manifest.json`, and `styles.css`, then restart Obsidian. Keep the original `data.json` unless a separate verified settings backup is available.
+These results are limited to the synthetic test baseline and do not establish compatibility with every configuration, real long-term Vault, or the complete external AI workflow after version switching.
 
 ## Data and privacy
 

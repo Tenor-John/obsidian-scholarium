@@ -9,12 +9,17 @@ This branch contains a sanitized desktop preview assembled from the installed Sc
 - Plugin version: `3.0.0`
 - Minimum Obsidian version: `1.10.0`
 - Primary evaluation target: Windows x64 desktop Obsidian
-- Clean installation and the minimum functional workflow are supported by the independent acceptance review
-- Upgrade, rollback, and manual streaming-stop behavior are not covered yet
-- Linux x64 real-machine acceptance remains pending
-- Source-workspace alignment and reproducible source builds are not claimed
+- Clean installation and the minimum functional workflow: PASS
+- 2.0.8 → 3.0.0 upgrade and rollback to 2.0.8: PASS within local startup, settings, synthetic literature, and notes checks
+- Manual stop while partial response text is visibly streaming: **BLOCKED / not covered**
+- Thinking-phase stop and same-session recovery: PASS as auxiliary checks
+- Complete external AI workflow after version switching: not retested
+- Linux x64 real-machine acceptance: pending
+- Source-workspace alignment and reproducible source builds: not claimed
 
-See [PREVIEW-RELEASE.md](PREVIEW-RELEASE.md) for the fixed package identity, provenance boundary, installation instructions, and release limitations. Use [ACCEPTANCE.md](ACCEPTANCE.md) for the remaining verification checklist.
+The overall follow-up acceptance gate remains **BLOCKED**. This preview must not be described as having passed all gates.
+
+See [PREVIEW-RELEASE.md](PREVIEW-RELEASE.md) for the fixed package identity, provenance boundary, installation instructions, and release limitations. See [ACCEPTANCE.md](ACCEPTANCE.md) and [ACCEPTANCE-RESULT-2026-11-04.md](ACCEPTANCE-RESULT-2026-11-04.md) for the results and remaining checks.
 
 ## Install the fixed preview package
 
@@ -30,7 +35,7 @@ Extract exactly `main.js`, `manifest.json`, and `styles.css` into:
 <vault>/.obsidian/plugins/obsidian-scholarium/
 ```
 
-Restart Obsidian and enable **Scholarium** under Community plugins. Do not delete or replace an existing `data.json`; it contains local settings and may contain credentials. Upgrade and rollback procedures are documented for the remaining tests, not presented as already validated.
+Restart Obsidian and enable **Scholarium** under Community plugins. Do not delete or replace an existing `data.json`; it contains local settings and may contain credentials. The upgrade and rollback results apply only to the documented synthetic test scope.
 
 ## Public-release boundaries
 

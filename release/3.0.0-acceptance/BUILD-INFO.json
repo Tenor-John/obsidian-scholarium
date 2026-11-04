@@ -23,11 +23,18 @@
     "note": "The source workspace and the installed test-vault artifact were not hash-identical. This package is an artifact-based preview and must not be represented as a reproducible source build."
   },
   "acceptanceCoverage": {
-    "cleanInstall": "reported passed by independent review",
-    "minimalFunctionalWorkflow": "reported passed by independent review",
-    "upgrade": "not covered",
-    "rollback": "not covered",
-    "manualStreamingStop": "not covered",
+    "date": "2026-11-04",
+    "environment": "Windows 11 x64, Obsidian 1.15.0",
+    "overallGate": "BLOCKED",
+    "cleanInstall": "passed",
+    "minimalFunctionalWorkflow": "passed",
+    "upgradeFrom208": "passed within local startup, settings, synthetic literature and notes checks",
+    "rollbackTo208": "passed within local startup, settings, synthetic literature and notes checks; upgraded data.json retained",
+    "externalAiWorkflowAfterVersionSwitch": "not retested",
+    "manualStreamingStop": "BLOCKED: partial visible output with an available stop control was not observed; still not covered",
+    "thinkingPhaseStop": "passed",
+    "sameSessionRecoveryAfterStop": "passed",
+    "duplicateWriteAndCrossSessionCheck": "passed within the recorded session scope",
     "linuxRealMachineAcceptance": "pending"
   },
   "sanitization": {
