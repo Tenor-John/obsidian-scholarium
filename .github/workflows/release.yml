@@ -12,6 +12,9 @@ permissions:
 
 jobs:
   release:
+    # 3.0.1 is published from the fixed acceptance artifact with a corrected manifest.
+    # The repository-root bundle is not byte-identical to that artifact.
+    if: github.ref_name != '3.0.1'
     runs-on: ubuntu-latest
 
     steps:
