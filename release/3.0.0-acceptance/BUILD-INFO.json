@@ -1,0 +1,46 @@
+{
+  "plugin": "obsidian-scholarium",
+  "version": "3.0.0",
+  "channel": "preview",
+  "formalRelease": false,
+  "package": "obsidian-scholarium-3.0.0-acceptance.zip",
+  "packageSha256": "217171296d5431d741ae002dd5d34539bcfa7d3fb925a63c686f7528f1cd7a24",
+  "packageContents": [
+    "main.js",
+    "manifest.json",
+    "styles.css"
+  ],
+  "artifactSha256": {
+    "main.js": "82677a35d8fe5a399e530baba811b3edf04d30454d9255eab99a6c608b8c51a9",
+    "manifest.json": "d3b67b230e6a6e2299c1d33d54f7017445ac26fbcda8fd4d858e2cdc88137bbe",
+    "styles.css": "74fc82f442f676938e09b631223635c4d6476d23e6143ccf9b05e2a60c1705b9"
+  },
+  "provenance": {
+    "artifactBasis": "sanitized installed-plugin artifact",
+    "cleanSourceBuild": false,
+    "sourceWorkspaceAligned": false,
+    "sourceReproducibilityClaimed": false,
+    "note": "The source workspace and the installed test-vault artifact were not hash-identical. This package is an artifact-based preview and must not be represented as a reproducible source build."
+  },
+  "acceptanceCoverage": {
+    "cleanInstall": "reported passed by independent review",
+    "minimalFunctionalWorkflow": "reported passed by independent review",
+    "upgrade": "not covered",
+    "rollback": "not covered",
+    "manualStreamingStop": "not covered",
+    "linuxRealMachineAcceptance": "pending"
+  },
+  "sanitization": {
+    "credentialsExcluded": true,
+    "personalResearchDataExcluded": true,
+    "localConfigurationExcluded": true,
+    "personalMachinePathsExcluded": true,
+    "internalSourceTreeNamesRemovedFromArtifactComments": true
+  },
+  "validation": {
+    "manifestAndVersionConsistency": "passed",
+    "zipCrcAndByteComparison": "passed",
+    "javascriptSyntax": "verified separately with node --check",
+    "remoteFreshCloneAndPackageHash": "passed"
+  }
+}
