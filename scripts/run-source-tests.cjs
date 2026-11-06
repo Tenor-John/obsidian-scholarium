@@ -1,0 +1,10 @@
+"use strict";
+const fs = require("node:fs");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
+const dir = path.join(__dirname, "..", "src", "__tests__");
+const files = fs.readdirSync(dir).filter(name => name.endsWith(".test.js")).sort().map(name => path.join(dir, name));
+if (!files.length) throw new Error("No source unit tests found");
+const result = spawnSync(process.execPath, ["--test", ...files], { stdio: "inherit" });
+if (result.error) throw result.error;
+process.exitCode = result.status == null ? 1 : result.status;

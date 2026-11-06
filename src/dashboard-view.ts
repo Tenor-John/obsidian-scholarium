@@ -1900,10 +1900,19 @@ tags: [research-learning, study-note]
         for (const file of files) {
             try {
                 let fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+                let rawContent = '';
                 if (!fm) {
-                    const content = await this.app.vault.cachedRead(file);
-                    const info = getFrontMatterInfo(content);
+                    rawContent = await this.app.vault.cachedRead(file);
+                    const info = getFrontMatterInfo(rawContent);
                     fm = info.exists ? parseYaml(info.frontmatter) : undefined;
+                }
+                // Older Weaver drafts may lack frontmatter. Show only direct
+                // children of the dedicated experiment directory as unclassified;
+                // never change the note or override an explicit different type.
+                if (!fm?.type && /^Research\/Experiments\/[^/]+\.md$/i.test(file.path)) {
+                    if (!rawContent) rawContent = await this.app.vault.cachedRead(file);
+                    const heading = rawContent.replace(/^---\r?\n[\s\S]*?\r?\n---\s*/, '').match(/^#\s+(.+)$/m)?.[1]?.trim();
+                    fm = { ...fm, type: 'experiment', title: fm?.title || heading || file.basename, status: fm?.status || '待整理' };
                 }
                 if (fm?.type === 'experiment' || fm?.type === 'research-learning') {
                     // 日期优先级：frontmatter.date > 文件名中的日期 > ctime（创建时间，不是修改时间）

@@ -9,14 +9,16 @@ real-Obsidian installation and editor acceptance.
 
 | File | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `main.js` | 44,359,561 | `F632CEBC938343AD7563A0FC285C79144CE4C3A5F8EAB623B11CA8549696E108` |
+| `main.js` | 44,360,137 | `C2EA93EB706C400718B31831B8E2C8E1C34487813E647D4F57628BBA9C2F7541` |
 | `manifest.json` | 284 | `2AC8247DE2B47289CB34031F9B67A93765E5C750EFAD77EDD9E5842BB50A2480` |
 | `styles.css` | 572,838 | `5ECA450BDBDB6D77C781A91A30478AEF7532E26D6A41892A8B1B23B01D80809E` |
 
 Two consecutive `npm run build:release` runs produced the byte counts and
 SHA-256 values above. `cmp` reported no difference for any of the three files.
-The 3.0.2 release manifest changes only the version from the tested 3.0.1
-candidate; the tested main.js and styles.css bytes remain unchanged.
+The 3.0.2 candidate also adds discovery of untyped Markdown files directly in
+Research/Experiments. The isolated Ketcher acceptance below used the previous
+main.js hash F632CEBC938343AD7563A0FC285C79144CE4C3A5F8EAB623B11CA8549696E108;
+that acceptance must not be represented as a test of the new bundle bytes.
 The release embed step normalizes inherited and vendored CSS line endings to LF;
 this also makes the `core.autocrlf=true` checkout byte-identical.
 The release command also ran type checking, style-scope validation, static

@@ -4056,6 +4056,15 @@ const server = http.createServer(async (req, res) => {
       let items = Array.isArray(input.items) ? input.items : null;
       if (!items || items.length === 0) return reject(400, 'items must be a non-empty array of { path, content }');
       if (items.length > MAX_BATCH_DRAFT_ITEMS) return reject(400, `batch is limited to ${MAX_BATCH_DRAFT_ITEMS} files per preview`);
+      for (const item of items) {
+        const target = String(item?.path || '').replace(/\\/g, '/');
+        if (!/^Research\/Experiments\/[^/]+\.md$/i.test(target)) continue;
+        const type = scholariumSchema.parseObject(String(item?.content || '')).object.type;
+        if (type !== 'experiment' && type !== 'research-learning')
+          return reject(400, 'Research/Experiments 草稿必须提供 type: experiment 或 type: research-learning，否则不会进入实验记录库；请补充类型后重新预览。');
+        if (type === 'experiment' && (input.base !== 'scholarium-vault' || input.serverManagedMetadata !== true))
+          return reject(400, '实验记录必须通过 scholarium-vault 和 Bridge 管理的元数据创建；请重新生成规范实验草稿。');
+      }
       const root = draftBaseRoot(input.base);
       const serverManagedMetadata = input.serverManagedMetadata === true;
       const projectDisplayId = String(input.projectDisplayId || '').trim().slice(0, 40);
