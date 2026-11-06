@@ -1,6 +1,12 @@
-import { Plugin, WorkspaceLeaf } from 'obsidian';
+import { Notice, Plugin, WorkspaceLeaf } from 'obsidian';
 import { DASHBOARD_VIEW_TYPE, DashboardView } from './dashboard-view';
 import './project-profile';
+import { schSecretsFile } from './secrets-file';
+import { schConfiguredFolder } from './folders';
+import { schOpenRuntimeDiagnosis } from './runtime-manager';
+import { installEvidenceUi } from './evidence-ui';
+import { installScholariumQueue } from './scholarium-queue';
+import { installPersistentDashboardHost } from './persistent-dashboard-host';
 import { ChemELNSettingTab, DEFAULT_SETTINGS } from './settings';
 import type { ChemELNSettings } from './settings';
 import type { ExperimentContext } from './ai-assistant-modal';
@@ -41,6 +47,7 @@ export default class ChemELNPlugin extends Plugin {
         root.dataset.theme = resolvedTheme;
         root.dataset.themeMode = this.settings.theme;
         root.dataset.accent = this.settings.accent;
+        root.dataset.visualStyle = this.settings.visualStyle === 'oriental' ? 'oriental' : 'default';
         const theme = SCHOLARIUM_THEMES[resolvedTheme];
         const density = SCHOLARIUM_DENSITY[this.settings.density] ?? SCHOLARIUM_DENSITY.regular;
         const fontScale = { small: 0.92, medium: 1, large: 1.12, xlarge: 1.24 }[this.settings.fontSize] ?? 1;
@@ -157,6 +164,25 @@ export default class ChemELNPlugin extends Plugin {
             id: 'open-ai-assistant',
             name: '打开 AI 实验助手',
             callback: () => this.openAIAssistant(),
+        });
+
+        this.addCommand({
+            id: 'backfill-source-html',
+            name: '文献：补抓历史文献的原始来源 HTML',
+            callback: async () => {
+                const board = (window as unknown as {
+                    __scholariumRssBoard?: { backfillSourceHtml?: () => Promise<void> };
+                }).__scholariumRssBoard;
+                if (!board || typeof board.backfillSourceHtml !== 'function') {
+                    new Notice('请先打开一次「文献订阅」页面再执行。');
+                    return;
+                }
+                try {
+                    await board.backfillSourceHtml();
+                } catch (error) {
+                    new Notice('补抓失败：' + (error instanceof Error ? error.message : String(error)));
+                }
+            },
         });
 
         this.addCommand({
@@ -286,10 +312,16 @@ export default class ChemELNPlugin extends Plugin {
     }
 
     async loadSettings() {
+        schSecretsFile.install(this);
+        this.addCommand({ id: 'diagnose-runtime', name: '诊断本机运行时', callback: () => schOpenRuntimeDiagnosis(this.app) });
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<ChemELNSettings>);
         this.settings.pluginDisplayName = 'Scholarium';
+        this.settings.materialsFolder = schConfiguredFolder(this, 'materialsFolder', 'Materials');
+        this.settings.literatureFolder = schConfiguredFolder(this, 'literatureFolder', 'Literature/Zotero');
+        this.settings.subscriptionFolder = schConfiguredFolder(this, 'subscriptionFolder', 'Literature/Subscriptions');
         this.settings.notebookSidebarWidth = Math.min(440, Math.max(280, Number(this.settings.notebookSidebarWidth) || 300));
         this.settings.theme = 'system';
+        this.settings.visualStyle = this.settings.visualStyle === 'oriental' ? 'oriental' : 'default';
         const legacyAccents: Record<string, AccentKey> = {
             emerald: 'green',
             indigo: 'blue',
@@ -315,12 +347,17 @@ export default class ChemELNPlugin extends Plugin {
     }
 
     async saveSettings() {
+        const scrollPositions = Array.from(document.querySelectorAll<HTMLElement>('.vertical-tab-content-container'))
+            .map((element) => ({ element, scrollTop: element.scrollTop }));
         await this.updateData((data) => {
             Object.assign(data, this.settings);
         });
         this.injectThemeVars();
         this.initCloudSync();
         this.refreshDashboards();
+        window.requestAnimationFrame(() => {
+            for (const { element, scrollTop } of scrollPositions) element.scrollTop = scrollTop;
+        });
     }
 
     async openAIAssistant(context?: ExperimentContext) {
@@ -345,3 +382,7 @@ export default class ChemELNPlugin extends Plugin {
         }
     }
 }
+
+installEvidenceUi(ChemELNPlugin);
+installScholariumQueue(ChemELNPlugin);
+installPersistentDashboardHost(DashboardView);

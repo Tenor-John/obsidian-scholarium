@@ -72,6 +72,12 @@ jobs:
             console.log("line endings OK");
           '
 
+      - name: Build the candidate from locked source
+        run: |
+          npm ci
+          npm run build:release
+          npm test
+
       - name: Run regression suite
         run: node tests/run.js
 

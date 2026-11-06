@@ -5,7 +5,7 @@
  * methods_needed / excluded_topics) are what the literature radar uses to
  * decide "supports" vs "contradicts", so losing them silently is expensive.
  */
-const { source, sandbox, describe, it, assert } = require("./harness");
+const { source, block, sandbox, describe, it, assert } = require("./harness");
 
 const P = sandbox({
   fns: [
@@ -34,65 +34,78 @@ function filled() {
 describe("project profile v2", () => {
   it("prefers a migrated Project while retaining its legacy project id", () => {
     const src = source();
-    assert.match(src, /u\.type === "project"/);
-    assert.match(src, /migration_source_path/);
-    assert.match(src, /includes\("\/Projects\/" \+ n \+ "\/"\)/);
-    assert.match(src, /profilePath: o \? o\.path/);
+    const migrationAt = src.indexOf("migration_source_path");
+    assert.ok(migrationAt >= 0);
+    const migration = src.slice(Math.max(0, migrationAt - 300), migrationAt + 500);
+    assert.match(migration, /\.type === "project"/);
+    assert.match(migration, /includes\("\/Projects\/" \+ \w+ \+ "\/"\)/);
+    const profileAt = src.indexOf("profilePath:", migrationAt);
+    assert.ok(profileAt >= 0);
+    assert.match(src.slice(profileAt, profileAt + 100), /profilePath: \w+ \? \w+\.path/);
   });
 
   it("provides a quick project creator with an editable profile skeleton", () => {
     const src = source();
-    assert.match(src, /text: "\+ \\u65B0\\u5EFA\\u8BFE\\u9898"/);
-    assert.match(src, /createFolder\("Research\/Projects"\)/);
-    assert.match(src, /Research\/ProjectProfiles\//);
-    assert.match(src, /create\(w \+ "\/profile-v0\.md"/);
-    assert.match(src, /schema_version: 1/);
-    assert.match(src, /artifact: \\"project_profile\\"/);
-    assert.match(src, /activeProjectId: g/);
+    const createAt = src.indexOf('text: "+ 新建课题"');
+    assert.ok(createAt >= 0);
+    const creator = src.slice(createAt, createAt + 12000);
+    assert.match(creator, /createFolder\("Research\/Projects"\)/);
+    assert.match(creator, /Research\/ProjectProfiles\//);
+    assert.match(creator, /create\(\w+ \+ "\/profile-v0\.md"/);
+    assert.match(creator, /schema_version: 1/);
+    assert.match(creator, /artifact: "project_profile"/);
+    assert.match(creator, /activeProjectId: \w+/);
   });
 
   it("lets the experiment list assign one or many records to a project", () => {
-    const src = source();
-    assert.match(src, /renderExperimentAssignmentActions\(e\)/);
-    assert.match(src, /openExperimentProjectAssignment\(e\)/);
-    assert.match(src, /assignExperimentsToProject\(e, s\)/);
-    assert.match(src, /processFrontMatter\(a\.file/);
-    assert.match(src, /delete l\.project_id/);
+    const actions = block("renderExperimentAssignmentActions(e) {");
+    const assign = block("assignExperimentsToProject(e, s) {");
+    assert.match(actions, /this\.experimentBulkSelection\.size === 0/);
+    assert.match(actions, /this\.openExperimentProjectAssignment\(selected\d*\)/);
+    assert.match(assign, /processFrontMatter\(exp\d*\.file/);
+    assert.match(assign, /const id\d* = String\(s \|\| ""\)\.trim\(\)/);
+    assert.match(assign, /frontmatter\.project_id = id\d*/);
+    assert.match(assign, /delete frontmatter\.project_id/);
   });
 
   it("uses the migrated Project display id instead of exposing its legacy profile id", () => {
-    const src = source();
-    assert.match(src, /s\(a\.display_id \|\| n\.basename, a\.title \|\| n\.basename\)/);
-    assert.match(src, /Research\\\/Projects\\\/\(\[\^\/\]\+\)\\\.md/);
+    const choices = block("getExperimentProjectChoices() {");
+    assert.match(choices, /add\d*\(frontmatter\.display_id \|\| file\.basename, frontmatter\.title \|\| file\.basename\)/);
+    assert.match(choices, /\^Research\\\/Projects\\\/\[\^\/\]\+\\\.md/);
   });
 
   it("keeps the experiment-board project picker in a stable id order", () => {
     const src = source();
     assert.match(src, /schStableProjectToolbarRenderer/);
-    assert.match(src, /filter\(\(f\) => f\.id\.toUpperCase\(\) !== "UNCLASSIFIED"\)/);
-    assert.match(src, /localeCompare\(g\.id, void 0, \{ numeric: !0, sensitivity: "base" \}\)/);
-    assert.match(src, /let b = c\.get\("UNCLASSIFIED"\)/);
+    assert.match(src, /filter\(\(\w+\) => \w+\.id\.toUpperCase\(\) !== "UNCLASSIFIED"\)/);
+    assert.match(src, /localeCompare\(\w+\.id, void 0, \{ numeric: true, sensitivity: "base" \}\)/);
+    assert.match(src, /let \w+ = \w+\.get\("UNCLASSIFIED"\)/);
   });
 
   it("keeps batch selection and its confirmation action visibly actionable", () => {
     const src = source();
-    assert.match(src, /exp-item-project-check/);
-    assert.match(src, /exp-project-assign-confirm/);
-    assert.match(src, /text: "\u9000\u51FA\u6279\u91CF"/);
+    assert.match(src, /cls: "exp-item-select-btn"/);
+    assert.match(src, /cls: "scholarium-btn primary exp-project-bulk-toggle"/);
+    assert.match(src, /cls: "scholarium-btn primary exp-project-assign-confirm"/);
+    assert.match(src, /assign\d*\.disabled = this\.experimentBulkSelection\.size === 0/);
   });
 
-  it("uses fixed selection and delete actions instead of a hover-only batch mode", () => {
+  it("uses fixed selection, assignment and delete actions instead of a hover-only batch mode", () => {
     const src = source();
-    assert.match(src, /qe\.renderExpListItem = function \(e, s\)/);
+    assert.match(src, /qe\d*\.renderExpListItem = function\(\w+, \w+\)/);
     assert.match(src, /cls: "exp-item-actions"/);
     assert.match(src, /cls: "exp-item-select-btn"/);
-    assert.match(src, /this\.allExperiments\.filter\(\(a\) =>/);
+    assert.match(src, /cls: "exp-item-project-assign-btn"/);
+    assert.match(src, /this\.openExperimentProjectAssignment\(\[\w+\]\)/);
+    assert.match(src, /this\.allExperiments\.filter\(\(\w+\) =>/);
   });
 
-  it("writes the selected project id from both manual and AI-created experiments", () => {
+  it("threads the selected project through manual and AI creation", () => {
     const src = source();
-    assert.match(src, /project_id: \$\{q\}/);
-    assert.match(src, /project_id: \$\{this\.yamlQuote\(this\.projectId\)\}/);
+    const agent = block("createExperimentFromAgent(e, s) {");
+    assert.match(src, /project_id: \$\{JSON\.stringify\(projectId\)\}/);
+    assert.match(agent, /project_id: \$\{this\.yamlQuote\(this\.projectId\)\}/);
+    assert.match(agent, /e\.project_uid \|\| e\.project_id \|\| e\.projectId \|\| this\.projectId/);
     assert.match(src, /this\.getExperimentProjectIdForCreation\(\)/);
   });
 
@@ -101,7 +114,7 @@ describe("project profile v2", () => {
     assert.match(src, /createNewResearchLearningNote\(\)/);
     assert.match(src, /type: research-learning/);
     assert.match(src, /status: study/);
-    assert.match(src, /project_id: \$\{i\}/);
+    assert.match(src, /project_id: \$\{JSON\.stringify\(projectId\)\}/);
     assert.match(src, /onclick = \(\) => this\.createNewResearchLearningNote\(\)/);
   });
   it("defaults the new fields to empty arrays", () => {

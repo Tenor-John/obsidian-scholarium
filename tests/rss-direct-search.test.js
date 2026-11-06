@@ -6,41 +6,30 @@
 // 从 bundle 提取方法体后真实执行做行为断言；其余做接线守卫。
 const fs = require("fs");
 const path = require("path");
-const { describe, it, assert } = require("./harness");
+const { body, describe, it, assert } = require("./harness");
 
 const bundle = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 
-// Extract a class method's source by name and brace-match to its end. Only
-// used for methods whose string/regex literals contain balanced braces.
-function extractMethod(name) {
-  const start = bundle.indexOf("    " + name + "(");
-  assert.ok(start !== -1, name + " must exist in main.js");
-  const open = bundle.indexOf("{", start);
-  let depth = 0;
-  for (let j = open; j < bundle.length; j++) {
-    if (bundle[j] === "{") depth++;
-    else if (bundle[j] === "}") { depth--; if (!depth) return bundle.slice(start, j + 1); }
-  }
-  throw new Error("unbalanced braces while extracting " + name);
-}
 function loadMethod(name) {
+  // The harness locates the real method independently of esbuild's renamed
+  // parameters and normalizes its single formal parameter back to `t`.
   // eslint-disable-next-line no-new-func
-  return new Function("return function " + extractMethod(name))();
+  return new Function("return function(t) {" + body(name + "(t) {") + "}")();
 }
 
 describe("RssFeedBoard direct-open & literature search (bundle)", () => {
   it("render() wires the literature-hub sub-tabs and routes each sub-panel", () => {
     // 文献中心二级导航始终渲染；检索/直开浏览器只在 search 子面板连线，
     // 下载队列只在 pipeline 子面板连线，订阅流面板保持纯粹。
-    assert.match(bundle, /this\.renderHubTabs\(t\);/);
-    assert.match(bundle, /this\.hubTab === "search"[\s\S]{0,200}this\.renderDirectOpenBar\(t\),\s*this\.renderSearchResults\(t\),\s*this\.renderDirectViewer\(t\);/);
-    assert.match(bundle, /this\.hubTab === "pipeline"[\s\S]{0,200}this\.renderPipelineTab\(t\)/);
-    assert.match(bundle, /this\.hubTab === "zotero"[\s\S]{0,200}this\.renderZoteroTab\(t\)/);
+    assert.match(bundle, /this\.renderHubTabs\(\w+\);/);
+    assert.match(bundle, /this\.hubTab === "search"[\s\S]{0,300}this\.renderDirectOpenBar\(\w+\),\s*this\.renderSearchResults\(\w+\),\s*this\.renderDirectViewer\(\w+\);/);
+    assert.match(bundle, /this\.hubTab === "pipeline"[\s\S]{0,300}this\.renderPipelineTab\(\w+\)/);
+    assert.match(bundle, /this\.hubTab === "zotero"[\s\S]{0,300}this\.renderZoteroTab\(\w+\)/);
   });
   it("constructor initializes the direct/search state", () => {
     assert.match(bundle, /this\.directWeb = null;/);
     assert.match(bundle, /this\.searchResults = null;/);
-    assert.match(bundle, /this\.searching = !1;/);
+    assert.match(bundle, /this\.searching = false;/);
     assert.match(bundle, /this\.manualDownloadQueue = \[\];/);
   });
   it("receives a bounded manual-download queue and keeps its PDF target in downloaded-pdfs", () => {
@@ -49,14 +38,14 @@ describe("RssFeedBoard direct-open & literature search (bundle)", () => {
     assert.match(bundle, /待手动下载/);
     assert.match(bundle, /literature\/downloaded-pdfs/);
     assert.match(bundle, /manualQueueId/);
-    assert.match(bundle, /notifyManualCaptureResult\(e, "pdf", savedPdf\.path/);
-    assert.match(bundle, /notifyManualCaptureResult\(e, "webclip", p\.file\.path/);
-    assert.match(bundle, /this\.completeManualDownload\(article\.manualQueueId\)/);
-    assert.match(bundle, /manualDownloadQueue:\s*\(r == null \? void 0 : r\.manualDownloadQueue\) \|\| \[\]/);
+    assert.match(bundle, /notifyManualCaptureResult\(\w+, "pdf", savedPdf\.path/);
+    assert.match(bundle, /notifyManualCaptureResult\(\w+, "webclip", \w+\.file\.path/);
+    assert.match(bundle, /this\.completeManualDownload\(\w+\.manualQueueId,/);
+    assert.match(bundle, /manualDownloadQueue:\s*\(\w+ == null \? void 0 : \w+\.manualDownloadQueue\) \|\| \[\]/);
     assert.match(bundle, /this\.data\.manualDownloadQueue = this\.manualDownloadQueue/);
   });
   it("the inline-web close button also dismisses a directly opened page", () => {
-    assert.match(bundle, /this\.directWeb && this\.directWeb\.link === s && \(this\.directWeb = null\)/);
+    assert.match(bundle, /this\.directWeb && this\.directWeb\.link === \w+ && \(this\.directWeb = null\)/);
   });
   it("clipSearchResult reuses the hidden-webview clip path and maps paywall errors to a retry hint", () => {
     assert.match(bundle, /clipSearchResult[\s\S]{0,2000}loadUrlInHiddenWebview/);
@@ -71,9 +60,9 @@ describe("RssFeedBoard direct-open & literature search (bundle)", () => {
     assert.match(bundle, /Pipeline 待处理/);
   });
   it("persists the active hub tab and search download target", () => {
-    assert.match(bundle, /this\.hubTab = i, this\.data\.hubTab = i, this\.save\(\)/);
-    assert.match(bundle, /hubTab:\s*\(r == null \? void 0 : r\.hubTab\) \|\| "feed"/);
-    assert.match(bundle, /this\.data\.downloadTarget = rt\.value, this\.save\(\)/);
+    assert.match(bundle, /this\.hubTab = (\w+), this\.data\.hubTab = \1, this\.save\(\)/);
+    assert.match(bundle, /hubTab:\s*\(\w+ == null \? void 0 : \w+\.hubTab\) \|\| "feed"/);
+    assert.match(bundle, /this\.data\.downloadTarget = \w+\.value, this\.save\(\)/);
   });
 
   it("resolveDirectOpenTarget resolves DOI forms to doi.org and passes URLs through", () => {

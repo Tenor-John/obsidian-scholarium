@@ -432,8 +432,8 @@
     border-color: var(--interactive-accent) !important; opacity: 1 !important;
 }
 
-/* Fixed record actions: selection and deletion never appear only on hover. */
-.exp-item { padding-right: 84px; }
+/* Fixed record actions: selection, project assignment and deletion never appear only on hover. */
+.exp-item { padding-right: 122px; }
 .exp-item-actions {
     position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
     display: flex; align-items: center; gap: 5px;
@@ -454,6 +454,13 @@
     border: 1px solid var(--background-modifier-border); color: var(--text-muted);
 }
 .exp-item-actions .exp-item-del-btn:hover { color: #e53935; border-color: rgba(220,50,50,.45); }
+.exp-item-project-assign-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 40px; height: 27px; padding: 0 6px; border-radius: 6px;
+    border: 1px solid var(--background-modifier-border); background: var(--background-primary);
+    color: var(--text-muted); font-size: 11px; white-space: nowrap;
+}
+.exp-item-project-assign-btn:hover { color: var(--interactive-accent); border-color: var(--interactive-accent); }
 
 /* ── 删除确认弹窗 ── */
 .exp-del-modal-overlay {
@@ -17528,8 +17535,73 @@ body.scholarium-resizing-sidebar {
 body.scholarium-alt-held [data-sch-anchor]:hover { outline: 1px dashed var(--interactive-accent, #7b6cd9); outline-offset: 2px; cursor: copy; }
 /* SCHOLARIUM_BOARD_SECTIONS_CSS_END */
 
+
+/* SCHOLARIUM_LITERATURE_MATRIX_STYLES */
+.sch-literature-matrix { padding: 16px; min-width: 0; border: 1px solid var(--background-modifier-border); border-radius: 10px; }
+.sch-matrix-heading, .sch-matrix-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.sch-matrix-heading { justify-content: space-between; }
+.sch-matrix-heading h3 { margin: 0; }
+.sch-matrix-info { color: var(--text-muted); font-size: 12px; margin: 8px 0; }
+.sch-matrix-toolbar input { flex: 1 1 240px; min-width: 180px; }
+.sch-matrix-stats { display: grid; grid-template-columns: repeat(5, minmax(75px, 1fr)); gap: 10px; margin: 16px 0; }
+.sch-matrix-stat { display: flex; flex-direction: column; padding: 14px; border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-secondary); gap: 6px; }
+.sch-matrix-stat small { color: var(--text-muted); }
+.sch-matrix-stat strong { font-size: 24px; color: var(--text-normal); }
+.sch-matrix-scroll { max-width: 100%; max-height: 65vh; overflow: auto; border: 1px solid var(--background-modifier-border); border-radius: 8px; margin-bottom: 12px; }
+.sch-matrix-table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; table-layout: fixed; }
+.sch-matrix-table th { position: sticky; top: 0; z-index: 2; background: var(--background-secondary); text-align: left; white-space: nowrap; }
+.sch-matrix-table th button { background: transparent; border: 0; box-shadow: none; padding: 0; font-weight: 600; color: var(--text-normal); }
+.sch-matrix-table th, .sch-matrix-table td { padding: 12px; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); min-width: 120px; max-width: 320px; vertical-align: top; overflow-wrap: anywhere; }
+.sch-matrix-table .sch-matrix-title { position: sticky; left: 0; z-index: 1; min-width: 280px; max-width: 320px; background: var(--background-primary); }
+.sch-matrix-title a { cursor: pointer; font-weight: 600; }
+.sch-matrix-title small { display: block; color: var(--text-muted); margin-top: 8px; }
+.sch-matrix-table th:first-child { left: 0; z-index: 3; min-width: 280px; }
+.sch-matrix-table .sch-matrix-summary { min-width: 240px; max-width: 360px; white-space: pre-wrap; line-height: 1.6; }
+.sch-matrix-table .sch-matrix-actions { min-width: 160px; }
+.sch-matrix-actions button { margin: 0 4px 5px 0; font-size: 12px; }
+@media (max-width: 650px) { .sch-matrix-stats { grid-template-columns: repeat(3, 1fr); } .sch-literature-matrix { padding: 10px; } }
+
+/* SCHOLARIUM_PIPELINE_BATCH_STYLES_BEGIN */
+.sch-download-batches { border: 1px solid var(--background-modifier-border); border-radius: 10px; padding: 14px; }
+.sch-download-batches h3 { margin: 0 0 14px; }
+.sch-doi-form, .sch-download-batch { border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-primary); margin: 12px 0; padding: 12px; }
+.sch-doi-form > summary, .sch-download-batch > summary { cursor: pointer; padding: 4px 0; }
+.sch-download-batch > summary strong { margin-right: 16px; }
+.sch-download-batch > summary span, .sch-download-batch > summary small { color: var(--text-muted); font-size: 12px; margin-right: 10px; }
+.sch-doi-form input, .sch-doi-form textarea { display: block; width: 100%; margin: 10px 0; }
+.sch-doi-form textarea { min-height: 130px; resize: vertical; }
+.sch-batch-muted, .sch-doi-form > small { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.sch-batch-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.sch-batch-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; border-top: 1px solid var(--background-modifier-border); padding: 14px 0; }
+.sch-batch-item small { display: block; color: var(--text-muted); margin-top: 5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sch-batch-links { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; font-size: 12px; }
+.sch-batch-completed { margin: 12px 0; color: var(--text-muted); font-size: 12px; }
+.sch-batch-completed summary { cursor: pointer; }
+.sch-batch-completed-row { display: flex; gap: 10px; justify-content: space-between; align-items: center; padding: 6px 0; }
+@media (max-width: 650px) { .sch-batch-item { grid-template-columns: 1fr; } .sch-download-batch > summary span { display: block; margin: 8px 0; } }
+/* SCHOLARIUM_PIPELINE_BATCH_STYLES_END */
+
+/* SCHOLARIUM_MATRIX_AGENT_STYLES_BEGIN */
+.sch-matrix-job { margin: 10px 0; padding: 12px; border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-secondary); }
+.sch-matrix-job > summary { cursor: pointer; font-weight: 600; }
+.sch-matrix-title > input[type=checkbox] { margin: 0 8px 6px 0; vertical-align: middle; }
+.sch-matrix-job p { overflow-wrap: anywhere; }
+/* SCHOLARIUM_MATRIX_AGENT_STYLES_END */
+
+.sch-matrix-table th { position: sticky; }
+.sch-matrix-resize { position: absolute; top: 0; right: -4px; width: 9px; height: 100%; cursor: col-resize; z-index: 5; touch-action: none; }
+.sch-matrix-resize:hover { background: var(--interactive-accent); opacity: .5; }
+
+.sch-summary-preview { position:relative; overflow:hidden; min-height:60px; }
+.sch-summary-preview.is-overflowing:after { content:""; position:absolute; pointer-events:none; left:0; right:0; bottom:0; height:45px; background:linear-gradient(transparent,var(--background-primary)); }
+.sch-summary-height-grip { height:12px; cursor:ns-resize; touch-action:none; border-bottom:2px solid var(--background-modifier-border); }
+.sch-summary-height-grip:hover { border-color:var(--interactive-accent); }
+
+.sch-matrix-table th,.sch-matrix-table td,.sch-matrix-table .sch-matrix-title,.sch-matrix-table .sch-matrix-summary,.sch-matrix-table .sch-matrix-actions,.sch-matrix-table th:first-child { min-width:0; max-width:none; }
+.sch-matrix-table { table-layout:fixed; }
+
 /* SCHOLARIUM_NATIVE_WEAVER_STYLES_BEGIN */
-/* scholarium-weaver-source@61865c5f392db5de80b6813620e584d7576de88a; generated by tools/embed-native-weaver.js */
+/* scholarium-v2-source@818fe7b62667fed76d5f1c8db35d38709302da63; generated by tools/embed-native-weaver.js */
 /*
  * 织研者 — the native research workbench, in the Nocturne look.
  *
@@ -19690,439 +19762,6 @@ body.scholarium-alt-held [data-sch-anchor]:hover { outline: 1px dashed var(--int
   }
 }
 
-/* ------------------------------------- the same layouts, by the page's width --- */
-
-/* In Obsidian's side panel the window is wide but the page is narrow, so the
- * page also sets data-width on its root from its own width (ResizeObserver)
- * and these rules repeat the two breakpoints above against it. */
-.scholarium-v2dev .scholarium-weaver[data-width="medium"] {
-    --sw-left: 230px;
-    --sw-right: 320px;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="medium"] .scholarium-weaver__brand-product,
-.scholarium-v2dev .scholarium-weaver[data-width="medium"] .scholarium-weaver__brand-sep,
-.scholarium-v2dev .scholarium-weaver[data-width="medium"] .scholarium-weaver__brand-kicker,
-.scholarium-v2dev .scholarium-weaver[data-width="medium"] .scholarium-weaver__agent-label,
-.scholarium-v2dev .scholarium-weaver[data-width="medium"] .scholarium-weaver__context-kind {
-    display: none;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="medium"] .scholarium-weaver__search {
-    width: 130px;
-    flex-basis: 130px;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="medium"] .scholarium-weaver__message.is-user {
-    max-width: 88%;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] {
-    --sw-left: 230px;
-    --sw-right: 320px;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__brand-product,
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__brand-sep,
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__brand-kicker,
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__agent-label,
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__context-kind {
-    display: none;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__search {
-    width: 130px;
-    flex-basis: 130px;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__message.is-user {
-    max-width: 88%;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__workspace {
-    grid-template-columns: minmax(0, 1fr);
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__mobile-toggle {
-    display: inline-flex !important;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__context-summary,
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__agent,
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__badge {
-    display: none;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__left,
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__right {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    z-index: 3;
-    width: min(88%, 360px);
-    max-width: min(88%, 360px);
-    box-shadow: var(--sw-shadow-md);
-    background: var(--sw-bg);
-    transition: transform 160ms ease;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__left {
-    left: 0;
-    transform: translateX(-105%);
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__right {
-    right: 0;
-    transform: translateX(105%);
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"][data-drawer="left"] .scholarium-weaver__left,
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"][data-drawer="right"] .scholarium-weaver__right {
-    transform: none;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"][data-drawer="left"] .scholarium-weaver__scrim,
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"][data-drawer="right"] .scholarium-weaver__scrim {
-    display: block;
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    background: rgba(10, 11, 20, 0.45);
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__conversation-header {
-    padding-left: 14px;
-    padding-right: 14px;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__messages {
-    padding-left: 14px;
-    padding-right: 14px;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__composer {
-    padding-left: 14px;
-    padding-right: 14px;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__message.is-user {
-    max-width: 94%;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-width="narrow"] .scholarium-weaver__card {
-    margin-left: 0;
-}
-
-/* Sidebar layout (Obsidian side panel): one column, tabs + 历史记录 + / commands. */
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] {
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  overflow-x: hidden;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__workspace {
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  grid-template-columns: minmax(0, 1fr);
-  overflow-x: hidden;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__center,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__history,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__messages,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__composer,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__composer-row,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__side-bar,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__active-note {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__center,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__history,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__messages,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__composer {
-  overflow-x: hidden;
-}
-
-/* History and slash popovers are absolutely positioned above the composer.
- * Clipping this parent also clips the popovers to the input box's height. The
- * center/workspace still constrain them to the sidebar's width and height. */
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__composer {
-  overflow: visible;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__message,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__message-body,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__text,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__md {
-  max-width: 100%;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__input {
-  flex: 1 1 0;
-  box-sizing: border-box;
-  width: 0;
-  max-width: 100%;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__left,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__mobile-toggle.is-left,
-.scholarium-v2dev .scholarium-weaver[data-layout="sidebar"] .scholarium-weaver__conversation-tools {
-  display: none !important;
-}
-
-.scholarium-v2dev .scholarium-weaver__side-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.scholarium-v2dev .scholarium-weaver__side-tabs {
-  display: flex;
-  flex: 1 1 auto;
-  gap: 4px;
-  min-width: 0;
-  overflow-x: auto;
-}
-
-.scholarium-v2dev .scholarium-weaver__side-tab,
-.scholarium-v2dev .scholarium-weaver__side-action {
-  min-width: 26px;
-  height: 26px;
-  padding: 0 7px;
-  border: 1px solid var(--sw-divider);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--sw-muted);
-  font-size: 12px;
-  line-height: 24px;
-  cursor: pointer;
-  box-shadow: none;
-}
-
-.scholarium-v2dev .scholarium-weaver__side-tab.is-active {
-  border-color: var(--sw-accent);
-  color: var(--sw-text);
-}
-
-.scholarium-v2dev .scholarium-weaver__side-actions {
-  display: flex;
-  gap: 4px;
-  flex: 0 0 auto;
-}
-
-.scholarium-v2dev .scholarium-weaver__history-panel,
-.scholarium-v2dev .scholarium-weaver__slash-menu {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: calc(100% - 6px);
-  z-index: 5;
-  max-height: 60vh;
-  overflow-y: auto;
-  border: 1px solid var(--sw-divider);
-  border-radius: var(--sw-radius);
-  background: var(--sw-surface);
-  box-shadow: var(--sw-shadow-md);
-  padding: 6px;
-}
-
-.scholarium-v2dev .scholarium-weaver__history-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 2px 6px;
-  border-bottom: 1px solid var(--sw-divider);
-  margin-bottom: 4px;
-}
-
-.scholarium-v2dev .scholarium-weaver__history-title {
-  font-weight: 600;
-  font-size: 12px;
-  color: var(--sw-text);
-  white-space: nowrap;
-}
-
-.scholarium-v2dev .scholarium-weaver__history-search {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 24px;
-  font-size: 12px;
-}
-
-.scholarium-v2dev .scholarium-weaver__history-close {
-  padding: 0 6px;
-  background: transparent;
-  box-shadow: none;
-}
-
-.scholarium-v2dev .scholarium-weaver__history-row {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  border-radius: 6px;
-}
-
-.scholarium-v2dev .scholarium-weaver__history-row.is-open {
-  background: var(--sw-accent-soft);
-}
-
-.scholarium-v2dev .scholarium-weaver__history-open {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 48px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 1px;
-  padding: 5px 6px;
-  height: auto !important;
-  overflow: visible;
-  white-space: normal;
-  background: transparent;
-  box-shadow: none;
-  text-align: left;
-}
-
-.scholarium-v2dev .scholarium-weaver__history-name {
-  display: -webkit-box;
-  width: 100%;
-  max-width: 100%;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  color: var(--sw-text);
-  font-size: 12.5px;
-  line-height: 1.35;
-}
-
-.scholarium-v2dev .scholarium-weaver__history-meta,
-.scholarium-v2dev .scholarium-weaver__history-group {
-  font-size: 11px;
-  color: var(--sw-faint);
-}
-
-.scholarium-v2dev .scholarium-weaver__history-meta {
-  line-height: 1.3;
-  white-space: nowrap;
-}
-
-.scholarium-v2dev .scholarium-weaver__history-group {
-  padding: 8px 6px 2px;
-}
-
-.scholarium-v2dev .scholarium-weaver__history-act {
-  flex: 0 0 auto;
-  align-self: center;
-  padding: 2px 5px;
-  background: transparent;
-  box-shadow: none;
-  font-size: 12px;
-  opacity: 0.55;
-}
-
-.scholarium-v2dev .scholarium-weaver__history-row:hover .scholarium-weaver__history-act {
-  opacity: 1;
-}
-
-.scholarium-v2dev .scholarium-weaver__history-act.is-danger:hover {
-  color: var(--sw-error);
-}
-
-.scholarium-v2dev .scholarium-weaver__history-rename {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 26px;
-  font-size: 12.5px;
-}
-
-.scholarium-v2dev .scholarium-weaver__slash-item {
-  display: flex;
-  width: 100%;
-  gap: 10px;
-  align-items: baseline;
-  padding: 5px 8px;
-  height: auto;
-  background: transparent;
-  box-shadow: none;
-  text-align: left;
-}
-
-.scholarium-v2dev .scholarium-weaver__slash-item:hover {
-  background: var(--sw-accent-soft);
-}
-
-.scholarium-v2dev .scholarium-weaver__slash-name {
-  font-family: var(--font-monospace, monospace);
-  font-size: 12px;
-  color: var(--sw-text);
-  white-space: nowrap;
-}
-
-.scholarium-v2dev .scholarium-weaver__slash-hint {
-  font-size: 11.5px;
-  color: var(--sw-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Sidebar: the note being read, above the composer. */
-.scholarium-v2dev .scholarium-weaver__active-note {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-  padding: 4px 8px;
-  border: 1px solid var(--sw-divider);
-  border-radius: var(--sw-radius);
-  font-size: 12px;
-  color: var(--sw-muted);
-  min-width: 0;
-}
-
-.scholarium-v2dev .scholarium-weaver__active-note-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--sw-text);
-}
-
-.scholarium-v2dev .scholarium-weaver__active-note[data-empty="true"] .scholarium-weaver__active-note-name {
-  color: var(--sw-faint);
-}
-
-.scholarium-v2dev .scholarium-weaver__active-note-attach {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.scholarium-v2dev .scholarium-weaver__active-note-cite {
-  padding: 2px 8px;
-  font-size: 12px;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .scholarium-v2dev .scholarium-weaver *,
   .scholarium-v2dev .scholarium-weaver *::before {
@@ -20383,30 +20022,6 @@ body.scholarium-alt-held [data-sch-anchor]:hover { outline: 1px dashed var(--int
   font-weight: 600;
   color: var(--sw-muted);
   letter-spacing: 0.02em;
-}
-
-/* 织研者设置：模型与 1M 上下文。 */
-.scholarium-weaver-modal .scholarium-weaver-modal__model {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 2px 0 8px;
-}
-
-.scholarium-weaver-modal .scholarium-weaver-modal__model [data-role="model-custom"] {
-  grid-column: 2;
-}
-
-.scholarium-weaver-modal .scholarium-weaver-modal__check {
-  padding-left: 122px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.scholarium-weaver-modal .scholarium-weaver-modal__check .scholarium-weaver-modal__hint {
-  flex-basis: 100%;
 }
 
 /* 设置中心：可折叠的分节（点标题展开 / 折叠）。 */
@@ -21155,141 +20770,4 @@ body.scholarium-alt-held [data-sch-anchor]:hover { outline: 1px dashed var(--int
   border-radius: 4px;
   cursor: zoom-in;
 }
-
-/* 织研者设置：联网与其他 Agent 的只读接入。 */
-.scholarium-weaver-modal .scholarium-weaver-modal__access .scholarium-weaver-modal__group {
-  font-weight: 600;
-  margin-top: 6px;
-}
-
-.scholarium-weaver-modal .scholarium-weaver-modal__agents {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.scholarium-weaver-modal .scholarium-weaver-modal__agent {
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-start;
-}
-
-.scholarium-weaver-modal .scholarium-weaver-modal__agent-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: baseline;
-}
-
-/* 织研者设置：每一节都可以折叠。 */
-.scholarium-weaver-modal details.scholarium-weaver-modal__fold {
-  border-top: 1px solid var(--background-modifier-border);
-  padding: 2px 0;
-}
-
-.scholarium-weaver-modal details.scholarium-weaver-modal__fold > summary {
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-  padding: 6px 0;
-  margin-top: 0;
-}
-
-.scholarium-weaver-modal details.scholarium-weaver-modal__fold > summary::-webkit-details-marker { display: none; }
-
-.scholarium-weaver-modal details.scholarium-weaver-modal__fold > summary::before {
-  content: "▸";
-  display: inline-block;
-  width: 1.1em;
-  transition: transform 0.15s ease;
-}
-
-.scholarium-weaver-modal details.scholarium-weaver-modal__fold[open] > summary::before {
-  transform: rotate(90deg);
-}
-
-.scholarium-weaver-modal .scholarium-weaver-modal__fold-body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-bottom: 6px;
-}
-
-.scholarium-weaver-modal .scholarium-weaver-modal__agent-actions {
-  display: inline-flex;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.scholarium-weaver-modal .scholarium-weaver-modal__agent-head {
-  width: 100%;
-}
 /* SCHOLARIUM_NATIVE_WEAVER_STYLES_END */
-
-/* SCHOLARIUM_LITERATURE_MATRIX_STYLES */
-.sch-literature-matrix { padding: 16px; min-width: 0; border: 1px solid var(--background-modifier-border); border-radius: 10px; }
-.sch-matrix-heading, .sch-matrix-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.sch-matrix-heading { justify-content: space-between; }
-.sch-matrix-heading h3 { margin: 0; }
-.sch-matrix-info { color: var(--text-muted); font-size: 12px; margin: 8px 0; }
-.sch-matrix-toolbar input { flex: 1 1 240px; min-width: 180px; }
-.sch-matrix-stats { display: grid; grid-template-columns: repeat(5, minmax(75px, 1fr)); gap: 10px; margin: 16px 0; }
-.sch-matrix-stat { display: flex; flex-direction: column; padding: 14px; border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-secondary); gap: 6px; }
-.sch-matrix-stat small { color: var(--text-muted); }
-.sch-matrix-stat strong { font-size: 24px; color: var(--text-normal); }
-.sch-matrix-scroll { max-width: 100%; max-height: 65vh; overflow: auto; border: 1px solid var(--background-modifier-border); border-radius: 8px; margin-bottom: 12px; }
-.sch-matrix-table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; table-layout: fixed; }
-.sch-matrix-table th { position: sticky; top: 0; z-index: 2; background: var(--background-secondary); text-align: left; white-space: nowrap; }
-.sch-matrix-table th button { background: transparent; border: 0; box-shadow: none; padding: 0; font-weight: 600; color: var(--text-normal); }
-.sch-matrix-table th, .sch-matrix-table td { padding: 12px; border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); min-width: 120px; max-width: 320px; vertical-align: top; overflow-wrap: anywhere; }
-.sch-matrix-table .sch-matrix-title { position: sticky; left: 0; z-index: 1; min-width: 280px; max-width: 320px; background: var(--background-primary); }
-.sch-matrix-title a { cursor: pointer; font-weight: 600; }
-.sch-matrix-title small { display: block; color: var(--text-muted); margin-top: 8px; }
-.sch-matrix-table th:first-child { left: 0; z-index: 3; min-width: 280px; }
-.sch-matrix-table .sch-matrix-summary { min-width: 240px; max-width: 360px; white-space: pre-wrap; line-height: 1.6; }
-.sch-matrix-table .sch-matrix-actions { min-width: 160px; }
-.sch-matrix-actions button { margin: 0 4px 5px 0; font-size: 12px; }
-@media (max-width: 650px) { .sch-matrix-stats { grid-template-columns: repeat(3, 1fr); } .sch-literature-matrix { padding: 10px; } }
-
-/* SCHOLARIUM_PIPELINE_BATCH_STYLES_BEGIN */
-.sch-download-batches { border: 1px solid var(--background-modifier-border); border-radius: 10px; padding: 14px; }
-.sch-download-batches h3 { margin: 0 0 14px; }
-.sch-doi-form, .sch-download-batch { border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-primary); margin: 12px 0; padding: 12px; }
-.sch-doi-form > summary, .sch-download-batch > summary { cursor: pointer; padding: 4px 0; }
-.sch-download-batch > summary strong { margin-right: 16px; }
-.sch-download-batch > summary span, .sch-download-batch > summary small { color: var(--text-muted); font-size: 12px; margin-right: 10px; }
-.sch-doi-form input, .sch-doi-form textarea { display: block; width: 100%; margin: 10px 0; }
-.sch-doi-form textarea { min-height: 130px; resize: vertical; }
-.sch-batch-muted, .sch-doi-form > small { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
-.sch-batch-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-.sch-batch-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; border-top: 1px solid var(--background-modifier-border); padding: 14px 0; }
-.sch-batch-item small { display: block; color: var(--text-muted); margin-top: 5px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.sch-batch-links { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; font-size: 12px; }
-.sch-batch-completed { margin: 12px 0; color: var(--text-muted); font-size: 12px; }
-.sch-batch-completed summary { cursor: pointer; }
-.sch-batch-completed-row { display: flex; gap: 10px; justify-content: space-between; align-items: center; padding: 6px 0; }
-@media (max-width: 650px) { .sch-batch-item { grid-template-columns: 1fr; } .sch-download-batch > summary span { display: block; margin: 8px 0; } }
-/* SCHOLARIUM_PIPELINE_BATCH_STYLES_END */
-
-/* SCHOLARIUM_MATRIX_AGENT_STYLES_BEGIN */
-.sch-matrix-job { margin: 10px 0; padding: 12px; border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-secondary); }
-.sch-matrix-job > summary { cursor: pointer; font-weight: 600; }
-.sch-matrix-title > input[type=checkbox] { margin: 0 8px 6px 0; vertical-align: middle; }
-.sch-matrix-job p { overflow-wrap: anywhere; }
-/* SCHOLARIUM_MATRIX_AGENT_STYLES_END */
-
-.sch-matrix-table th { position: sticky; }
-.sch-matrix-resize { position: absolute; top: 0; right: -4px; width: 9px; height: 100%; cursor: col-resize; z-index: 5; touch-action: none; }
-.sch-matrix-resize:hover { background: var(--interactive-accent); opacity: .5; }
-
-.sch-summary-preview { position:relative; overflow:hidden; min-height:60px; }
-.sch-summary-preview.is-overflowing:after { content:""; position:absolute; pointer-events:none; left:0; right:0; bottom:0; height:45px; background:linear-gradient(transparent,var(--background-primary)); }
-.sch-summary-height-grip { height:12px; cursor:ns-resize; touch-action:none; border-bottom:2px solid var(--background-modifier-border); }
-.sch-summary-height-grip:hover { border-color:var(--interactive-accent); }
-
-.sch-matrix-table th,.sch-matrix-table td,.sch-matrix-table .sch-matrix-title,.sch-matrix-table .sch-matrix-summary,.sch-matrix-table .sch-matrix-actions,.sch-matrix-table th:first-child { min-width:0; max-width:none; }
-.sch-matrix-table { table-layout:fixed; }

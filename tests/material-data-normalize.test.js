@@ -165,7 +165,7 @@ describe("Material Library structural data normalization", () => {
 
   it("keeps non-previewable material identities visible and TIFF outside Chromium preview", () => {
     assert.match(bundle, /function schMaterialIsTiff\(item\)/);
-    assert.match(bundle, /!schMaterialIsTiff\(e\)/);
+    assert.match(bundle, /!schMaterialIsTiff\(\w+\)/);
     assert.match(bundle, /openWithDefaultApp/);
     assert.match(bundle, /用系统默认程序打开 TIFF/);
     assert.match(bundle, /cls:\s*"mat-card-file-name"/);

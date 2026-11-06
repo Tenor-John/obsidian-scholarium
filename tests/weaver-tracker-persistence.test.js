@@ -12,7 +12,7 @@ describe("织研者执行追踪器跨页面持久化", () => {
     assert.match(renderPatch, /__scholariumLegacyHost/);
     assert.match(renderPatch, /__scholariumWeaverHost/);
     assert.match(renderPatch, /this\.contentEl = legacyHost/);
-    assert.match(renderPatch, /finally \{ this\.contentEl = realContent; \}/);
+    assert.match(renderPatch, /finally\s*\{\s*this\.contentEl = realContent;\s*\}/);
     assert.match(renderPatch, /this\.__weaverFrame && this\.__weaverFrame\.isConnected/);
     assert.noMatch(renderPatch, /if \(this\.activePanel !== "deduction"\)\s*return originalRender/);
   });

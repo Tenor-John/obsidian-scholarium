@@ -1,6 +1,7 @@
 import esbuild from "esbuild";
 import process from "process";
 import { builtinModules } from "node:module";
+import { staticDependencyPlugin } from "./scripts/esbuild-static-dependencies.mjs";
 
 const banner =
 `/*
@@ -16,6 +17,7 @@ const common = {
 		js: banner,
 	},
 	bundle: true,
+	plugins: [staticDependencyPlugin],
 	external: [
 		"obsidian",
 		"electron",
@@ -31,20 +33,30 @@ const common = {
 		"@lezer/highlight",
 		"@lezer/lr",
 		...builtinModules,
+		...builtinModules.map((name) => `node:${name}`),
 	],
 	format: "cjs",
 	target: "es2018",
+	charset: "utf8",
 	logLevel: "info",
 	loader: {
-		".css": "empty",
-		".less": "empty",
+		// Ketcher's stylesheet is embedded as text and installed by its runtime
+		// module. No additional release assets or runtime style requests are needed.
+		".css": "text",
+		".less": "text",
+	},
+	alias: {
+		// The full paper package includes PaperScript's runtime compiler. Ketcher
+		// only needs paper-core; this removes the compiler instead of disguising it.
+		paper: "paper/dist/paper-core.js",
 	},
 	define: {
 		"process.env.NODE_ENV": prod ? '"production"' : '"development"',
+		global: "globalThis",
 	},
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
-	minify: prod,
+	minify: false,
 };
 
 const mainContext = await esbuild.context({

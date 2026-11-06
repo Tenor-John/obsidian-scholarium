@@ -1,6 +1,6 @@
 "use strict";
 
-const { source, sandbox, describe, it, assert } = require("./harness");
+const { source, block, sandbox, describe, it, assert } = require("./harness");
 
 const S = sandbox({
   methods: {
@@ -31,15 +31,11 @@ describe("织研者线程与模式隔离", () => {
   });
 
   it("persists before switching modes or topics, then resets the in-memory thread", () => {
-    const src = source();
-    const dialogue = src.slice(
-      src.indexOf("async renderDialogue(t, e, s) {"),
-      src.indexOf("  renderDraft(t) {"),
-    );
+    const dialogue = block("renderDialogue(t, e, s) {");
     assert.match(dialogue, /deduction-new-topic/);
     assert.match(dialogue, /await this\.persistHistory\(e\)/);
     assert.match(dialogue, /this\.formalTopicId = this\.newDialogueTopic\("formal"\)/);
-    assert.match(dialogue, /this\.unboundFormal = !0/);
+    assert.match(dialogue, /this\.unboundFormal = true/);
     assert.match(dialogue, /this\.chatTopicId = this\.newDialogueTopic\("chat"\)/);
     assert.noMatch(dialogue, /新话题仅用于普通对话/);
     assert.match(dialogue, /this\.historyProjectId = null/);
@@ -47,84 +43,64 @@ describe("织研者线程与模式隔离", () => {
   });
 
   it("keeps ordinary chat out of the formal protocol and persists it separately", () => {
-    const src = source();
-    const chat = src.slice(
-      src.indexOf("async runChatOnly(t, e, s, i) {"),
-      src.indexOf("  async runTheory(t, e, s, i, fm) {"),
-    );
+    const chat = block("runChatOnly(t, e, s, i) {");
     assert.noMatch(chat, /getCompactedHistory/);
     assert.noMatch(chat, /evidence_requests/);
-    assert.match(chat, /chat: !0/);
+    assert.match(chat, /chat: true/);
     assert.match(chat, /await this\.persistHistory\(t\)/);
   });
 
   it("treats an inline formal-mode request as a real thread transition", () => {
-    const src = source();
-    const dialogue = src.slice(
-      src.indexOf("async renderDialogue(t, e, s) {"),
-      src.indexOf("  renderDraft(t) {"),
-    );
-    const activation = src.slice(
-      src.indexOf("async activateFormalThread(t) {"),
-      src.indexOf("  async runTheory(t, e, s, i, fm) {"),
-    );
-    assert.match(dialogue, /__go && this\.formalMode !== !0/);
+    const dialogue = block("renderDialogue(t, e, s) {");
+    const activation = block("activateFormalThread(t) {");
+    assert.match(dialogue, /__go && this\.formalMode !== true/);
     assert.match(dialogue, /await this\.activateFormalThread\(e\)/);
     assert.match(activation, /await this\.persistHistory\(t\)/);
-    assert.match(activation, /this\.formalMode = !0/);
+    assert.match(activation, /this\.formalMode = true/);
     assert.match(activation, /await this\.restoreFormalTopic\(t\)/);
     assert.match(activation, /await this\.loadPersistedHistory\(t\)/);
   });
 
   it("makes unbound formal history a persistent, rotatable topic instead of one shared bucket", () => {
     const src = source();
-    const render = src.slice(
-      src.indexOf("async render(t) {"),
-      src.indexOf("  async context() {"),
-    );
-    const helpers = src.slice(
-      src.indexOf("newDialogueTopic(t) {"),
-      src.indexOf("  softRefresh() {"),
-    );
-    const persistence = src.slice(
-      src.indexOf("async persistHistory(t) {"),
-      src.indexOf("  parseReply(t) {"),
-    );
+    const room = src.indexOf('cls: "deduction-room"');
+    const renderStart = src.lastIndexOf("async render(", room);
+    const renderEnd = src.indexOf("async context(", room);
+    assert.ok(room >= 0 && renderStart >= 0 && renderEnd > renderStart, "deduction render method not found");
+    const render = src.slice(renderStart, renderEnd);
+    const helpers = [
+      block("newDialogueTopic(t) {"),
+      block("ensureFormalTopic() {"),
+      block("restoreActiveFormalTopic(t) {"),
+      block("restoreFormalTopic(t) {"),
+      block("currentDesignKey() {"),
+    ].join("\n");
+    const persistence = block("persistHistory(t) {");
     assert.match(helpers, /activeFormalTopicId/);
     assert.match(helpers, /this\.formalTopicId = this\.newDialogueTopic\("formal"\)/);
     assert.match(helpers, /this\.ensureFormalTopic\(\)/);
     assert.noMatch(helpers, /formal-unassigned/);
-    assert.match(persistence, /p\.activeFormalTopicId = i/);
-    assert.match(src, /!this\.selectedId && !this\.unboundFormal && s\[0\]/);
-    assert.match(render, /await this\.restoreActiveFormalTopic\(e\);[\s\S]*?await this\.designs\(e\)/);
-    assert.match(helpers, /this\.unboundFormal = !0/);
+    assert.match(persistence, /\w+\.activeFormalTopicId = \w+/);
+    assert.match(src, /!this\.selectedId && !this\.unboundFormal && \w+\[0\]/);
+    assert.match(render, /await this\.restoreActiveFormalTopic\(\w+\);[\s\S]*?await this\.designs\(\w+\)/);
+    assert.match(helpers, /this\.unboundFormal = true/);
   });
 
   it("labels a formal answer and constrains compression to the active formal thread", () => {
     const src = source();
-    assert.match(src, /\\u672C\\u8F6E\\u5DF2\\u542F\\u7528\\u5B8C\\u6574\\u534F\\u8BAE/);
-    const compact = src.slice(
-      src.indexOf("async summarizeViaCli(t, e, s) {"),
-      src.indexOf("  currentDesignKey() {"),
-    );
-    assert.match(compact, /\\u540C\\u4E00\\u7EC7\\u7814\\u8005\\u8BBE\\u8BA1\\u7EBF\\u7A0B/);
-    assert.match(compact, /\\u4E0D\\u5F97\\u5F15\\u5165/);
+    assert.match(src, /本轮已启用完整协议/);
+    const compact = block("summarizeViaCli(t, e, s) {");
+    assert.match(compact, /同一织研者设计线程/);
+    assert.match(compact, /不得引入/);
   });
 
   it("derives fallback evidence queries from the current question, not a project goal", () => {
-    const src = source();
-    const fallback = src.slice(
-      src.indexOf("async deriveEvidenceQueryFallback(t, e, s) {"),
-      src.indexOf("  async getCompactedHistory(t) {"),
-    );
+    const fallback = block("deriveEvidenceQueryFallback(t, e, s) {");
     assert.match(fallback, /input: t/);
     assert.match(fallback, /research question[^]*\$\{t\}/);
-    const formal = src.slice(
-      src.indexOf("async runTheoryCli(t, e, s, i) {"),
-      src.indexOf("  async continueCliTurn(t, e, s, i) {"),
-    );
-    assert.match(formal, /deriveEvidenceQueryFallback\(s, a, e\)/);
-    assert.match(formal, /\\u672C\\u8F6E\\u95EE\\u9898\\u63D0\\u53D6/);
-    assert.noMatch(formal, /\\u8BFE\\u9898\\u76EE\\u6807\\u63D0\\u53D6/);
+    const formal = block("runTheoryCli(t, e, s, i) {");
+    assert.match(formal, /deriveEvidenceQueryFallback\(s, \w+, e\)/);
+    assert.match(formal, /本轮问题提取/);
+    assert.noMatch(formal, /课题目标提取/);
   });
 });

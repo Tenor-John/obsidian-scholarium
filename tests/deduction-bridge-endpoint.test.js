@@ -14,16 +14,16 @@ test("[L1] 研究推演室 never talks to the historical fixed Bridge address", 
   assert.doesNotMatch(code(main), /fetch\(`\$\{Md\}/, "no request is built from the retired constant");
 });
 
-test("[L1] both 研究推演室 bridgeFetch paths resolve this Vault's own runtime first", () => {
-  const sites = [...main.matchAll(/bridgeFetch(?: = async function \(path, options = \{\}\)| ?\(t, e = \{\}\)) \{[\s\S]{0,900}?await fetch\(/g)];
-  assert.equal(sites.length, 2, "the class method and the 2.0.9 command-bar override");
+test("[L1] the canonical 研究推演室 bridgeFetch resolves this Vault's own runtime first", () => {
+  const sites = [...main.matchAll(/bridgeFetch(?: = async function)?\s*\([^)]*\) \{[\s\S]{0,900}?await fetch\(/g)];
+  assert.equal(sites.length, 1, "the recovered room has one canonical Bridge path");
   for (const [site] of sites) assert.match(site, /await schDeductionBridgeBase\(this\.host\)/);
 });
 
 test("[L1] the resolver uses the reported canvas port and the shared verified start path", () => {
   const start = main.indexOf("async function schDeductionBridgeBase(host)");
   assert.ok(start > 0);
-  const body = main.slice(start, main.indexOf("let schMaterialBridgeEndpointsCache", start));
+  const body = main.slice(start, main.indexOf("var schMaterialBridgeEndpointsCache", start));
   assert.match(body, /schVaultBridgePorts\(app\)/);
   assert.match(body, /schStartAndWaitLocalRuntime\(plugin, ports, health\)/);
   assert.match(body, /return `http:\/\/127\.0\.0\.1:\$\{ports\.canvasPort\}\/bridge`/);
@@ -31,8 +31,9 @@ test("[L1] the resolver uses the reported canvas port and the shared verified st
 });
 
 test("[L2] a fresh machine: no reported port → start this Vault's runtime, then use the port it reports", async () => {
-  const start = main.indexOf("const schDeductionBridgeChecked = new Map();");
-  const end = main.indexOf("let schMaterialBridgeEndpointsCache", start);
+  const start = main.indexOf("var schDeductionBridgeChecked =");
+  const end = main.indexOf("var schMaterialBridgeEndpointsCache", start);
+  assert.ok(start >= 0 && end > start, "deduction Bridge resolver region must exist");
   const ports = { scope: "vabc", canvasPort: 0, bridgePort: 0 };
   const calls = [];
   const sandbox = new Function("schVaultBridgePorts", "schStartAndWaitLocalRuntime", "fetch", "window",

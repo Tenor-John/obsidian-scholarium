@@ -2,39 +2,34 @@
 
 Scholarium is a local-first research workspace for Obsidian. It combines literature management, AI-assisted research workflows, notes, experiment records, and the Research Weaver panel.
 
-## 3.0.0 artifact-based preview
+## 3.0.1 source-built release candidate
 
-This branch contains a sanitized desktop preview assembled from the installed Scholarium 3.0.0 plugin artifact. It is intended for independent-machine evaluation, not a formal stable release or an Obsidian Community Plugin Directory submission.
+This working branch is a **release candidate, not a published product release**. It reconstructs the installed 3.0.1 functionality in reviewable source and statically bundles the graphical Ketcher editor. It has not been accepted by the Obsidian Community Plugin Directory.
 
-- Plugin version: `3.0.0`
+- Plugin version: `3.0.1`
 - Minimum Obsidian version: `1.10.0`
 - Primary evaluation target: Windows x64 desktop Obsidian
-- Clean installation and the minimum functional workflow are supported by the independent acceptance review
-- Upgrade, rollback, and manual streaming-stop behavior are not covered yet
-- Linux x64 real-machine acceptance remains pending
-- Source-workspace alignment and reproducible source builds are not claimed
+- The candidate supports the standard three-file Obsidian/BRAT installation: `main.js`, `manifest.json`, and `styles.css`
+- No runtime script-element loader or separate Ketcher assets are required
+- Automated source, bundle, and regression checks do not replace real-Obsidian clean-install/upgrade/rollback acceptance
+- Graphical structure creation, editing, and Markdown persistence still require real-Obsidian acceptance
+- A second clean Windows machine and Linux x64 real-machine acceptance remain pending
 
-See [PREVIEW-RELEASE.md](PREVIEW-RELEASE.md) for the fixed package identity, provenance boundary, installation instructions, and release limitations. Use [ACCEPTANCE.md](ACCEPTANCE.md) for the remaining verification checklist.
+The current byte identity and verification boundaries are recorded in [the candidate audit](docs/audits/release-candidate-3.0.1-2026-11-05.md). The older preview records remain historical evidence and do not authorize this candidate.
 
-## Install the fixed preview package
+## Install the candidate for acceptance
 
-Download `release/3.0.0-acceptance/obsidian-scholarium-3.0.0-acceptance.zip` and verify it against the adjacent `SHA256SUMS.txt`. The expected ZIP SHA-256 is:
-
-```text
-217171296d5431d741ae002dd5d34539bcfa7d3fb925a63c686f7528f1cd7a24
-```
-
-Extract exactly `main.js`, `manifest.json`, and `styles.css` into:
+Copy exactly `main.js`, `manifest.json`, and `styles.css` from the same reviewed build into:
 
 ```text
 <vault>/.obsidian/plugins/obsidian-scholarium/
 ```
 
-Restart Obsidian and enable **Scholarium** under Community plugins. Do not delete or replace an existing `data.json`; it contains local settings and may contain credentials. Upgrade and rollback procedures are documented for the remaining tests, not presented as already validated.
+Restart Obsidian and enable **Scholarium** under Community plugins. Use a disposable acceptance Vault, not a research Vault containing irreplaceable data. Do not delete or replace an existing `data.json`; it contains local settings and may contain credentials. Upgrade and rollback procedures remain acceptance tests, not validated release claims.
 
 ## Public-release boundaries
 
-The preview package contains only the three runtime files required by Obsidian. It intentionally excludes:
+The candidate package contains only the three runtime files required by Obsidian. It intentionally excludes:
 
 - personal research vaults, literature, PDFs, notes, and experiment records;
 - `data.json`, API keys, tokens, cookies, and Bridge configuration;
@@ -45,17 +40,15 @@ Optional features may contact external services only when configured or used. Cr
 
 ## Source and development
 
-The repository retains the existing source and test snapshot. The distributed `main.js` is a generated plugin artifact. The source workspace and installed artifact were not hash-identical, and this branch does not claim that the source snapshot reproduces the preview package.
-
-For the existing source snapshot:
+Use the release pipeline below rather than repacking an installed artifact:
 
 ```powershell
-npm install
+npm ci
 npm test
-npm run build
+npm run build:release
 ```
 
-A build produced by these commands must not be substituted for the fixed preview ZIP during its acceptance run. Source alignment is a separate formal-release gate.
+`build:release` type-checks the source, bundles Ketcher and its styles statically, embeds the reviewed runtime assets, checks for dynamic script/code-generation constructs, and validates JavaScript syntax. Candidate hashes are meaningful only for the three files produced together by this command; see the candidate audit for the actual reproducibility result.
 
 Before contributing, review `.gitignore` and ensure no local configuration, Vault content, downloaded literature, browser storage, tokens, or institutional cookies are staged.
 

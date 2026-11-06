@@ -51,7 +51,7 @@ describe("evidence locator: anchor text", () => {
     // locator built here silently stops matching. Fail loudly instead.
     const src = source();
     assert.match(src, /textContent \|\| ""\)\.replace\(\/\\s\+\/g, " "\)\.trim\(\)/);
-    assert.match(src, /schHash\(l\)\.slice\(0, 32\)/);
+    assert.match(src, /schHash\(\w+\)\.slice\(0, 32\)/);
   });
 });
 
@@ -171,17 +171,17 @@ describe("evidence locator: plugin UI contract", () => {
     assert.match(src, /function schOpenEvidenceSelectionReader\(plugin\)/);
     assert.match(src, /function schEvidenceTools\(plugin\)[\s\S]*?const req = require/);
     assert.match(src, /schRuntimeBootstrap\.status\(runtimeRoot\)/);
-    assert.match(src, /path\.join\(runtimeRoot, "versions", runtimeState\.activeVersion, "core"\)/);
-    assert.match(src, /path\.join\(toolsRoot, "evidence-locator\.js"\)/);
-    assert.match(src, /path\.join\(toolsRoot, "hypothesis-store\.js"\)/);
-    assert.match(src, /path\.join\(toolsRoot, "experiment-store\.js"\)/);
+    assert.match(src, /path\d*\.join\(runtimeRoot, "versions", runtimeState\.activeVersion, "core"\)/);
+    assert.match(src, /path\d*\.join\(toolsRoot, "evidence-locator\.js"\)/);
+    assert.match(src, /path\d*\.join\(toolsRoot, "hypothesis-store\.js"\)/);
+    assert.match(src, /path\d*\.join\(toolsRoot, "experiment-store\.js"\)/);
     assert.match(src, /data-sch-anchor/);
     assert.match(src, /document\.createElement\("iframe"\)/);
     assert.match(src, /reader\.srcdoc = html/);
     assert.noMatch(src, /schOpenEvidenceSelectionReader[\s\S]*?reader\.executeJavaScript/);
-    assert.match(src, /tools\.locator\.buildLocator\(archive, value\.anchorId, value\.quote\)/);
-    assert.match(src, /tools\.locator\.createEvidenceFromQuote\(archive, \{/);
-    assert.match(src, /tools\.hypotheses\.saveObject\(tools\.vault, evidence\)/);
+    assert.match(src, /tools\d*\.locator\.buildLocator\((\w+), (\w+)\.anchorId, \2\.quote\)/);
+    assert.match(src, /tools\d*\.locator\.createEvidenceFromQuote\(\w+, \{/);
+    assert.match(src, /tools\d*\.hypotheses\.saveObject\(tools\d*\.vault, \w+\)/);
   });
 
   it("provides commands for hypotheses, experiments and both evidence sources", () => {
@@ -195,7 +195,7 @@ describe("evidence locator: plugin UI contract", () => {
     assert.match(src, /function schOpenEvidenceReviewer\(plugin\)/);
     const reviewer = src.slice(src.indexOf("function schOpenEvidenceReviewer(plugin)"), src.indexOf("function schOpenEvidenceProposalFinder(plugin)"));
     assert.ok(!/tests_hypotheses/.test(reviewer), "evidence reviewer must not reference Experiment-only tests_hypotheses");
-    assert.match(reviewer, /quote\.value = o\.quote/);
+    assert.match(reviewer, /quote\.value = \w+\.quote/);
     // The remaining assertions in this legacy integration test use display text
     // encoded for an older bundle. Functional UI contracts are covered by the
     // dedicated reviewer and experiment workflow tests above.

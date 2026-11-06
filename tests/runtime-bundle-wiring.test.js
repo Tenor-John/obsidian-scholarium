@@ -56,7 +56,7 @@ test("[L1] Weaver and Material Library share the verified runtime start path", (
   assert.match(mount, /schStartAndWaitLocalRuntime\(view\.plugin, ports/);
   assert.doesNotMatch(mount, /spawn\("node"/);
 
-  const bridge = between(main, "async function schMaterialBridgeJson", "const SCH_MATERIAL_DEFAULT_SKILLS");
+  const bridge = between(main, "async function schMaterialBridgeJson", "var SCH_MATERIAL_DEFAULT_SKILLS");
   assert.match(bridge, /schStartAndWaitLocalRuntime\(plugin, ports, health\)/);
   assert.match(bridge, /__schRuntimeRetried/);
   assert.match(bridge, /schMaterialBridgeEndpointsCache\.delete\(ports\.scope\)/);
@@ -67,23 +67,23 @@ test("[L1] Weaver and Material Library share the verified runtime start path", (
 });
 
 test("[L1] plugin-side canonical tools load only from the verified core", () => {
-  const loader = between(main, "function schEvidenceTools", "// State changes are explicit");
+  const loader = between(main, "function schEvidenceTools", "// src/ai-chat-modal.ts");
   assert.match(loader, /schRuntimeBootstrap\.status\(runtimeRoot\)/);
   assert.match(loader, /runtimeState\.activeVersion !== SCH_RUNTIME_RELEASE\.version/);
-  assert.match(loader, /path\.join\(runtimeRoot, "versions", runtimeState\.activeVersion, "core"\)/);
-  assert.match(loader, /path\.join\(toolsRoot, "experiment-store\.js"\)/);
-  assert.match(loader, /path\.join\(toolsRoot, "legacy-experiment-adapter\.js"\)/);
+  assert.match(loader, /path\d*\.join\(runtimeRoot, "versions", runtimeState\.activeVersion, "core"\)/);
+  assert.match(loader, /path\d*\.join\(toolsRoot, "experiment-store\.js"\)/);
+  assert.match(loader, /path\d*\.join\(toolsRoot, "legacy-experiment-adapter\.js"\)/);
   assert.doesNotMatch(loader, /plugin\.manifest\.id|configDir|\.obsidian/,
     "three-file installs must not require unshipped plugin-directory tools");
 
-  const onload = between(main, "const schScholariumBridgeOnload", "/* Material Library -> Research Weaver plotting bridge");
+  const onload = between(main, "const schScholariumBridgeOnload", "// src/persistent-dashboard-host.ts");
   assert.match(onload, /this\.__schRuntimeReadyPromise = this\.__schEnsureRuntime\(\)/);
 });
 
 test("[L1] Material Library runtime endpoint caches are isolated per Vault", () => {
   const cache = between(
     main,
-    "let schMaterialBridgeEndpointsCache = new Map();",
+    "var schMaterialBridgeEndpointsCache =",
     "async function schMaterialBridgeJson",
   );
   assert.match(cache, /const cacheKey = schRuntimeScope\(plugin\.app\)/);
@@ -96,7 +96,7 @@ test("[L1] Material Library runtime endpoint caches are isolated per Vault", () 
 });
 
 test("[L1] plugin unload owns the runtime process tree", () => {
-  const onload = between(main, "const schScholariumBridgeOnload", "/* Material Library -> Research Weaver plotting bridge");
+  const onload = between(main, "const schScholariumBridgeOnload", "// src/persistent-dashboard-host.ts");
   assert.match(onload, /this\.register\(\(\) => schStopLocalRuntime\(schRuntimeScope\(this\.app\)\)\)/);
   assert.match(main, /stdio: \["ignore", "pipe", "pipe", "ipc"\]/);
   assert.match(main, /child\.send\(\{ type: "shutdown", reason: "plugin-unload" \}\)/);
@@ -114,16 +114,14 @@ test("[L1] the three-file plugin embeds the reviewed logo without an unshipped a
   assert.match(plotter, /src: SCHOLARIUM_LOGO_DATA_URL/);
 });
 
-test("[L1] Ketcher is loaded from the verified runtime instead of the three-file plugin directory", () => {
-  const loader = between(main, "async function schEnsureKetcherStyle", "async function schBlobToText");
-  assert.match(loader, /schStartAndWaitLocalRuntime\(o, t, e\)/);
-  assert.match(loader, /runtime-assets\/ketcher\//);
-  assert.match(loader, /fetch\(e, \{ cache: "no-store" \}\)/);
-  assert.doesNotMatch(loader, /vault\.adapter\.read/);
-  assert.doesNotMatch(loader, /manifest\.dir/);
-
-  const spawn = between(main, "async function schSpawnLocalRuntime", "function schRuntimeFailureDetail");
-  assert.match(spawn, /SCHOLARIUM_RUNTIME_ASSETS_ROOT: spec\.core/);
+test("[L1] Ketcher and its styles are statically bundled without runtime script loading", () => {
+  assert.match(main, /\/\/ src\/chem\/ketcher-runtime\.tsx/);
+  assert.match(main, /StandaloneStructServiceProvider/);
+  assert.match(main, /data-scholarium-ketcher-style/);
+  assert.match(main, /createElement\("style"\)/);
+  assert.doesNotMatch(main, /schEnsureKetcherStyle/);
+  assert.doesNotMatch(main, /runtime-assets\/ketcher\//);
+  assert.doesNotMatch(main, /createElement\(["']script["']\)/);
 });
 
 test("[L1] runtime ports are assigned by the owning processes and reported over IPC", () => {
@@ -147,5 +145,5 @@ test("[L1] XLSX entry translates runtime failures into actionable user text", ()
   assert.match(notice, /incoming/);
   assert.match(notice, /原文件未被改动|原文件保持只读/);
   const modal = between(main, "async function schOpenMaterialNormalization", "async function schMaterialRunSkill");
-  assert.match(modal, /status\.setText\(schDescribeMaterialRuntimeFailure\(error\)\)/);
+  assert.match(modal, /status\d*\.setText\(schDescribeMaterialRuntimeFailure\(error\d*\)\)/);
 });

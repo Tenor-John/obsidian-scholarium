@@ -6,28 +6,25 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
-
-function between(source, begin, end) {
-  const start = source.indexOf(begin);
-  const finish = source.indexOf(end, start + begin.length);
-  assert.notEqual(start, -1, `missing ${begin}`);
-  assert.notEqual(finish, -1, `missing ${end}`);
-  return source.slice(start, finish);
-}
+const { block } = require("./harness");
 
 test("[L1] all AI/image Experiment creation crosses the canonical adapter", () => {
-  const method = between(main, "async createExperimentFromAgent(e, s)", "renderImageLinks(e)");
-  const canonical = between(method, 'if (e.noteType !== "research-learning")', "let i =");
+  const method = block("createExperimentFromAgent(e, s) {");
+  const split = method.indexOf('if (e.noteType !== "research-learning")');
+  assert.notEqual(split, -1, "missing research-learning branch");
+  const write = 'return this.app.vault.create(prepared.path, prepared.content);';
+  const end = method.indexOf(write, split);
+  assert.notEqual(end, -1, "canonical branch must return the prepared schema-v1 write");
+  const canonical = method.slice(split, end + write.length);
   assert.match(canonical, /legacyExperiments\.resolveProject/);
   assert.match(canonical, /legacyExperiments\.adaptLegacyExperiment/);
   assert.match(canonical, /experiments\.prepareNew/);
-  assert.match(canonical, /this\.app\.vault\.create\(prepared\.path, prepared\.content\)/);
+  assert.match(main, /adaptLegacyExperiment\(data, \{\s*project,\s*titleSuggestion\s*\}\)/);
   assert.doesNotMatch(canonical, /experimentsFolder|uniqueMarkdownPath|type: experiment/);
 });
 
 test("[L1] green Experiment actions open the schema-v1 creator", () => {
-  const count = [...main.matchAll(/schOpenExperimentCreator\(this\.plugin\)/g)].length;
-  assert.ok(count >= 2, `expected both green entry points to use canonical creator, got ${count}`);
-  const dashboard = between(main, "async renderExperimentDashboard(e, s)", "renderBoardStat(e, s, i)");
-  assert.match(dashboard, /\\u65B0\\u5EFA\\u5B9E\\u9A8C[\s\S]*?schOpenExperimentCreator\(this\.plugin\)/);
+  assert.match(main, /callback:\s*\(\)\s*=>\s*schOpenExperimentCreator\(this\)/);
+  const dashboard = block("renderExperimentDashboard(e, s) {");
+  assert.match(dashboard, /新建实验[\s\S]*?schOpenExperimentCreator\(this\.plugin\)/);
 });
