@@ -39,7 +39,20 @@ function embedLogo({ root = path.join(__dirname, "..") } = {}) {
   const mainPath = path.join(root, "main.js");
   const bytes = fs.readFileSync(logoPath);
   const before = fs.readFileSync(mainPath, "utf8");
-  const after = replaceBlock(before, renderLogoBlock(bytes));
+  const block = renderLogoBlock(bytes);
+  const start = before.indexOf(BEGIN);
+  const finish = before.indexOf(END);
+  if ((start >= 0) !== (finish >= 0) || (start >= 0 && finish < start)) {
+    throw new Error("main.js has incomplete Scholarium logo embed markers");
+  }
+  let after;
+  if (start >= 0) {
+    after = replaceBlock(before, block);
+  } else {
+    const bannerEnd = before.indexOf("*/");
+    if (bannerEnd < 0) throw new Error("main.js is missing the generated-file banner");
+    after = before.slice(0, bannerEnd + 2) + "\n\n" + block + before.slice(bannerEnd + 2);
+  }
   fs.writeFileSync(mainPath, after, "utf8");
   return { logoPath, mainPath, sha256: sha256(bytes), bytes: bytes.length };
 }

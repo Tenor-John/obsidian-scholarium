@@ -16,7 +16,7 @@ describe("action and Radar UI wiring", () => {
     assert.match(bundle, /function schOpenRadarVaultSync/);
     assert.match(bundle, /radarIndex\.sync/);
     assert.match(bundle, /id: "sync-radar-scores-to-research"/);
-    assert.match(bundle, /write\.setText\("同步完成"\)/);
+    assert.match(bundle, /write\d*\.setText\("同步完成"\)/);
     assert.match(bundle, /id: "show-radar-feedback-benchmark"/);
     assert.match(bundle, /不会写出 API Key/);
   });

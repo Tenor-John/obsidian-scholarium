@@ -35,6 +35,21 @@ function itemsFor(n, prefix) {
   return Array.from({ length: n }, (_, i) => ({ path: `Research/Hypotheses/${prefix}-${i}.md`, content: `# ${prefix}-${i}\n\nbody ${i}` }));
 }
 
+test('experiment-directory drafts without a recognized type are refused before writing', async () => {
+  const items = [{ path: 'Research/Experiments/untyped.md', content: '# Experiment\n\nbody' }];
+  const res = await request('/v1/drafts/batch', { method: 'POST', body: JSON.stringify({ items }) });
+  assert.equal(res.status, 400);
+  assert.match(JSON.parse(res.body).error, /type: experiment/);
+  assert.equal(fs.existsSync(path.join(workspace, items[0].path)), false);
+});
+
+test('typed experiment drafts require vault-scoped server-managed metadata', async () => {
+  const items = [{ path: 'Research/Experiments/typed.md', content: '---\ntype: experiment\n---\n# Experiment' }];
+  const res = await request('/v1/drafts/batch', { method: 'POST', body: JSON.stringify({ items }) });
+  assert.equal(res.status, 400);
+  assert.match(JSON.parse(res.body).error, /scholarium-vault/);
+});
+
 test('rejects a batch preview without the bridge token', async () => {
   const res = await request('/v1/drafts/batch', { method: 'POST', noAuth: true, body: JSON.stringify({ items: itemsFor(1, 'noauth') }) });
   assert.equal(res.status, 401);

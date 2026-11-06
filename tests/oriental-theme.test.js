@@ -11,13 +11,13 @@ describe("学院墨韵 visual style", () => {
     assert.match(src, /key:\s*"oriental"/);
     assert.match(src, /label:\s*"学院墨韵"/);
     assert.match(src, /sch-visual-style-picker/);
-    assert.match(src, /s\.visualStyle = T === "oriental" \? "oriental" : "default"/);
+    assert.match(src, /s\d*\.visualStyle = choice\.key/);
     assert.match(src, /document\.querySelectorAll\("\.scholarium-root"\)/);
   });
 
   it("marks every themed Scholarium root with the selected visual style", () => {
     const src = source();
-    assert.match(src, /e\.dataset\.visualStyle =/);
+    assert.match(src, /root\d*\.dataset\.visualStyle =/);
     assert.match(src, /this\.settings\.visualStyle === "oriental" \? "oriental" : "default"/);
   });
 

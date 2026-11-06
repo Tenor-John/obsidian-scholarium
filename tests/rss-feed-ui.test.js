@@ -1,33 +1,36 @@
 "use strict";
 
-const { source, describe, it, assert } = require("./harness");
+const { source, block, describe, it, assert } = require("./harness");
 
 describe("RSS feed controls", () => {
   it("offers a hover refresh action for each individual feed", () => {
     const src = source();
     assert.match(src, /rss-feed-act rss-feed-refresh/);
-    assert.match(src, /this\.refreshOneFeed\(p\)/);
-    assert.match(src, /title: p\.refreshing \? ".*" : ".*"/);
+    assert.match(src, /this\.refreshOneFeed\(\w+\)/);
+    assert.match(src, /title: \w+\.refreshing \? "[^"]*" : "[^"]*"/);
   });
 
   it("serialises a single-feed refresh without invoking a global refresh", () => {
-    const src = source();
-    assert.match(src, /async refreshOneFeed\(t\)/);
-    assert.match(src, /if \(!t \|\| this\.refreshing \|\| t\.refreshing\) return/);
-    assert.match(src, /await this\.refreshFeed\(t\)/);
+    const refresh = block("refreshOneFeed(t) {");
+    assert.match(refresh, /if \(!t \|\| this\.refreshing \|\| t\.refreshing\) return/);
+    assert.match(refresh, /await this\.refreshFeed\(t\)/);
+    assert.noMatch(refresh, /refreshAll\(/);
   });
 
   it("protects a recent window for every source before applying the global cap", () => {
     const src = source();
-    assert.match(src, /Jn = 6000/);
-    assert.match(src, /Preserve a recent window for every source/);
-    assert.match(src, /for \(let n of i\.values\(\)\) r\.push\(\.\.\.n\.slice\(0, 40\)\)/);
+    assert.match(src, /var Jn = (?:6000|6e3);/);
+    assert.match(src, /for \(let \w+ of \w+\.values\(\)\) \w+\.push\(\.\.\.\w+\.slice\(0, 40\)\)/);
+    assert.match(src, /Math\.max\(0, Jn - \w+\.length - \w+\.length\)/);
   });
 
   it("offers a direct refresh when the selected journal has no retained articles", () => {
     const src = source();
-    assert.match(src, /text: l\.refreshing \? ".*" : ".*"/);
-    assert.match(src, /c\.onclick = \(\) => this\.refreshOneFeed\(l\)/);
+    const refreshAt = src.indexOf("刷新此期刊");
+    assert.ok(refreshAt >= 0, "missing direct-refresh button");
+    const button = src.slice(Math.max(0, refreshAt - 300), refreshAt + 600);
+    assert.match(button, /text: \w+\.refreshing \? "[^"]*" : "[^"]*"/);
+    assert.match(button, /\w+\.onclick = \(\) => this\.refreshOneFeed\(\w+\)/);
   });
   it("offers an explicit, protected cleanup for disposable zero-score cache rows", () => {
     const src = source();
@@ -45,22 +48,18 @@ describe("RSS feed controls", () => {
 
   it("can opt in to a bounded high-score capture queue after scoring", () => {
     const src = source();
-    assert.match(src, /rssAutoCaptureEnabled: !1/);
+    const capture = block("autoClipHighScoredArticles(t) {");
+    assert.match(src, /rssAutoCaptureEnabled: false/);
     assert.match(src, /rssAutoCaptureMinScore: 70/);
     assert.match(src, /rssAutoCaptureMaxPerBatch: 5/);
     assert.match(src, /autoClipHighScoredArticles\(scoredArticles\)/);
-    assert.match(src, /async autoClipHighScoredArticles\(t\)/);
-    assert.match(src, /loadUrlInHiddenWebview\(a\.link, 9e4\)/);
-    assert.match(src, /throwOnError: !0, openResult: !1, quiet: !0/);
-    assert.match(src, /status: p \? "needs_interaction" : "failed"/);
+    assert.match(capture, /loadUrlInHiddenWebview\(\w+\.link, 9e4\)/);
+    assert.match(capture, /throwOnError: true, openResult: false, quiet: true/);
+    assert.match(capture, /status: \w+ \? "needs_interaction" : "failed"/);
   });
 
   it("shares the persistent research browser session with automatic capture", () => {
-    const src = source();
-    const hidden = src.slice(
-      src.indexOf("async loadUrlInHiddenWebview(t, e = 45e3) {"),
-      src.indexOf("async loadUrlInVisibleWebview"),
-    );
+    const hidden = block("loadUrlInHiddenWebview(t, e = 45e3) {");
     assert.match(hidden, /partition", "persist:scholarium-research-browser/);
   });
 });

@@ -5,6 +5,8 @@ import { CloudSyncManager, buildSyncConfig } from './cloud-sync';
 import type { WritingProvider } from './vision-writer';
 import { SCHOLARIUM_ACCENTS } from './theme/tokens';
 import type { ThemeModeKey, AccentKey, AccentPresetKey, DensityKey, Lang } from './theme/tokens';
+import { schSecretsFile } from './secrets-file';
+import { schRenderAgentEnvironment, schRenderMaterialAgentSkillSettings } from './material-plotting';
 
 export type AIProvider = 'claude' | 'openai' | 'kimi' | 'deepseek' | 'minimax' | 'custom';
 
@@ -50,6 +52,9 @@ export const DEFAULT_RESEARCH_TOOL_CATEGORY_COLORS: Record<string, string> = {
 
 export interface ChemELNSettings {
     experimentsFolder: string;
+    materialsFolder: string;
+    literatureFolder: string;
+    subscriptionFolder: string;
     openOnStartup: boolean;
     cityName: string;
     latitude: number | null;
@@ -60,8 +65,11 @@ export interface ChemELNSettings {
     aiCustomEndpoint: string; // 自定义 API 地址（用于"其他"服务商）
     aiSystemPrompt: string;   // 可自定义的系统提示词，{{date}} 会被替换为今日日期
     aiTemperature: number;    // AI 温度参数（0~1）
-    // 云盘同步设置
+    researchTheoryNativeApi: boolean; // 科研论对话：使用原生 API function calling（仅 Claude），而非本机 CLI 单次执行
+    openalexApiKey: string;
+    openalexEmail: string;
     mineruApiKey: string;
+    mineruOcrMode: 'off' | 'scanned' | 'all';
     writingProvider: WritingProvider;
     writingApiKey: string;
     writingModel: string;
@@ -72,6 +80,12 @@ export interface ChemELNSettings {
     rssAiModel: string;
     rssAiCustomEndpoint: string;
     rssAiPrompt: string;
+    secretsFilePath: string;
+    rssAutoCaptureEnabled: boolean;
+    rssAutoCaptureMinScore: number;
+    rssAutoCaptureMaxPerBatch: number;
+    allowResearchWeaverActions: boolean;
+    materialAgentSkillAllowlist: string[];
     cloudProvider: CloudProviderType;
     cloudWebdavUrl: string;
     cloudWebdavUser: string;
@@ -100,6 +114,7 @@ export interface ChemELNSettings {
 
     // ─── 重设计：主题 / 密度 / 强调色 / 语言 ───
     theme:            ThemeModeKey;      // 'system' | 'light' | 'dark'
+    visualStyle:      'default' | 'oriental';
     accent:           AccentKey;         // one of the shared light/dark accent presets
     density:          DensityKey;        // 'compact' | 'regular' | 'spacious'
     language:         Lang;              // 'zh' | 'en'
@@ -148,6 +163,9 @@ export const DEFAULT_RSS_AI_PROMPT =
 
 export const DEFAULT_SETTINGS: ChemELNSettings = {
     experimentsFolder: 'Experiments',
+    materialsFolder: 'Materials',
+    literatureFolder: 'Literature/Zotero',
+    subscriptionFolder: 'Literature/Subscriptions',
     openOnStartup: false,
     cityName: '',
     latitude: null,
@@ -158,7 +176,11 @@ export const DEFAULT_SETTINGS: ChemELNSettings = {
     aiCustomEndpoint: '',
     aiSystemPrompt: DEFAULT_AI_SYSTEM_PROMPT,
     aiTemperature: 0.7,
+    researchTheoryNativeApi: false,
+    openalexApiKey: '',
+    openalexEmail: '',
     mineruApiKey: '',
+    mineruOcrMode: 'scanned',
     writingProvider: 'deepseek',
     writingApiKey: '',
     writingModel: '',
@@ -168,6 +190,18 @@ export const DEFAULT_SETTINGS: ChemELNSettings = {
     rssAiModel: '',
     rssAiCustomEndpoint: '',
     rssAiPrompt: '',
+    secretsFilePath: '',
+    rssAutoCaptureEnabled: false,
+    rssAutoCaptureMinScore: 70,
+    rssAutoCaptureMaxPerBatch: 5,
+    allowResearchWeaverActions: false,
+    materialAgentSkillAllowlist: [
+        'sch-data-plot',
+        'sch-data-profile-audit',
+        'sch-data-classifier',
+        'sch-data-cleaning-plan',
+        'nature-figure',
+    ],
     cloudProvider: 'none',
     cloudWebdavUrl: '',
     cloudWebdavUser: '',
@@ -193,6 +227,7 @@ export const DEFAULT_SETTINGS: ChemELNSettings = {
     notebookSidebarWidth: 300,
     // 重设计默认值
     theme:            'system',
+    visualStyle:      'default',
     accent:           'green',
     density:          'compact',
     language:         'zh',
@@ -296,8 +331,19 @@ export class ChemELNSettingTab extends PluginSettingTab {
 
     display(): void {
         const { containerEl } = this;
+        const scrollStates: Array<[HTMLElement, number]> = [];
+        for (let node = containerEl.parentElement; node && node !== document.body; node = node.parentElement) {
+            scrollStates.push([node, node.scrollTop]);
+            if (node.matches('.vertical-tab-content-container')) break;
+        }
+        const restoreScroll = () => {
+            for (const [node, scrollTop] of scrollStates) {
+                if (node.isConnected) node.scrollTop = scrollTop;
+            }
+        };
         containerEl.empty();
         containerEl.addClass('scholarium-settings');
+        schSecretsFile.renderSettingsBox(containerEl, this.plugin);
 
         const s = this.plugin.settings;
         this.plugin.applyThemeAttributes(containerEl);
@@ -413,6 +459,27 @@ export class ChemELNSettingTab extends PluginSettingTab {
                 .onChange(async v => { this.plugin.settings.experimentsFolder = v; await this.plugin.saveSettings(); }));
 
         new Setting(containerEl)
+            .setName('素材库文件夹')
+            .setDesc('素材、规范化数据与可复现图表版本的根目录。')
+            .addText(t => t.setPlaceholder('Materials')
+                .setValue(s.materialsFolder)
+                .onChange(async v => { s.materialsFolder = v; await this.plugin.saveSettings(); }));
+
+        new Setting(containerEl)
+            .setName('Zotero 文献文件夹')
+            .setDesc('Zotero 与手动下载文献的保存目录。')
+            .addText(t => t.setPlaceholder('Literature/Zotero')
+                .setValue(s.literatureFolder)
+                .onChange(async v => { s.literatureFolder = v; await this.plugin.saveSettings(); }));
+
+        new Setting(containerEl)
+            .setName('订阅文献文件夹')
+            .setDesc('RSS 订阅全文与归档的保存目录。')
+            .addText(t => t.setPlaceholder('Literature/Subscriptions')
+                .setValue(s.subscriptionFolder)
+                .onChange(async v => { s.subscriptionFolder = v; await this.plugin.saveSettings(); }));
+
+        new Setting(containerEl)
             .setName('启动时自动打开仪表盘')
             .addToggle(t => t.setValue(this.plugin.settings.openOnStartup)
                 .onChange(async v => { this.plugin.settings.openOnStartup = v; await this.plugin.saveSettings(); }));
@@ -496,6 +563,13 @@ export class ChemELNSettingTab extends PluginSettingTab {
             p.createEl('a', { text: cfg.docsLabel, href: cfg.docsUrl, attr: { target: '_blank' } });
         }
 
+        // 科研论对话：原生 API 工具调用开关（实验性，仅 Claude）
+        new Setting(containerEl)
+            .setName('科研论对话使用原生 API 工具调用（实验性）')
+            .setDesc('开启后，"研究推演室"里的科研论对话会直接调用上方配置的 Claude API 做原生 function calling 检索文献，而不经过本机 CLI 单次执行。仅在 AI 服务商为 Claude 且已填写 API Key 时生效，否则自动回退到本机 CLI 方式。')
+            .addToggle(t => t.setValue(this.plugin.settings.researchTheoryNativeApi)
+                .onChange(async v => { this.plugin.settings.researchTheoryNativeApi = v; await this.plugin.saveSettings(); }));
+
         containerEl.createEl('p', {
             text: '🔒 安全说明：API Key 仅存储在本地 Obsidian 库中，AI 请求直接从你的设备发出，不经过任何中间服务器。',
             cls: 'setting-item-description'
@@ -509,6 +583,36 @@ export class ChemELNSettingTab extends PluginSettingTab {
         });
 
         // 提示词编辑框
+        const promptWrap = containerEl.createDiv({ cls: 'scholarium-prompt-wrap' });
+        const promptTextarea = promptWrap.createEl('textarea', { cls: 'scholarium-prompt-textarea' });
+        promptTextarea.setAttribute('aria-label', 'AI 提示词');
+        promptTextarea.value = this.plugin.settings.aiSystemPrompt || DEFAULT_AI_SYSTEM_PROMPT;
+        promptTextarea.rows = 18;
+        promptTextarea.addClass('sch-static-style-166');
+
+        promptTextarea.addEventListener('input', async () => {
+            this.plugin.settings.aiSystemPrompt = promptTextarea.value;
+            await this.plugin.saveSettings();
+        });
+
+        // 重置按钮
+        const resetRow = promptWrap.createDiv();
+        resetRow.addClass('sch-static-style-167');
+        const resetBtn = resetRow.createEl('button', { text: '↩ 恢复默认提示词', cls: 'scholarium-btn' });
+        resetBtn.setAttribute('aria-label', '恢复默认 AI 提示词');
+        resetBtn.addClass('sch-static-style-168');
+        resetBtn.onclick = async () => {
+            promptTextarea.value = DEFAULT_AI_SYSTEM_PROMPT;
+            this.plugin.settings.aiSystemPrompt = DEFAULT_AI_SYSTEM_PROMPT;
+            await this.plugin.saveSettings();
+            new (require('obsidian').Notice)('✅ 已恢复默认提示词');
+        };
+        resetRow.createEl('span', {
+            text: '提示：可以在这里调整输出语气、增加领域专业术语、或要求AI只输出特定格式。',
+            cls: 'setting-item-description'
+        }).addClass('sch-static-style-169');
+
+        // 图片识别实验记录
         new Setting(containerEl).setName('图片识别实验记录').setHeading();
         containerEl.createEl('p', {
             text: '双阶段流程：MinerU 负责 OCR 提取，AI 重写模型负责整理为实验记录。选择 DeepSeek 时可复用上方主 AI Key。',
@@ -581,32 +685,19 @@ export class ChemELNSettingTab extends PluginSettingTab {
                     }));
         }
 
-        const promptWrap = containerEl.createDiv({ cls: 'scholarium-prompt-wrap' });
-        const promptTextarea = promptWrap.createEl('textarea', { cls: 'scholarium-prompt-textarea' });
-        promptTextarea.value = this.plugin.settings.aiSystemPrompt || DEFAULT_AI_SYSTEM_PROMPT;
-        promptTextarea.rows = 18;
-        promptTextarea.addClass('sch-static-style-166');
-
-        promptTextarea.addEventListener('input', async () => {
-            this.plugin.settings.aiSystemPrompt = promptTextarea.value;
-            await this.plugin.saveSettings();
+        // ===== 织研者 Agent：默认关闭所有自动执行 =====
+        new Setting(containerEl).setName('🕸️ 织研者 Agent').setHeading();
+        containerEl.createEl('p', {
+            text: '本机 Bridge 只能在明确开启后消费白名单动作；所有执行仍经过运行时注册表、级别限制与审计。证据确认不会开放给 Agent。',
+            cls: 'setting-item-description',
         });
-
-        // 重置按钮
-        const resetRow = promptWrap.createDiv();
-        resetRow.addClass('sch-static-style-167');
-        const resetBtn = resetRow.createEl('button', { text: '↩ 恢复默认提示词', cls: 'scholarium-btn' });
-        resetBtn.addClass('sch-static-style-168');
-        resetBtn.onclick = async () => {
-            promptTextarea.value = DEFAULT_AI_SYSTEM_PROMPT;
-            this.plugin.settings.aiSystemPrompt = DEFAULT_AI_SYSTEM_PROMPT;
-            await this.plugin.saveSettings();
-            new (require('obsidian').Notice)('✅ 已恢复默认提示词');
-        };
-        resetRow.createEl('span', {
-            text: '提示：可以在这里调整输出语气、增加领域专业术语、或要求AI只输出特定格式。',
-            cls: 'setting-item-description'
-        }).addClass('sch-static-style-169');
+        new Setting(containerEl)
+            .setName('允许织研者执行 Scholarium 动作')
+            .setDesc('仅允许已启用的本机 Bridge 执行白名单动作。每次执行都会写入 Research/_runs/actions/ 审计记录；关闭时队列只保持等待。')
+            .addToggle(t => t.setValue(!!s.allowResearchWeaverActions)
+                .onChange(async v => { s.allowResearchWeaverActions = v; await this.plugin.saveSettings(); }));
+        schRenderMaterialAgentSkillSettings(containerEl, this.plugin);
+        schRenderAgentEnvironment(containerEl, this.plugin);
 
         // ===== 文献订阅 (RSS) =====
         new Setting(containerEl).setName('📡 文献订阅（RSS）').setHeading();
@@ -683,7 +774,10 @@ export class ChemELNSettingTab extends PluginSettingTab {
                 .addOption('claude', 'Claude')
                 .addOption('openai', 'OpenAI / GPT')
                 .addOption('gemini', 'Gemini')
+                .addOption('minimax', 'MiniMax')
+                .addOption('minimax-anthropic', 'MiniMax（Anthropic 兼容）')
                 .addOption('custom', '自定义 OpenAI 兼容端点')
+                .addOption('custom-anthropic', '自定义 Anthropic 兼容端点')
                 .setValue(s.rssAiProvider)
                 .onChange(async v => { s.rssAiProvider = v as WritingProvider; await this.plugin.saveSettings(); this.display(); }));
 
@@ -696,10 +790,11 @@ export class ChemELNSettingTab extends PluginSettingTab {
             .setDesc('留空用默认，如 deepseek-chat / gpt-4o。')
             .addText(t => t.setPlaceholder('留空 = 默认').setValue(s.rssAiModel).onChange(async v => { s.rssAiModel = v; await this.plugin.saveSettings(); }));
 
-        if (s.rssAiProvider === 'custom') {
+        if (s.rssAiProvider === 'custom' || s.rssAiProvider === 'custom-anthropic') {
             new Setting(containerEl)
                 .setName('文献 AI 自定义端点')
-                .addText(t => t.setPlaceholder('https://example.com/v1/chat/completions').setValue(s.rssAiCustomEndpoint).onChange(async v => { s.rssAiCustomEndpoint = v; await this.plugin.saveSettings(); }));
+                .setDesc(s.rssAiProvider === 'custom-anthropic' ? '可填写基础地址或完整 /v1/messages 地址；必须使用 HTTPS。' : '需兼容 OpenAI Chat Completions API。')
+                .addText(t => t.setPlaceholder(s.rssAiProvider === 'custom-anthropic' ? 'https://api.minimaxi.com/anthropic' : 'https://example.com/v1/chat/completions').setValue(s.rssAiCustomEndpoint).onChange(async v => { s.rssAiCustomEndpoint = v; await this.plugin.saveSettings(); }));
         }
 
         const rssPromptLabel = containerEl.createEl('div', { text: '文献 AI 总结提示词' });
@@ -711,7 +806,32 @@ export class ChemELNSettingTab extends PluginSettingTab {
         rssPromptTa.addEventListener('input', async () => { s.rssAiPrompt = rssPromptTa.value; await this.plugin.saveSettings(); });
         const rssResetBtn = containerEl.createEl('button', { text: '↩ 恢复默认提示词', cls: 'scholarium-btn' });
         rssResetBtn.addClass('sch-static-style-175');
+        rssResetBtn.setAttribute('aria-label', '恢复默认文献 AI 总结提示词');
         rssResetBtn.onclick = async () => { rssPromptTa.value = DEFAULT_RSS_AI_PROMPT; s.rssAiPrompt = DEFAULT_RSS_AI_PROMPT; await this.plugin.saveSettings(); new Notice('✅ 已恢复默认提示词'); };
+
+        new Setting(containerEl)
+            .setName('自动剪藏高分文献')
+            .setDesc('每个 RSS 源评分完成后，自动抓取高分论文全文、保全来源并生成总结；登录、验证和付费墙只记为可重试。')
+            .addToggle(t => t.setValue(!!s.rssAutoCaptureEnabled)
+                .onChange(async v => { s.rssAutoCaptureEnabled = v; await this.plugin.saveSettings(); }));
+        new Setting(containerEl)
+            .setName('自动剪藏最低总分')
+            .setDesc('只处理本批新评分且不低于此阈值的文章。')
+            .addText(t => t.setValue(String(s.rssAutoCaptureMinScore ?? 70)).setPlaceholder('70')
+                .onChange(async v => {
+                    const value = Number(v);
+                    s.rssAutoCaptureMinScore = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 70;
+                    await this.plugin.saveSettings();
+                }));
+        new Setting(containerEl)
+            .setName('每批自动剪藏上限')
+            .setDesc('限制一次评分触发的网页请求与 AI 总结数量。')
+            .addText(t => t.setValue(String(s.rssAutoCaptureMaxPerBatch ?? 5)).setPlaceholder('5')
+                .onChange(async v => {
+                    const value = Number(v);
+                    s.rssAutoCaptureMaxPerBatch = Number.isFinite(value) ? Math.max(1, Math.min(20, Math.floor(value))) : 5;
+                    await this.plugin.saveSettings();
+                }));
 
         // ===== 科研库 =====
         new Setting(containerEl).setName('🧰 科研库').setHeading();
@@ -925,6 +1045,30 @@ export class ChemELNSettingTab extends PluginSettingTab {
         });
 
         s.theme = 'system';
+        new Setting(containerEl)
+            .setName('界面风格')
+            .setDesc('选择 Scholarium 的视觉语言；不影响数据、布局密度或 Obsidian 深浅色模式。');
+        const visualStylePicker = containerEl.createDiv({ cls: 'sch-visual-style-picker' });
+        const visualStyleChoices = [
+            { key: 'default' as const, label: '默认极简', desc: '轻量、紧凑，保持现有界面节奏' },
+            { key: 'oriental' as const, label: '学院墨韵', desc: '纸张底色、墨蓝标题与铜金强调色' },
+        ];
+        for (const choice of visualStyleChoices) {
+            const button = visualStylePicker.createEl('button', {
+                cls: 'sch-visual-style-choice' + (s.visualStyle === choice.key ? ' is-selected' : ''),
+                attr: { type: 'button', 'aria-pressed': String(s.visualStyle === choice.key) },
+            });
+            button.createSpan({ cls: 'sch-visual-style-choice-title', text: choice.label });
+            button.createSpan({ cls: 'sch-visual-style-choice-desc', text: choice.desc });
+            button.addEventListener('click', async () => {
+                s.visualStyle = choice.key;
+                await this.plugin.saveSettings();
+                document.querySelectorAll<HTMLElement>('.scholarium-root').forEach(root => {
+                    root.dataset.visualStyle = s.visualStyle;
+                });
+                this.display();
+            });
+        }
         const modeRow = containerEl.createDiv({ cls: 'sch-theme-modes' });
         const modes: Array<{ key: ThemeModeKey; label: string; desc: string }> = [
             { key: 'system', label: '跟随 Obsidian', desc: '随 Obsidian 深浅色自动切换' },
@@ -1040,6 +1184,12 @@ export class ChemELNSettingTab extends PluginSettingTab {
         preview.createDiv({ cls: 'sch-theme-preview-card', text: '卡片边框' });
         preview.createEl('button', { cls: 'sch-theme-preview-button', text: '主要按钮' });
         this.collapseSettingsSections(containerEl);
+        restoreScroll();
+        window.requestAnimationFrame(() => {
+            restoreScroll();
+            window.requestAnimationFrame(restoreScroll);
+        });
+        window.setTimeout(restoreScroll, 80);
     }
 
     private collapseSettingsSections(containerEl: HTMLElement): void {

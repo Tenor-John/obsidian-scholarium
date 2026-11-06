@@ -1,6 +1,6 @@
 import { fetchWithTimeout, requestUrlWithTimeout, safeParseJson } from './utils/network';
 
-export type WritingProvider = 'deepseek' | 'claude' | 'openai' | 'gemini' | 'custom';
+export type WritingProvider = 'deepseek' | 'claude' | 'openai' | 'gemini' | 'minimax' | 'minimax-anthropic' | 'custom' | 'custom-anthropic';
 
 export interface WriterSettings {
     provider: WritingProvider;
@@ -23,7 +23,10 @@ const DEFAULT_MODELS: Record<WritingProvider, string> = {
     claude: 'claude-opus-4-5',
     openai: 'gpt-4.1',
     gemini: 'gemini-2.5-pro',
+    minimax: 'MiniMax-M2.7',
+    'minimax-anthropic': 'MiniMax-M3',
     custom: '',
+    'custom-anthropic': '',
 };
 
 const ENDPOINTS: Record<WritingProvider, string> = {
@@ -31,7 +34,10 @@ const ENDPOINTS: Record<WritingProvider, string> = {
     claude: 'https://api.anthropic.com/v1/messages',
     openai: 'https://api.openai.com/v1/chat/completions',
     gemini: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    minimax: 'https://api.minimaxi.com/v1/chat/completions',
+    'minimax-anthropic': 'https://api.minimaxi.com/anthropic/v1/messages',
     custom: '',
+    'custom-anthropic': '',
 };
 
 const SYSTEM_PROMPT = `你是一个化学实验记录整理助手。

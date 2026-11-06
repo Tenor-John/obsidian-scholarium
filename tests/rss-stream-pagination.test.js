@@ -5,22 +5,22 @@ const { source, describe, it, assert } = require("./harness");
 describe("RSS stream memory/perf (2026-08-14 pagination patch)", () => {
   it("paginates the card list instead of rendering every filtered article at once", () => {
     const src = source();
-    assert.match(src, /Rc = 60,/);
+    assert.match(src, /var Rc = 60;/);
     assert.match(src, /this\.streamRenderCount = Rc;/);
     assert.match(
       src,
-      /let visibleCount = Math\.min\(this\.streamRenderCount, r\.length\);/,
+      /let visibleCount = Math\.min\(this\.streamRenderCount, \w+\.length\);/,
     );
     assert.match(
       src,
-      /for \(let a of r\.slice\(0, visibleCount\)\) this\.renderCard\(n, a\);/,
+      /for \(let \w+ of \w+\.slice\(0, visibleCount\)\) this\.renderCard\(\w+, \w+\);/,
     );
     assert.match(src, /loadMoreBtn\.onclick = \(\) => \{/);
   });
 
   it("resets the page size whenever the feed selection or filter tab changes", () => {
     const src = source();
-    const resets = src.match(/\(this\.streamRenderCount = Rc\)/g) || [];
+    const resets = src.match(/this\.streamRenderCount = Rc/g) || [];
     assert.ok(
       resets.length >= 3,
       "expected streamRenderCount to reset at the 'all articles', per-feed, and filter-tab click sites",
@@ -31,7 +31,7 @@ describe("RSS stream memory/perf (2026-08-14 pagination patch)", () => {
     const src = source();
     assert.match(
       src,
-      /let n =\s*\n\s*e\.summary \|\|\s*\n\s*\(e\.contentHtml \? Xe\(e\.contentHtml\)\.slice\(0, 220\) : ""\) \|\|\s*\n\s*"";/,
+      /let \w+ = \w+\.summary \|\| \(\w+\.contentHtml \? Xe\d*\(\w+\.contentHtml\)\.slice\(0, 220\) : ""\) \|\| "";/,
     );
   });
 

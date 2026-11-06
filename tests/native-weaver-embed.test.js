@@ -47,29 +47,28 @@ describe("native 织研者 embed: the shipped files", () => {
     assert.equal(count(main, "SCHOLARIUM_NATIVE_WEAVER_LAYOUT_BEGIN"), 0);
     assert.ok(!/shell\.style\.cssText = "display:flex;position:fixed/.test(main));
     // 织研者 fills the whole leaf: the host padding is dropped only on that tab.
-    assert.match(main, /content\.toggleClass\("sch-weaver-active", weaverActive\)/);
-    assert.match(main, /content\.style\.setProperty\("padding", "0", "important"\)/);
+    assert.match(main, /content\d*\.toggleClass\("sch-weaver-active", weaverActive\d*\)/);
+    assert.match(main, /content\d*\.style\.setProperty\("padding", "0", "important"\)/);
     // The native workspace is pinned to the stretching grid row.
     assert.match(styles, /\.scholarium-weaver__workspace \{[^}]*grid-row: 3;/);
     assert.match(main, /批量抓取（半自动）/);
-    assert.match(main, /10000 - \(Date\.now\(\) - lastStartedAt\)/, "每篇至少间隔 10 秒");
+    assert.match(main, /(?:10000|1e4) - \(Date\.now\(\) - lastStartedAt\)/, "每篇至少间隔 10 秒");
     assert.match(main, /\(publisherCounts\.get\(publisher\) \|\| 0\) >= 20/, "每家出版社每轮最多 20 篇");
     // 登录/验证页上只做只读轮询：完整评估（会重新请求页面）只在正文页上运行。
     assert.match(main, /async manualCaptureQuickCheck\(webview\)/);
     // 网页没有完整正文（老文章只有扫描 PDF）时改走 PDF 下载。
     assert.match(main, /async manualCapturePdfCandidates\(webview\)/);
     // MinerU 在线识别：Token 只存在 Vault 之外，绝不进 data.json。
-    // 所有密钥与地址集中在 Vault 之外的一个文件：scholarium-secrets.json。
-    assert.equal(count(main, "SCHOLARIUM_SECRETS_FILE_BEGIN"), 1);
-    assert.match(main, /path\.join\(os\.homedir\(\), "Scholarium", "scholarium-secrets\.json"\)/);
-    assert.match(main, /async loadSettings\(\) \{\n    var n, a;\n    schSecretsFile\.install\(this\);/);
-    assert.match(main, /schSecretsFile\.renderSettingsBox\(e, this\.plugin\);/);
-    // 运行时出错要告诉用户怎么修；批量抓取逐篇显示结果与处理办法。
-    assert.equal(count(main, "SCHOLARIUM_RUNTIME_DIAGNOSIS_BEGIN"), 1);
-    assert.match(main, /throw new Error\(schRuntimeExplain\(error\)\);/);
+    assert.match(main, /var schSecretsFile = \(\(\) => \{/);
+    assert.match(main, /path\d*\.join\(os\d*\.homedir\(\), "Scholarium", "scholarium-secrets\.json"\)/);
+    assert.match(main, /async loadSettings\(\) \{\n\s*var [^;]+;\n\s*schSecretsFile\.install\(this\);/);
+    assert.match(main, /schSecretsFile\.renderSettingsBox\(\w+, this\.plugin\);/);
+    // 运行时出错要告诉用户怎么修；批量抓取记录逐篇结果与处理办法。
+    assert.match(main, /function schOpenRuntimeDiagnosis\(app\)/);
+    assert.match(main, /throw new Error\(schRuntimeExplain\(error\d*\)\);/);
     assert.match(main, /id: "diagnose-runtime", name: "诊断本机运行时"/);
-    assert.match(main, /this\.renderManualCaptureReport\(e, lastBatch\)/);
-    assert.match(main, /if \(h\.lastAttempt\)/);
+    assert.match(main, /renderManualCaptureReport\(container, report\)/);
+    assert.match(main, /entry\.lastAttempt = \{ status: \w+, reason:/);
     assert.ok(!/this\.data\.mineru(Token|Config)/.test(main), "token must not be written into plugin data");
     assert.match(main, /this\.scheduleMineruOcr\(absolute\)/);
     assert.match(main, /let pdfCandidateUrls = explicitPdf\.length \? \[\.\.\.explicitPdf\] : \[pdfPageUrl\];/);

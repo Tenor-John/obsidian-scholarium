@@ -4,6 +4,7 @@ import { DEFAULT_AI_SYSTEM_PROMPT, PROVIDER_CONFIG } from './settings';
 import { extractTextWithMinerU } from './vision-ocr';
 import { rewriteOcrToAgent, type WritingProvider } from './vision-writer';
 import { fetchWithTimeout } from './utils/network';
+import { schEvidenceTools } from './research-evidence-tools';
 
 interface Message { role: 'user' | 'assistant'; content: string; }
 
@@ -34,6 +35,9 @@ interface ExperimentData {
     issues?: string;
     source_image?: string;
     source_images?: string[];
+    project_id?: string;
+    projectId?: string;
+    project_uid?: string;
     tags?: string[];
     sections?: Record<string, string>;
     body?: string;
@@ -105,13 +109,15 @@ export class AIChatModal extends Modal {
     private imageStatusEl: HTMLElement | null = null;
     private analyzeImageBtn: HTMLButtonElement | null = null;
     private startImagePanel: boolean;
+    private projectId: string;
 
-    constructor(app: App, plugin: ChemELNPlugin, targetFile?: TFile, noteContent?: string, startImagePanel = false) {
+    constructor(app: App, plugin: ChemELNPlugin, targetFile?: TFile, noteContent?: string, startImagePanel = false, projectId = '') {
         super(app);
         this.plugin = plugin;
         this.targetFile = targetFile ?? null;
         this.noteContent = noteContent ?? '';
         this.startImagePanel = startImagePanel;
+        this.projectId = String(projectId || '').trim();
         this.modalEl.addClass('scholarium-chat-modal-wrap');
         this.plugin.applyThemeAttributes(this.modalEl);
     }
@@ -1227,12 +1233,37 @@ ${customTone}`;
     }
 
     private async createExperimentFromAgent(data: ExperimentData, titleSuggestion?: string): Promise<TFile> {
+        if (data.noteType !== "research-learning") {
+            const tools = schEvidenceTools(this.plugin);
+            const projects = tools.hypotheses.loadAll(tools.vault, "project");
+            let requestedProject = String(data.project_uid || data.project_id || data.projectId || this.projectId || "").trim();
+            if (!requestedProject) {
+                try {
+                    const saved = (await this.plugin.loadData()) || {};
+                    requestedProject = String(
+                        saved?.projectWorkspace?.activeProjectId
+                        || saved?.rssBoard?.researchProjectId
+                        || "",
+                    ).trim();
+                } catch (_) {
+                    // The explicit selection check below remains authoritative.
+                }
+            }
+            const project = tools.legacyExperiments.resolveProject(projects, requestedProject);
+            const fields = tools.legacyExperiments.adaptLegacyExperiment(data, {
+                project,
+                titleSuggestion: titleSuggestion,
+            });
+            const prepared = tools.experiments.prepareNew(tools.vault, fields);
+            return this.app.vault.create(prepared.path, prepared.content);
+        }
+
         const folder = this.plugin.settings.experimentsFolder?.replace(/\/+$/, '');
         const date = this.normalizeDate(data.date);
         const title = this.normalizeExperimentTitle(
             data.title || titleSuggestion,
             date,
-            data.noteType === 'research-learning' ? '研究学习笔记' : '图片识别实验记录',
+            '研究学习笔记',
         );
         const safeTitle = this.safeFileName(`${date}-${title}`);
         const fileName = await this.uniqueMarkdownPath(folder ? `${folder}/${safeTitle}.md` : `${safeTitle}.md`);
@@ -1241,76 +1272,19 @@ ${customTone}`;
             await this.app.vault.createFolder(folder);
         }
 
-        const reagentsYaml = data.reagents?.length
-            ? data.reagents.map(r => `  - ${String(r).trim()}`).join('\n')
-            : '  - ';
-        const sourceImages = data.source_images?.length ? data.source_images : (data.source_image ? [data.source_image] : []);
-        const sourceImage = sourceImages[0] || '';
-        const sourceImagesYaml = sourceImages.length
-            ? `\nsource_images:\n${sourceImages.map((path) => `  - ${this.yamlQuote(path)}`).join('\n')}`
-            : '';
-        const tags = Array.from(new Set(['experiment', ...(data.tags ?? [])]))
-            .map(tag => this.safeTag(tag))
-            .filter(Boolean)
-            .join(', ');
-        const noteContent = data.noteType === 'research-learning' ? `---
+        const noteContent = `---
 type: research-learning
 title: ${this.yamlQuote(title)}
 date: ${this.yamlQuote(date)}
 status: ${this.yamlQuote('study')}
+project_id: ${this.yamlQuote(this.projectId)}
 tags: [research-learning, study-note]
 ---
 
 # ${title}
 
 ${this.researchLearningBody(data)}
-` : `---
-type: experiment
-title: ${this.yamlQuote(title)}
-date: ${this.yamlQuote(date)}
-status: ${this.yamlQuote(data.status || 'in-progress')}
-smiles: ${this.yamlQuote(data.smiles || '')}
-reaction_smiles: ${this.yamlQuote(data.reaction_smiles || '')}
-catalyst: ${this.yamlQuote(data.catalyst || '')}
-reagents:
-${reagentsYaml}
-results: ${this.yamlQuote(data.results || '')}
-source_image: ${this.yamlQuote(sourceImage)}${sourceImagesYaml}
-tags: [${tags || 'experiment'}]
----
-
-# ${title}
-
-## 实验目的
-
-${data.objective || ''}
-
-## 实验步骤
-
-${Array.isArray(data.steps) ? data.steps.map((step, index) => `${index + 1}. ${step}`).join('\n') : (data.steps || '')}
-
-## 实验结果
-
-${data.results || ''}
-
-## 观察与现象
-
-${data.observations || ''}
-
-${data.issues ? `## 问题与异常\n\n${data.issues}\n` : ''}
-
-## 下一步计划
-
-${data.nextSteps || ''}
-
-## 实验图片
-
-${sourceImages.length ? this.renderImageLinks(sourceImages) : '（在此粘贴截图，格式：![描述](图片路径)）'}
-
-## 注意事项
-
-${data.notes || ''}
-${data.references ? `\n## 参考文献\n\n${data.references}\n` : ''}`;
+`;
 
         return this.app.vault.create(fileName, noteContent);
     }

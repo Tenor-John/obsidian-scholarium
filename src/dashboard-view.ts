@@ -1,4 +1,4 @@
-﻿import { ItemView, WorkspaceLeaf, TFile, Notice, MarkdownRenderer, getFrontMatterInfo, parseYaml } from 'obsidian';
+import { ItemView, WorkspaceLeaf, TFile, Notice, MarkdownRenderer, getFrontMatterInfo, parseYaml } from 'obsidian';
 import ChemELNPlugin from './main';
 import { WORKSPACE_ROLE_LABELS, WORKSPACE_ROLE_ICONS } from './settings';
 import { AIChatModal } from './ai-chat-modal';
@@ -16,6 +16,8 @@ import { openInsertChemModalForFile } from './chem/chem-markdown';
 import { parseChemBlock, CHEM_CODE_BLOCK } from './chem/chem-block';
 import { namespaceSvgIds } from './chem/svg-ids';
 import { ResearchWeaverPanel } from './research-weaver-mount';
+import { ResearchDeductionRoom } from './research-deduction-room';
+import { schOpenExperimentCreator } from './evidence-ui';
 
 // 本地打包 smiles-drawer（兼容 esbuild 的 ESM→CJS 转换）
 // sync-touch: chem block dashboard preview
@@ -67,6 +69,7 @@ interface ExperimentNote {
     reagents: string[];
     bookmarked: boolean;
     excalidraw: string;   // 关联的绘图文件路径
+    projectId?: string;
 }
 
 export class DashboardView extends ItemView {
@@ -78,6 +81,9 @@ export class DashboardView extends ItemView {
     private filterText = '';
     private filterStatus = 'all';
     private expListContainer: HTMLElement | null = null;
+    private expListActionsContainer: HTMLElement | null = null;
+    private experimentBulkSelection = new Set<string>();
+    private experimentProjectFilter = '';
     // PhD 工作台
     private workspace: PhDWorkspace | null = null;
     // 素材库
@@ -89,8 +95,9 @@ export class DashboardView extends ItemView {
     // 文献订阅工作台（RSS）
     private rssBoard: RssFeedBoard | null = null;
     private weaverPanel: ResearchWeaverPanel | null = null;
+    private deductionRoom: ResearchDeductionRoom | null = null;
     private notebookMode: 'experiments' | 'ideas' = 'experiments';
-    private activePanel: 'lab' | 'feeds' | 'workspace' | 'materials' | 'tools' | 'weaver' = 'lab';
+    private activePanel: 'lab' | 'deduction' | 'feeds' | 'workspace' | 'materials' | 'tools' | 'weaver' = 'lab';
     private resizeTimer: number | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: ChemELNPlugin) {
@@ -128,6 +135,19 @@ export class DashboardView extends ItemView {
             // 织研者（Research Weaver）本地伴生应用——仅挂载，读写逻辑都在其自身进程内
             this.weaverPanel = new ResearchWeaverPanel(this.app, this.plugin);
             await this.weaverPanel.load();
+            this.deductionRoom = new ResearchDeductionRoom({
+                app: this.app,
+                plugin: this.plugin,
+                rerender: () => void this.render(),
+                openProjectProfile: () => {
+                    const profile = this as unknown as { openProjectProfileDrawer?: () => Promise<void> };
+                    void profile.openProjectProfileDrawer?.();
+                },
+                createExperimentRecord: () => {
+                    this.activePanel = 'lab';
+                    void this.render().then(() => this.createNewExperiment());
+                },
+            });
             await this.render();
             this.clockInterval = this.registerInterval(window.setInterval(() => this.updateClock(), 60000));
             // 窗口/叶子尺寸变化（如折叠侧边栏）时防抖重渲染，让按窗口测量的高度与布局自适应
@@ -185,6 +205,38 @@ export class DashboardView extends ItemView {
             // ── 科研库（全宽）──
             const toolsPanel = main.createDiv({ cls: 'scholarium-panel rtl-full-panel' });
             if (this.researchToolLib) this.researchToolLib.render(toolsPanel);
+        } else if (this.activePanel === 'deduction') {
+            const deductionPanel = main.createDiv({ cls: 'scholarium-panel deduction-full-panel' });
+            const loading = deductionPanel.createDiv({ cls: 'deduction-room-fallback' });
+            loading.createEl('h2', { text: '研究推演室' });
+            loading.createEl('p', {
+                cls: 'deduction-empty',
+                text: '正在加载…（若长时间停留在此，说明渲染链卡住）',
+            });
+            let timeout: number | null = null;
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                timeout = window.setTimeout(() => {
+                    reject(new Error('研究推演室渲染超时（15s）：可能卡在 Bridge 连接或数据读取。'));
+                }, 15000);
+            });
+            try {
+                if (!this.deductionRoom) throw new Error('deductionRoom 未初始化（onOpen 可能提前失败）');
+                await Promise.race([this.deductionRoom.render(deductionPanel), timeoutPromise]);
+            } catch (error) {
+                console.error('[Scholarium] deduction render failed:', error);
+                deductionPanel.empty();
+                const fallback = deductionPanel.createDiv({ cls: 'deduction-room-fallback deduction-room-error' });
+                fallback.createEl('h2', { text: '研究推演室加载失败' });
+                fallback.createEl('p', { text: '请查看控制台错误详情，或点击重新加载。' });
+                fallback.createEl('pre', {
+                    text: error instanceof Error ? error.stack || error.message : String(error),
+                });
+                const retry = fallback.createEl('button', { cls: 'scholarium-btn primary', text: '重新加载' });
+                retry.onclick = () => { void this.render(); };
+            } finally {
+                if (timeout !== null) window.clearTimeout(timeout);
+                loading.remove();
+            }
         } else {
             // ── Notebook 模式条（实验 ⇄ 想法，重设计 M5）──
             const lang = this.plugin.settings.language;
@@ -254,6 +306,7 @@ export class DashboardView extends ItemView {
                 };
             }
 
+            this.expListActionsContainer = leftPanel.createDiv({ cls: 'exp-list-actions' });
             this.expListContainer = leftPanel.createDiv({ cls: 'exp-list-container' });
 
             // 加载数据
@@ -278,7 +331,7 @@ export class DashboardView extends ItemView {
     }
 
     // ───── 顶部品牌栏（重设计 M3）─────
-    private switchTab(panel: 'lab' | 'feeds' | 'workspace' | 'materials' | 'tools' | 'weaver'): void {
+    private switchTab(panel: 'lab' | 'deduction' | 'feeds' | 'workspace' | 'materials' | 'tools' | 'weaver'): void {
         if (this.activePanel === panel) return;
         this.activePanel = panel;
         void this.render();
@@ -341,7 +394,8 @@ export class DashboardView extends ItemView {
         const roleLabel = s.workspaceRole !== 'custom'
             ? (WORKSPACE_ROLE_LABELS[s.workspaceRole] ?? t('workspace', lang))
             : (s.workspaceTabLabel || t('workspace', lang));
-        const tabs: Array<{ key: 'lab' | 'feeds' | 'workspace' | 'materials' | 'tools' | 'weaver'; icon: string; label: string }> = [
+        const tabs: Array<{ key: 'lab' | 'deduction' | 'feeds' | 'workspace' | 'materials' | 'tools' | 'weaver'; icon: string; label: string }> = [
+            { key: 'deduction',  icon: 'brain',     label: lang === 'zh' ? '研究推演室' : 'Research deduction' },
             { key: 'lab',        icon: 'notebook',  label: s.notebookLabel || t('notebook', lang) },
             { key: 'feeds',      icon: 'rss',       label: lang === 'zh' ? '文献订阅' : 'Feeds' },
             { key: 'workspace',  icon: 'workspace', label: roleLabel },
@@ -383,7 +437,14 @@ export class DashboardView extends ItemView {
 
         // AI assistant
         const aiBtn = this.brandIconButton(actions, 'sparkle', t('ai', lang));
-        aiBtn.addEventListener('click', () => new AIChatModal(this.app, this.plugin).open());
+        aiBtn.addEventListener('click', () => new AIChatModal(
+            this.app,
+            this.plugin,
+            undefined,
+            undefined,
+            false,
+            this.getExperimentProjectIdForCreation(),
+        ).open());
 
         // settings
         const setBtn = this.brandIconButton(actions, 'settings', t('settings', lang));
@@ -408,16 +469,17 @@ export class DashboardView extends ItemView {
         el.setText(`🔬 共${t}条 · ✅${c} · 🔄${p}${bk ? ' · ★'+bk : ''}`);
     }
 
-    // ───── 实验列表 ─────
+    // ───── 实验列表与课题归属 ─────
     renderExpList() {
         if (!this.expListContainer) return;
         this.expListContainer.empty();
 
         const filtered = this.getFilteredExperiments();
+        this.renderExperimentAssignmentActions(filtered);
 
         if (!filtered.length) {
             this.expListContainer.createEl('div', {
-                text: (this.filterText || this.filterStatus !== 'all')
+                text: (this.filterText || this.filterStatus !== 'all' || this.experimentProjectFilter)
                     ? '没有匹配的实验记录'
                     : '尚无实验记录。\n点击"＋ 新建实验"或"🤖 AI 助手"开始！',
                 cls: 'scholarium-empty'
@@ -434,8 +496,149 @@ export class DashboardView extends ItemView {
         }
     }
 
+    renderExperimentAssignmentActions(experiments: ExperimentNote[]): void {
+        const container = this.expListActionsContainer;
+        if (!container) return;
+        container.empty();
+        if (!experiments.length) return;
+        const count = container.createSpan({
+            text: `已选 ${this.experimentBulkSelection.size} 条`,
+            cls: 'exp-project-bulk-count',
+        });
+        const assign = container.createEl('button', {
+            text: '批量归类',
+            cls: 'scholarium-btn primary exp-project-bulk-toggle',
+            attr: { title: '先勾选记录，再选择归入哪个课题' },
+        });
+        assign.disabled = this.experimentBulkSelection.size === 0;
+        assign.onclick = () => {
+            const selected = this.allExperiments.filter((exp) => this.experimentBulkSelection.has(exp.file.path));
+            void this.openExperimentProjectAssignment(selected);
+        };
+        count.setAttr('aria-live', 'polite');
+    }
+
+    getExperimentProjectIdForCreation(): string {
+        return this.experimentProjectFilter === '__unclassified' || !this.experimentProjectFilter || this.experimentProjectFilter === '__all'
+            ? ''
+            : String(this.experimentProjectFilter).trim();
+    }
+
+    async getExperimentProjectChoices(): Promise<Array<{ id: string; title: string }>> {
+        const projects = new Map<string, { id: string; title: string }>();
+        const add = (id: unknown, title: unknown) => {
+            const normalized = String(id || '').trim();
+            if (!normalized) return;
+            const key = normalized.toUpperCase();
+            projects.set(key, { id: key, title: String(title || normalized).trim() || normalized });
+        };
+        const legacyRoot = `${(this.plugin.settings.experimentsFolder || 'Experiments').replace(/\/+$/, '')}/Projects`;
+        const legacy = this.app.vault.getAbstractFileByPath(legacyRoot) as { children?: Array<{ name: string; children?: unknown }> } | null;
+        for (const folder of legacy?.children || []) {
+            if (!folder.children) continue;
+            const projectFile = this.app.vault.getAbstractFileByPath(`${legacyRoot}/${folder.name}/project.md`);
+            const frontmatter = projectFile instanceof TFile
+                ? this.app.metadataCache.getFileCache(projectFile)?.frontmatter || {}
+                : {};
+            add(folder.name, frontmatter.title);
+        }
+        for (const file of this.app.vault.getMarkdownFiles()) {
+            if (!/^Research\/Projects\/[^/]+\.md$/i.test(file.path)) continue;
+            const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter || {};
+            add(frontmatter.display_id || file.basename, frontmatter.title || file.basename);
+        }
+        try {
+            const profileView = this as unknown as {
+                loadProjectProfileSummary?: () => Promise<{
+                    ctx: { projectId: string; title: string };
+                    summary: { title: string };
+                }>;
+            };
+            const profile = await profileView.loadProjectProfileSummary?.();
+            if (profile) add(profile.ctx.projectId, profile.summary.title || profile.ctx.title);
+        } catch (error) {
+            console.warn('[Scholarium] Unable to include the active project in assignment choices:', error);
+        }
+        return Array.from(projects.values()).sort((a, b) =>
+            a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
+    }
+
+    async openExperimentProjectAssignment(experiments: ExperimentNote[]): Promise<void> {
+        const selected = Array.from(new Map((experiments || []).map((exp) => [exp.file.path, exp])).values());
+        if (!selected.length) return;
+        const projects = await this.getExperimentProjectChoices();
+        if (!projects.length) {
+            new Notice('请先新建课题，再归类实验记录。');
+            return;
+        }
+        const overlay = document.createElement('div');
+        overlay.className = 'exp-project-assign-overlay';
+        const modal = overlay.createDiv({ cls: 'exp-project-assign-modal' });
+        modal.createEl('h3', { text: `归类 ${selected.length} 条实验记录` });
+        modal.createEl('p', {
+            text: '选择目标课题。选“未归类”可清除已有的课题归属。',
+            cls: 'exp-project-assign-help',
+        });
+        const select = modal.createEl('select', { cls: 'exp-project-assign-select' });
+        select.createEl('option', { text: '未归类', attr: { value: '' } });
+        for (const project of projects) {
+            select.createEl('option', { text: `${project.id} · ${project.title}`, attr: { value: project.id } });
+        }
+        const actions = modal.createDiv({ cls: 'exp-project-assign-actions' });
+        const cancel = actions.createEl('button', { text: '取消', cls: 'scholarium-btn' });
+        const confirm = actions.createEl('button', {
+            text: '确认归类',
+            cls: 'scholarium-btn primary exp-project-assign-confirm',
+        });
+        const close = () => overlay.remove();
+        cancel.onclick = close;
+        confirm.onclick = async () => {
+            confirm.disabled = true;
+            cancel.disabled = true;
+            confirm.setText('保存中…');
+            try {
+                await this.assignExperimentsToProject(selected, select.value);
+                close();
+            } catch (error) {
+                confirm.disabled = false;
+                cancel.disabled = false;
+                confirm.setText('确认归类');
+                new Notice('归类失败：' + (error as Error).message);
+            }
+        };
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) close();
+        });
+        document.body.appendChild(overlay);
+        requestAnimationFrame(() => overlay.addClass('is-open'));
+    }
+
+    async assignExperimentsToProject(experiments: ExperimentNote[], projectId: string): Promise<void> {
+        const id = String(projectId || '').trim();
+        const selected = Array.from(new Map((experiments || []).map((exp) => [exp.file.path, exp])).values());
+        for (const exp of selected) {
+            await this.app.fileManager.processFrontMatter(exp.file, (frontmatter) => {
+                if (id) frontmatter.project_id = id;
+                else delete frontmatter.project_id;
+            });
+        }
+        this.experimentBulkSelection = new Set();
+        this.allExperiments = await this.getExperiments();
+        this.updateStats();
+        this.renderExpList();
+        if (this.detailPanel) {
+            await this.renderExperimentDashboard(this.detailPanel, this.getFilteredExperiments());
+        }
+        new Notice(id ? `已将 ${selected.length} 条记录归类到 ${id}` : `已将 ${selected.length} 条记录设为未归类`);
+    }
+
     getFilteredExperiments(): ExperimentNote[] {
         let filtered = this.allExperiments;
+        if (this.experimentProjectFilter === '__unclassified') {
+            filtered = filtered.filter((exp) => !exp.projectId);
+        } else if (this.experimentProjectFilter && this.experimentProjectFilter !== '__all') {
+            filtered = filtered.filter((exp) => exp.projectId === this.experimentProjectFilter);
+        }
         if (this.filterStatus === 'study') filtered = filtered.filter(e => e.noteType === 'research-learning');
         else if (this.filterStatus !== 'all') filtered = filtered.filter(e => e.noteType === 'experiment' && e.status === this.filterStatus);
         if (this.filterText.trim()) {
@@ -464,9 +667,21 @@ export class DashboardView extends ItemView {
 
         const tools = header.createDiv({ cls: 'exp-board-tools' });
         tools.createEl('button', { text: '＋ 新建实验', cls: 'scholarium-btn primary' })
-            .onclick = () => this.createNewExperiment();
+            .onclick = () => schOpenExperimentCreator(this.plugin);
+        tools.createEl('button', {
+            text: '＋ 新建学习笔记',
+            cls: 'scholarium-btn',
+            attr: { title: '新建一篇手动研究学习笔记，并继承当前课题归属' },
+        }).onclick = () => this.createNewResearchLearningNote();
         tools.createEl('button', { text: 'AI 整理 / 新建', cls: 'scholarium-btn ai-btn' })
-            .onclick = () => new AIChatModal(this.app, this.plugin).open();
+            .onclick = () => new AIChatModal(
+                this.app,
+                this.plugin,
+                undefined,
+                undefined,
+                false,
+                this.getExperimentProjectIdForCreation(),
+            ).open();
 
         if (!experiments.length) {
             const empty = panel.createDiv({ cls: 'exp-board-empty' });
@@ -1564,10 +1779,11 @@ export class DashboardView extends ItemView {
     }
 
     // ───── 获取所有实验（日期严格按 frontmatter.date 或文件名，不用 mtime）─────
-    /** 公开版风格：直接在 vault 中新建一份带标准 frontmatter 的实验记录笔记 */
+    /** 兼容推演室的旧记录入口；看板绿色按钮使用 Schema v1 创建器。 */
     async createNewExperiment(): Promise<void> {
         const today = new Date().toISOString().split('T')[0]!;
-        const folder = (this.plugin.settings as { experimentFolder?: string }).experimentFolder || 'Experiments';
+        const folder = this.plugin.settings.experimentsFolder || 'Experiments';
+        const projectId = this.getExperimentProjectIdForCreation();
         try {
             if (!this.app.vault.getAbstractFileByPath(folder)) {
                 await this.app.vault.createFolder(folder);
@@ -1590,6 +1806,7 @@ reagents: []
 smiles: ""
 reaction_smiles: ""
 results: ""
+project_id: ${JSON.stringify(projectId)}
 ---
 
 ## 目的
@@ -1612,21 +1829,102 @@ results: ""
         }
     }
 
+    async createNewResearchLearningNote(): Promise<void> {
+        const today = new Date().toISOString().split('T')[0]!;
+        const folder = this.plugin.settings.experimentsFolder || 'Experiments';
+        const projectId = this.getExperimentProjectIdForCreation();
+        try {
+            if (!this.app.vault.getAbstractFileByPath(folder)) {
+                await this.app.vault.createFolder(folder);
+            }
+        } catch (error) {
+            console.warn('[Scholarium] Unable to ensure learning-note folder:', folder, error);
+        }
+        const baseName = `${today}-研究学习笔记`;
+        let path = `${folder}/${baseName}.md`;
+        let i = 1;
+        while (this.app.vault.getAbstractFileByPath(path)) {
+            path = `${folder}/${baseName}-${++i}.md`;
+        }
+        const tpl = `---
+type: research-learning
+title: 新研究学习笔记
+date: ${today}
+status: study
+project_id: ${JSON.stringify(projectId)}
+tags: [research-learning, study-note]
+---
+
+# 新研究学习笔记
+
+## 学习目标
+
+
+## 核心概念
+
+
+## 文献与证据
+
+
+## 方法理解
+
+
+## 关键结论
+
+
+## 问题与思考
+
+
+## 下一步
+
+`;
+        try {
+            const file = await this.app.vault.create(path, tpl);
+            await this.app.workspace.getLeaf(false).openFile(file);
+        } catch (error) {
+            new Notice('创建失败：' + (error as Error).message);
+        }
+    }
+
     async getExperiments(): Promise<ExperimentNote[]> {
         const results: ExperimentNote[] = [];
-        for (const file of this.app.vault.getMarkdownFiles()) {
+        const files = this.app.vault.getMarkdownFiles();
+        const canonicalProjectIds = new Map<string, string>();
+        for (const file of files) {
+            if (!/^Research\/Projects\/[^/]+\.md$/i.test(file.path)) continue;
+            const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+            const uid = String(frontmatter?.uid || '').trim();
+            const displayId = String(frontmatter?.display_id || '').trim();
+            if (uid && displayId) canonicalProjectIds.set(uid, displayId.toUpperCase());
+        }
+        for (const file of files) {
             try {
                 let fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+                let rawContent = '';
                 if (!fm) {
-                    const content = await this.app.vault.cachedRead(file);
-                    const info = getFrontMatterInfo(content);
+                    rawContent = await this.app.vault.cachedRead(file);
+                    const info = getFrontMatterInfo(rawContent);
                     fm = info.exists ? parseYaml(info.frontmatter) : undefined;
+                }
+                // Older Weaver drafts may lack frontmatter. Show only direct
+                // children of the dedicated experiment directory as unclassified;
+                // never change the note or override an explicit different type.
+                if (!fm?.type && /^Research\/Experiments\/[^/]+\.md$/i.test(file.path)) {
+                    if (!rawContent) rawContent = await this.app.vault.cachedRead(file);
+                    const heading = rawContent.replace(/^---\r?\n[\s\S]*?\r?\n---\s*/, '').match(/^#\s+(.+)$/m)?.[1]?.trim();
+                    fm = { ...fm, type: 'experiment', title: fm?.title || heading || file.basename, status: fm?.status || '待整理' };
                 }
                 if (fm?.type === 'experiment' || fm?.type === 'research-learning') {
                     // 日期优先级：frontmatter.date > 文件名中的日期 > ctime（创建时间，不是修改时间）
                     const filenameDate = file.basename.match(/(\d{4}-\d{2}-\d{2})/)?.[1] ?? '';
                     const fallbackDate = filenameDate || (new Date(file.stat.ctime).toISOString().split('T')[0] ?? '');
                     const date: string = (typeof fm.date === 'string' ? fm.date : undefined) ?? fallbackDate;
+                    const projectId = String(
+                        fm.project_id
+                        || fm.projectId
+                        || canonicalProjectIds.get(String(fm.project_uid || '').trim())
+                        || '',
+                    ).trim();
 
                     results.push({
                         file,
@@ -1640,6 +1938,7 @@ results: ""
                         reagents: Array.isArray(fm.reagents) ? fm.reagents as string[] : [],
                         bookmarked: fm.bookmarked === true,
                         excalidraw: (fm.excalidraw as string | undefined) ?? '',
+                        projectId,
                     });
                 }
             } catch (error) {

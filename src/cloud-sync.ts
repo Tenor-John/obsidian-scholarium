@@ -2,6 +2,7 @@ import { App, Notice, TFile, TFolder } from 'obsidian';
 import ChemELNPlugin from './main';
 import type { ChemELNSettings } from './settings';
 import { fetchWithTimeout, requestUrlWithTimeout } from './utils/network';
+import { schMaterialsRoot } from './folders';
 
 export type CloudProviderType = 'none' | 'webdav' | 's3';
 
@@ -389,6 +390,27 @@ export class CloudSyncManager {
         private cfg: CloudProviderConfig
     ) {}
 
+    private materialRoot(): string {
+        return schMaterialsRoot(this.plugin);
+    }
+
+    private normalizeVaultPath(value: string): string {
+        const normalized = String(value || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+        const parts = normalized.split('/');
+        if (!normalized || parts.some(part => !part || part === '.' || part === '..')) {
+            throw new Error(`无效的 Vault 路径：${value}`);
+        }
+        return parts.join('/');
+    }
+
+    private remotePath(vaultPath: string): string {
+        const normalized = this.normalizeVaultPath(vaultPath);
+        if (this.cfg.type === 'webdav') return normalized;
+        const configuredPrefix = String(this.cfg.s3Prefix || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+        const prefix = configuredPrefix ? this.normalizeVaultPath(configuredPrefix) : '';
+        return prefix ? `${prefix}/${normalized}` : normalized;
+    }
+
     async testConnection(): Promise<{ ok: boolean; message: string }> {
         const provider = this.getProvider();
         if (!provider) {
@@ -414,49 +436,34 @@ export class CloudSyncManager {
 
         try {
             await this.ensureRemoteRoot();
-
-            // 1. 列出本地 Materials/ 文件夹的文件
-            const localFolder = this.app.vault.getAbstractFileByPath('Materials');
+            const root = this.materialRoot();
+            const localFolder = this.app.vault.getAbstractFileByPath(root);
             const localFiles: TFile[] = [];
-            if (localFolder instanceof TFolder) {
-                localFolder.children.forEach(f => {
-                    if (f instanceof TFile) {
-                        localFiles.push(f);
-                    }
+            const collectFiles = (folder: TFolder): void => {
+                folder.children.forEach(child => {
+                    if (child instanceof TFile) localFiles.push(child);
+                    else if (child instanceof TFolder) collectFiles(child);
                 });
-            }
+            };
+            if (localFolder instanceof TFolder) collectFiles(localFolder);
 
-            // 2. 列出云端文件
-            const remotePrefix = this.cfg.type === 'webdav' ? this.cfg.webdavPath : this.cfg.s3Prefix;
-            const remoteDir = remotePrefix.endsWith('/') ? remotePrefix + 'Materials/' : remotePrefix + '/Materials/';
-            const remoteFiles = await (provider as WebDAVProvider | S3Provider).list(remoteDir);
-
-            // 构建云端文件名集合
-            const remoteNames = new Set<string>();
-            remoteFiles.forEach(f => remoteNames.add(f.name));
-
-            // 3. 上传本地有但云端没有的文件
+            const ensured = new Set<string>();
             for (const file of localFiles) {
-                if (!remoteNames.has(file.name)) {
-                    try {
-                        const data = await this.app.vault.readBinary(file);
-                        const remotePath = remoteDir + file.name;
-
-                        if (this.cfg.type === 'webdav') {
-                            await (provider as WebDAVProvider).upload(remotePath, data);
-                        } else {
-                            await (provider as S3Provider).upload(remotePath, data);
-                        }
-                        result.uploaded++;
-                    } catch (e) {
-                        result.errors.push(`上传 ${file.name} 失败：${(e as Error).message}`);
+                try {
+                    const parent = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : root;
+                    if (parent !== root && !ensured.has(parent)) {
+                        await this.ensureFolder(parent);
+                        ensured.add(parent);
                     }
+                    const data = await this.app.vault.readBinary(file);
+                    await provider.upload(this.remotePath(file.path), data);
+                    result.uploaded++;
+                } catch (e) {
+                    result.errors.push(`上传 ${file.path} 失败：${(e as Error).message}`);
                 }
             }
 
-            // 4. 同步元数据
-            await this.syncMetadata(provider as any);
-
+            await this.syncMetadata(provider);
             result.success = true;
         } catch (e) {
             result.errors.push((e as Error).message);
@@ -471,22 +478,77 @@ export class CloudSyncManager {
         if (!provider) return;
 
         try {
-            const file = this.app.vault.getAbstractFileByPath(vaultPath);
+            const normalized = this.normalizeVaultPath(vaultPath);
+            const file = this.app.vault.getAbstractFileByPath(normalized);
             if (!(file instanceof TFile)) return;
-
             const data = await this.app.vault.readBinary(file);
-            const remotePrefix = this.cfg.type === 'webdav' ? this.cfg.webdavPath : this.cfg.s3Prefix;
-            const remoteDir = remotePrefix.endsWith('/') ? remotePrefix : remotePrefix + '/';
-            const remotePath = remoteDir + vaultPath;
-
-            if (this.cfg.type === 'webdav') {
-                await (provider as WebDAVProvider).upload(remotePath, data);
-            } else {
-                await (provider as S3Provider).upload(remotePath, data);
-            }
+            await provider.upload(this.remotePath(normalized), data);
         } catch (e) {
             console.warn('[CloudSync] uploadFile error:', e);
         }
+    }
+
+    async ensureFolder(t: string): Promise<{ ok: boolean; skipped?: boolean; message?: string }> {
+        const provider = this.getProvider();
+        if (!provider) return { ok: false, skipped: true, message: '未配置云存储' };
+        const normalized = this.normalizeVaultPath(t);
+        const root = this.materialRoot();
+        if (normalized !== root && !normalized.startsWith(root + '/')) {
+            throw new Error(`云端目录必须位于 ${root} 内`);
+        }
+
+        if (this.cfg.type === 'webdav') {
+            let current = '';
+            for (const part of normalized.split('/')) {
+                current += `${part}/`;
+                await (provider as WebDAVProvider).ensureDir(current);
+            }
+        } else {
+            await provider.upload(`${this.remotePath(normalized)}/`, new ArrayBuffer(0), 'application/x-directory');
+        }
+        return { ok: true };
+    }
+
+    async moveFile(t: string, e: string): Promise<{ ok: boolean; skipped?: boolean; message?: string }> {
+        const provider = this.getProvider();
+        if (!provider) return { ok: false, skipped: true, message: '未配置云存储' };
+        const oldPath = this.normalizeVaultPath(t);
+        const targetPath = this.normalizeVaultPath(e);
+        const root = this.materialRoot();
+        if ((!oldPath.startsWith(root + '/') && oldPath !== root) || (!targetPath.startsWith(root + '/') && targetPath !== root)) {
+            throw new Error(`云端移动必须位于 ${root} 内`);
+        }
+        const file = this.app.vault.getAbstractFileByPath(targetPath);
+        if (!(file instanceof TFile)) throw new Error('移动后的 Vault 文件不存在');
+        const parent = targetPath.includes('/') ? targetPath.slice(0, targetPath.lastIndexOf('/')) : root;
+        await this.ensureFolder(parent);
+        const bytes = await this.app.vault.readBinary(file);
+        await provider.upload(this.remotePath(targetPath), bytes);
+        try {
+            await provider.delete(this.remotePath(oldPath));
+        } catch (error) {
+            if (!/404/.test(String((error as Error)?.message || error))) throw error;
+        }
+        await this.syncMetadata(provider);
+        return { ok: true };
+    }
+
+    async deletePaths(paths: string[]): Promise<{ ok: boolean; skipped?: boolean; message?: string }> {
+        const provider = this.getProvider();
+        if (!provider) return { ok: false, skipped: true, message: '未配置云存储' };
+        const analysisRoot = `${this.materialRoot()}/_analysis/`;
+        for (const path of Array.from(new Set(paths || []))) {
+            const normalized = this.normalizeVaultPath(path);
+            if (!normalized.startsWith(analysisRoot)) {
+                throw new Error(`拒绝删除 ${this.materialRoot()}/_analysis 之外的云端文件`);
+            }
+            try {
+                await provider.delete(this.remotePath(normalized));
+            } catch (error) {
+                if (!/404/.test(String((error as Error)?.message || error))) throw error;
+            }
+        }
+        return { ok: true };
     }
 
     getLastResult(): SyncResult | null {
@@ -523,14 +585,10 @@ export class CloudSyncManager {
 
     private async ensureRemoteRoot(): Promise<void> {
         const provider = this.getProvider();
-        if (!provider) return;
-
-        const remotePrefix = this.cfg.type === 'webdav' ? this.cfg.webdavPath : this.cfg.s3Prefix;
-        if (this.cfg.type === 'webdav') {
-            await (provider as WebDAVProvider).ensureDir(remotePrefix);
-            await (provider as WebDAVProvider).ensureDir(remotePrefix + 'Materials/');
-        }
-        // S3 不需要预先创建目录
+        if (!provider || this.cfg.type !== 'webdav') return;
+        // WebDAVProvider 会统一添加 webdavPath，这里只传相对目录，避免重复前缀。
+        await (provider as WebDAVProvider).ensureDir('');
+        await (provider as WebDAVProvider).ensureDir(this.materialRoot() + '/');
     }
 
     private async syncMetadata(provider: WebDAVProvider | S3Provider): Promise<void> {
@@ -539,15 +597,7 @@ export class CloudSyncManager {
             const matData = pluginData.materialLibrary;
             const jsonStr = JSON.stringify(matData, null, 2);
             const jsonBuf = new TextEncoder().encode(jsonStr);
-
-            const remotePrefix = this.cfg.type === 'webdav' ? this.cfg.webdavPath : this.cfg.s3Prefix;
-            const metaPath = (remotePrefix.endsWith('/') ? remotePrefix : remotePrefix + '/') + 'metadata.json';
-
-            if (this.cfg.type === 'webdav') {
-                await (provider as WebDAVProvider).upload(metaPath, jsonBuf, 'application/json');
-            } else {
-                await (provider as S3Provider).upload(metaPath, jsonBuf, 'application/json');
-            }
+            await provider.upload(this.remotePath('metadata.json'), jsonBuf, 'application/json');
         } catch (e) {
             console.warn('[CloudSync] syncMetadata error:', e);
         }
