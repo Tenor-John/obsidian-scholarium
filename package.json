@@ -1,12 +1,12 @@
 {
 	"name": "obsidian-scholarium",
-	"version": "3.0.2",
+	"version": "3.0.3",
 	"description": "A scholarly electronic lab notebook plugin for Obsidian",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build:base": "node scripts/check-style-scope.mjs && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"build": "npm run build:base && node tools/embed-runtime-bootstrap.js && node tools/embed-native-weaver.js && node tools/embed-logo.js && node scripts/check-release-bundle.mjs && node --check main.js",
+		"build": "npm run build:base && node tools/embed-runtime-bootstrap.js && node tools/embed-native-weaver.js && node scripts/embed-ketcher-styles.mjs && node tools/embed-logo.js && node scripts/check-release-bundle.mjs && node --check main.js",
 		"build:release": "npm run build",
 		"check:styles": "node scripts/check-style-scope.mjs",
 		"test": "node scripts/run-source-tests.cjs",

@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck -- Legacy JavaScript port pending incremental type migration.
 /* global schNativeWeaverHost, schCreatePdfDocumentCore */
 /* Literature subscriptions, direct search, Zotero, manual capture and radar.
  * The Obsidian API is namespace-imported under its reviewed internal alias. */
@@ -411,7 +411,7 @@ var ss = "\u672A\u5206\u7EC4",
         }
         if (r.length < 20)
           return (
-            e && (e.innerHTML = q),
+            e && (e.replaceChildren(Ne.sanitizeHTMLToDom(String(q ?? "")))),
             G.quiet ||
               new Ne.Notice("\u8BE5\u6587\u6CA1\u6709\u53EF\u7528\u6458\u8981\uFF0C\u65E0\u6CD5\u5FEB\u901F\u8BC4\u5206\u3002\u53EF\u5728\u9605\u8BFB\u9875\u70B9\u300C\u8865\u5168\u5143\u6570\u636E\u300D\u6216\u6253\u5F00\u5168\u6587\u3002"),
             "missing_abstract"
@@ -515,7 +515,7 @@ var ss = "\u672A\u5206\u7EC4",
           "failed"
         );
       } finally {
-        N && (this.radarScoring = !1), e && ((e.disabled = !1), (e.innerHTML = n));
+        N && (this.radarScoring = !1), e && ((e.disabled = !1), (e.replaceChildren(Ne.sanitizeHTMLToDom(String(n ?? "")))));
       }
     }
     async setRadarFeedback(t, e) {
@@ -1517,7 +1517,7 @@ var ss = "\u672A\u5206\u7EC4",
         } catch (C) {
           new Ne.Notice("\u5143\u6570\u636E\u8865\u5168\u5931\u8D25\uFF1A" + C.message);
         } finally {
-          D.removeAttribute("disabled"), (D.innerHTML = y);
+          D.removeAttribute("disabled"), (D.replaceChildren(Ne.sanitizeHTMLToDom(String(y ?? ""))));
         }
       };
       let p = c.createDiv({ cls: "rss-reader-content" }),
@@ -1665,7 +1665,7 @@ var ss = "\u672A\u5206\u7EC4",
         (u = window.setTimeout(() => {
           this.activeSummaryRequest === o &&
             (e.removeAttribute("disabled"),
-            (e.innerHTML = i),
+            (e.replaceChildren(Ne.sanitizeHTMLToDom(String(i ?? "")))),
             new Ne.Notice("AI 总结超时（超过 50 秒），请重试。"));
         }, 5e4));
       e.setText("\u603B\u7ED3\u4E2D\u2026");
@@ -1698,7 +1698,7 @@ var ss = "\u672A\u5206\u7EC4",
             "\u6682\u65E0\u8DB3\u591F\u6587\u672C\u53EF\u603B\u7ED3\uFF0C\u8BF7\u5148\u6253\u5F00\u7F51\u9875\u6216\u7B49\u6458\u8981\u8865\u5168",
           ),
             e.removeAttribute("disabled"),
-            (e.innerHTML = i);
+            (e.replaceChildren(Ne.sanitizeHTMLToDom(String(i ?? ""))));
           return;
         }
         let c = [
@@ -1718,13 +1718,13 @@ var ss = "\u672A\u5206\u7EC4",
         (t.aiSummary = h),
           await this.save(),
           e.removeAttribute("disabled"),
-          (e.innerHTML = i),
+          (e.replaceChildren(Ne.sanitizeHTMLToDom(String(i ?? "")))),
           this.refreshAiSummary ? this.refreshAiSummary() : this.rerender();
       } catch (a) {
         if (this.activeSummaryRequest !== o) return;
         new Ne.Notice("AI \u603B\u7ED3\u5931\u8D25\uFF1A" + a.message),
           e.removeAttribute("disabled"),
-          (e.innerHTML = i);
+          (e.replaceChildren(Ne.sanitizeHTMLToDom(String(i ?? ""))));
       } finally {
         window.clearTimeout(u),
           this.activeSummaryRequest === o && (this.activeSummaryRequest = null);
@@ -2203,7 +2203,7 @@ var ss = "\u672A\u5206\u7EC4",
             if (!saved) {
               status.setText(`${index + 1}/${queue.length} · 已识别全文，正在保存…`);
               const dummy = document.createElement("button");
-              dummy.innerHTML = "抓取";
+              dummy.replaceChildren(Ne.sanitizeHTMLToDom(String("抓取" ?? "")));
               saved = await this.clipAndSummarize(webview, article, dummy, {
                 throwOnError: !0, openResult: !1, quiet: !0, skipSummary: !0, forceNewCapture: !0,
                 ...(detectedPdfUrl ? { pdfCandidates: [detectedPdfUrl] } : {}),
@@ -2620,7 +2620,7 @@ var ss = "\u672A\u5206\u7EC4",
     }
     renderLiteratureMatrixTitle(element, text) {
       const template = document.createElement("template");
-      template.innerHTML = String(text || "");
+      template.content.replaceChildren(Ne.sanitizeHTMLToDom(String(String(text || "") ?? "")));
       const copy = (node, target) => {
         if (node.nodeType === 3) { target.appendChild(document.createTextNode(node.textContent || "")); return; }
         if (node.nodeType !== 1) return;
@@ -2852,13 +2852,13 @@ var ss = "\u672A\u5206\u7EC4",
         selectAll.onclick = () => { for (const r of rows) this.__matrixSelected.add(r.path); state.selected_ids = [...this.__matrixSelected]; this.save(); draw(); };
         scroll.empty(); pager.empty();
         const table = scroll.createEl("table", { cls: "sch-matrix-table" });
-        table.style.tableLayout = "fixed";
+        table.setCssStyles({tableLayout: "fixed"});
         const tr = table.createEl("thead").createEl("tr");
         const columns = [["title", "标题"], ["authors", "作者"], ["journal", "期刊"], ["year", "年份"], ["status", "状态"], ["tags", "标签"], ["added_at", "入库时间"], ["mtime", "更新时间"], ["", "文献操作"], ...this.literatureMatrixFields().map((f) => ["", f])];
         const widths = columns.map((column, index) => pref.column_widths?.[column[1]] || (index === 0 ? 280 : index >= 9 ? 240 : 160));
         const colgroup = table.createEl("colgroup");
         const cols = widths.map((width) => { const col = colgroup.createEl("col"); col.style.width = width + "px"; return col; });
-        const applyTableWidth = () => { table.style.width = widths.reduce((a, b) => a + b, 0) + "px"; table.style.minWidth = "0"; };
+        const applyTableWidth = () => { table.style.width = widths.reduce((a, b) => a + b, 0) + "px"; table.setCssStyles({minWidth: "0"}); };
         applyTableWidth();
         for (const [key, label] of columns) {
           const th = tr.createEl("th", { attr: { scope: "col" } });
@@ -2866,10 +2866,10 @@ var ss = "\u672A\u5206\u7EC4",
           const handle = th.createEl("span", { cls: "sch-matrix-resize", attr: { role: "separator", "aria-label": "调整" + label + "列宽" } });
           handle.onpointerdown = (event) => { event.preventDefault(); event.stopPropagation(); const index = columns.findIndex((c) => c[1] === label), start = event.clientX, width = th.getBoundingClientRect().width; handle.setPointerCapture(event.pointerId);
             let pending = 0, value = width;
-            handle.style.willChange = "transform";
+            handle.setCssStyles({willChange: "transform"});
             const flush = () => { pending = 0; handle.style.transform = `translate3d(${value - width}px, 0, 0)`; };
             handle.onpointermove = (move) => { value = Math.max(80, Math.min(900, Math.round(width + move.clientX - start))); if (!pending) pending = requestAnimationFrame(flush); };
-            const finish = () => { if (pending) cancelAnimationFrame(pending); pending = 0; handle.onpointermove = null; handle.onpointerup = null; handle.onpointercancel = null; handle.style.transform = ""; handle.style.willChange = ""; cols[index].style.width = value + "px"; widths[index] = value; applyTableWidth(); pref.column_widths ||= {}; pref.column_widths[label] = value; this.save(); };
+            const finish = () => { if (pending) cancelAnimationFrame(pending); pending = 0; handle.onpointermove = null; handle.onpointerup = null; handle.onpointercancel = null; handle.setCssStyles({transform: ""}); handle.setCssStyles({willChange: ""}); cols[index].style.width = value + "px"; widths[index] = value; applyTableWidth(); pref.column_widths ||= {}; pref.column_widths[label] = value; this.save(); };
             handle.onpointerup = finish; handle.onpointercancel = finish; };
         }
         const tbody = table.createEl("tbody");
@@ -2909,14 +2909,13 @@ var ss = "\u672A\u5206\u7EC4",
               event.preventDefault(); const start = event.clientY, height = view.getBoundingClientRect().height;
               grip.setPointerCapture(event.pointerId);
               let pending = 0, nextHeight = height;
-              grip.style.willChange = "transform";
+              grip.setCssStyles({willChange: "transform"});
               const flush = () => { pending = 0; grip.style.transform = `translate3d(0, ${nextHeight - height}px, 0)`; };
               grip.onpointermove = (move) => { nextHeight = Math.max(60, Math.min(1200, Math.round(height + move.clientY - start))); if (!pending) pending = requestAnimationFrame(flush); };
-              const finish = () => { if (pending) cancelAnimationFrame(pending); pending = 0; grip.onpointermove = null; grip.onpointerup = null; grip.onpointercancel = null; grip.style.transform = ""; grip.style.willChange = ""; view.style.height = nextHeight + "px"; updateFade(); pref.summary_heights ||= {}; pref.summary_heights[key] = nextHeight; this.save(); };
+              const finish = () => { if (pending) cancelAnimationFrame(pending); pending = 0; grip.onpointermove = null; grip.onpointerup = null; grip.onpointercancel = null; grip.setCssStyles({transform: ""}); grip.setCssStyles({willChange: ""}); view.style.height = nextHeight + "px"; updateFade(); pref.summary_heights ||= {}; pref.summary_heights[key] = nextHeight; this.save(); };
               grip.onpointerup = finish; grip.onpointercancel = finish;
             };
           };
-          summaryCell("总结内容", row.summary_text || "");
           for (const field of this.literatureMatrixFields()) summaryCell(field, row.ai[field] || "");
         }
         if (!rows.length) scroll.createEl("p", { text: "没有匹配的文献。可清空搜索或刷新文献库。" });
@@ -3908,7 +3907,7 @@ var ss = "\u672A\u5206\u7EC4",
         e && e.setText("已入库并建图"), new Ne.Notice(c + "，知识图谱已保存：" + a, 8e3), this.zoteroShowGraph(a);
         return { ...r, rag: n, graphPath: a };
       } catch (r) {
-        e && ((e.disabled = !1), (e.innerHTML = i || "重试"));
+        e && ((e.disabled = !1), (e.replaceChildren(Ne.sanitizeHTMLToDom(String((i || "重试") ?? "")))));
         new Ne.Notice((s ? "织研者 RAG/建图失败：" : "同步失败：") + String((r && r.message) || r).slice(0, 260), 9e3);
         throw r;
       }
@@ -3953,7 +3952,7 @@ var ss = "\u672A\u5206\u7EC4",
           i.selectedKeys.clear(), e.setText(`已定位 ${a.length} 篇`), new Ne.Notice(`已定位 ${a.length} 篇的 PDF（直连 Zotero，未复制进库）${l.length ? `；${l.length} 篇无 PDF` : ""}`, 7e3), this.rerender();
         }
       } catch (c) {
-        (e.disabled = !1), (e.innerHTML = n), new Ne.Notice("批量处理失败：" + String((c && c.message) || c).slice(0, 300), 10e3);
+        (e.disabled = !1), (e.replaceChildren(Ne.sanitizeHTMLToDom(String(n ?? "")))), new Ne.Notice("批量处理失败：" + String((c && c.message) || c).slice(0, 300), 10e3);
       }
     }
     async zoteroAddToProject(t, e) {
@@ -4389,7 +4388,7 @@ var ss = "\u672A\u5206\u7EC4",
       });
       h.appendChild(ue("close", { size: 14 }));
       if (e.localGraph) {
-        n.style.display = "none", a.style.display = "none",
+        n.setCssStyles({display: "none"}), a.setCssStyles({display: "none"}),
           c.setAttribute("title", "在系统浏览器中打开图谱 HTML");
       }
       let d = document.createElement("webview");
@@ -6150,7 +6149,7 @@ ${i}
           console.warn("[RssFeedBoard] clipAndSummarize:", c);
       } finally {
         s.removeAttribute("disabled"),
-          (s.innerHTML = a),
+          (s.replaceChildren(Ne.sanitizeHTMLToDom(String(a ?? "")))),
           s.setAttribute(
             "title",
             "抓全文+图片并生成文献总结",

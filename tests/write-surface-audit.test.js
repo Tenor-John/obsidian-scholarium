@@ -11,8 +11,8 @@ const { scanProductionWrites } = require("../tools/write-surface-audit");
 // authorizing this candidate fingerprint is:
 // docs/audits/write-path-matrix-2026-11-05-market-candidate.md
 const APPROVED = Object.freeze({
-  digest: "d61024fce3c77e3ea2177d30e55bfcec3a87a3ff5494239853c1347b71d0a010",
-  count: 609,
+  digest: "cfa0a8e15d4be4705461fcf3b59e818d78e571c1d91a00a9c21880d74c5ba1ba",
+  count: 610,
   by_surface: {
     "agent-ui-state": 40,
     "bridge-runtime": 94,
@@ -21,7 +21,7 @@ const APPROVED = Object.freeze({
     "domain-and-maintenance-tools": 128,
     "native-weaver-vendor": 15,
     "gated-build-source": 118,
-    "build-tooling": 2,
+    "build-tooling": 3,
   },
 });
 

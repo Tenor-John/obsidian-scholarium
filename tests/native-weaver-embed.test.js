@@ -48,7 +48,8 @@ describe("native 织研者 embed: the shipped files", () => {
     assert.ok(!/shell\.style\.cssText = "display:flex;position:fixed/.test(main));
     // 织研者 fills the whole leaf: the host padding is dropped only on that tab.
     assert.match(main, /content\d*\.toggleClass\("sch-weaver-active", weaverActive\d*\)/);
-    assert.match(main, /content\d*\.style\.setProperty\("padding", "0", "important"\)/);
+    assert.match(main, /content\d*\.addClass\("scholarium-persistent-content"\)/);
+    assert.match(styles, /\.scholarium-persistent-content\s*\{[^}]*padding\s*:\s*0\s*!important/);
     // The native workspace is pinned to the stretching grid row.
     assert.match(styles, /\.scholarium-weaver__workspace \{[^}]*grid-row: 3;/);
     assert.match(main, /批量抓取（半自动）/);
