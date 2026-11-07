@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck -- Legacy JavaScript port pending incremental type migration.
 /* global SCHOLARIUM_LOGO_DATA_URL, schNativeWeaverHost */
 /* Persistent native Weaver host and its scope-checked postMessage bridge. */
 import {
@@ -122,7 +122,7 @@ queueMicrotask(() =>
       const source = document.createElement("iframe");
       source.setAttribute("aria-hidden", "true");
       source.tabIndex = -1;
-      source.style.cssText = "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-10000px;top:-10000px;border:0;";
+      source.addClass("sch-legacy-recovery-source");
       let timer;
       const cleanup = () => {
         window.clearTimeout(timer);
@@ -179,8 +179,7 @@ queueMicrotask(() =>
       // the persistent panels below provide the single, common inset instead.
       const weaverActive = this.activePanel === "deduction";
       content.toggleClass("sch-weaver-active", weaverActive);
-      content.style.setProperty("padding", "0", "important");
-      content.style.setProperty("box-sizing", "border-box");
+      content.addClass("scholarium-persistent-content");
       this.plugin?.applyThemeAttributes?.(content);
       // Keep Weaver and the legacy Scholarium panels as two persistent sibling
       // hosts.  The old switchTab -> render -> content.empty chain destroyed the
@@ -191,12 +190,12 @@ queueMicrotask(() =>
       if (!shell || !shell.isConnected || shell.parentElement !== content) {
         content.empty();
         shell = content.createDiv({ cls: "scholarium-persistent-shell" });
-        shell.style.cssText = "display:flex;flex:1 1 auto;min-width:0;min-height:0;position:relative;overflow:hidden;";
+        shell.addClass("sch-persistent-shell-layout");
         this.__scholariumPersistentShell = shell;
         this.__scholariumLegacyHost = shell.createDiv({ cls: "scholarium-persistent-panel scholarium-legacy-host" });
         this.__scholariumWeaverHost = shell.createDiv({ cls: "scholarium-persistent-panel scholarium-weaver-host" });
         for (const host of [this.__scholariumLegacyHost, this.__scholariumWeaverHost]) {
-          host.style.cssText = "display:flex;position:absolute;inset:0;min-width:0;min-height:0;flex-direction:column;overflow:hidden;";
+          host.addClass("sch-persistent-panel-layout");
         }
       }
 
@@ -205,12 +204,12 @@ queueMicrotask(() =>
       window.__scholariumDashboardView = this;
       try { typeof schNativeWeaverHost !== "undefined" && schNativeWeaverHost.registerCommand(this.plugin); } catch (_) { /* commands are optional */ }
       if (this.activePanel !== "deduction") {
-        weaverHost.style.visibility = "hidden";
-        weaverHost.style.pointerEvents = "none";
-        weaverHost.style.zIndex = "0";
-        legacyHost.style.visibility = "visible";
-        legacyHost.style.pointerEvents = "auto";
-        legacyHost.style.zIndex = "1";
+        weaverHost.setCssStyles({visibility: "hidden"});
+        weaverHost.setCssStyles({pointerEvents: "none"});
+        weaverHost.setCssStyles({zIndex: "0"});
+        legacyHost.setCssStyles({visibility: "visible"});
+        legacyHost.setCssStyles({pointerEvents: "auto"});
+        legacyHost.setCssStyles({zIndex: "1"});
         // originalRender is written against this.contentEl. Redirect it into
         // the legacy sibling so its own empty() cannot touch the live iframe.
         const realContent = this.contentEl;
@@ -219,12 +218,12 @@ queueMicrotask(() =>
         finally { this.contentEl = realContent; }
       }
 
-      legacyHost.style.visibility = "hidden";
-      legacyHost.style.pointerEvents = "none";
-      legacyHost.style.zIndex = "0";
-      weaverHost.style.visibility = "visible";
-      weaverHost.style.pointerEvents = "auto";
-      weaverHost.style.zIndex = "1";
+      legacyHost.setCssStyles({visibility: "hidden"});
+      legacyHost.setCssStyles({pointerEvents: "none"});
+      legacyHost.setCssStyles({zIndex: "0"});
+      weaverHost.setCssStyles({visibility: "visible"});
+      weaverHost.setCssStyles({pointerEvents: "auto"});
+      weaverHost.setCssStyles({zIndex: "1"});
       /* SCHOLARIUM_NATIVE_WEAVER_HOOK_BEGIN */
       if (schNativeWeaverHost.render(this, weaverHost, { vaultPorts, ensure, serviceUrl })) return;
       /* SCHOLARIUM_NATIVE_WEAVER_HOOK_END */
@@ -237,13 +236,12 @@ queueMicrotask(() =>
       const main = weaverHost.createDiv({
         cls: "scholarium-main zhiyanzhe-fullscreen-host",
       });
-      main.style.cssText =
-        "flex:1 1 auto;min-height:0;padding:0;overflow:hidden;display:flex;position:relative;";
+      main.addClass("sch-weaver-legacy-main");
       const state = main.createSpan({ text: "正在连接织研者本地服务…" });
       // Keep the bootstrap state visible until the iframe has actually loaded.
       // If a portable install cannot find Node/start-local.js, hiding this node
       // leaves an about:blank iframe with no explanation.
-      state.style.cssText = "display:flex;align-items:center;justify-content:center;position:absolute;inset:0;z-index:2;padding:24px;text-align:center;color:var(--text-muted);background:var(--background-primary);";
+      state.addClass("sch-weaver-connect-status");
       const frame = main.createEl("iframe", {
         attr: {
           src: "about:blank",
@@ -254,8 +252,7 @@ queueMicrotask(() =>
       });
       // 供 postMessage 监听校验消息来源（上方 __scholariumWeaverMsgBound）。
       this.__weaverFrame = frame;
-      frame.style.cssText =
-        "display:block;flex:1 1 auto;width:100%;height:100%;min-height:0;border:0;border-radius:0;background:var(--background-primary);";
+      frame.addClass("sch-weaver-frame-layout");
       state.setText("正在连接织研者本地服务…");
       try {
         const ports = vaultPorts(this);
@@ -266,16 +263,16 @@ queueMicrotask(() =>
             ? "织研者已连接 · 可运行任务"
             : "织研者已启动 · 执行权限未开启",
         );
-        state.style.color = "var(--color-green)";
+        state.setCssStyles({color: "var(--color-green)"});
         frame.addEventListener("load", () => {
-          state.style.display = "none";
+          state.setCssStyles({display: "none"});
           recoverLegacyBrowserState(this, frame, url, ports);
         }, { once: true });
         frame.src = `${url}?embedded=${Date.now()}&theme=${resolveTheme()}&vault=${ports.scope}&legacy=1`;
       } catch (error) {
         state.setText(`织研者启动失败：${error.message}`);
-        state.style.color = "var(--color-orange)";
-        state.style.display = "flex";
+        state.setCssStyles({color: "var(--color-orange)"});
+        state.setCssStyles({display: "flex"});
       }
     };
     // 织研者 iframe → 宿主的跨源请求通道（iframe 与 Obsidian 不同源，只能

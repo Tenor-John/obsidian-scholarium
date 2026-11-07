@@ -87,3 +87,12 @@ The source unit tests cover cloud prefix handling, recursive sync, move/delete
 path guards, and Ketcher structure serialization. They do not prove real
 Obsidian rendering or user interaction. Clean install, upgrade, rollback, and
 Ketcher create/edit/save acceptance remain release blockers.
+# 2026-11-07 marketplace remediation note
+
+The audited inventory now has 610 sites and no unclassified surfaces, with
+fingerprint `cfa0a8e15d4be4705461fcf3b59e818d78e571c1d91a00a9c21880d74c5ba1ba`.
+The additional site is `scripts/embed-ketcher-styles.mjs`, a build-only tool
+that reads the locked Ketcher CSS and writes the repository's `styles.css`.
+It does not run in the plugin or write to a user's Vault. Existing persistence
+counts are otherwise unchanged; the fingerprint also reflects source changes
+to replace unsafe DOM assignments with sanitized DOM updates.

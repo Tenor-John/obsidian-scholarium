@@ -117,8 +117,11 @@ test("[L1] the three-file plugin embeds the reviewed logo without an unshipped a
 test("[L1] Ketcher and its styles are statically bundled without runtime script loading", () => {
   assert.match(main, /\/\/ src\/chem\/ketcher-runtime\.tsx/);
   assert.match(main, /StandaloneStructServiceProvider/);
-  assert.match(main, /data-scholarium-ketcher-style/);
-  assert.match(main, /createElement\("style"\)/);
+  const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+  const ketcherSource = fs.readFileSync(path.join(root, "src", "chem", "ketcher-runtime.tsx"), "utf8");
+  assert.match(styles, /SCHOLARIUM_KETCHER_STYLES_BEGIN/);
+  assert.match(styles, /SCHOLARIUM_KETCHER_STYLES_END/);
+  assert.doesNotMatch(ketcherSource, /createElement\(["']style["']\)/);
   assert.doesNotMatch(main, /schEnsureKetcherStyle/);
   assert.doesNotMatch(main, /runtime-assets\/ketcher\//);
   assert.doesNotMatch(main, /createElement\(["']script["']\)/);

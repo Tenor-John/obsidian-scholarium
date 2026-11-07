@@ -1,0 +1,14 @@
+import fs from 'node:fs';
+const target = 'styles.css';
+const begin = '/* SCHOLARIUM_KETCHER_STYLES_BEGIN */';
+const end = '/* SCHOLARIUM_KETCHER_STYLES_END */';
+const native = '/* SCHOLARIUM_NATIVE_WEAVER_STYLES_BEGIN */';
+let css = fs.readFileSync(target, 'utf8').replace(/\r\n?/g, '\n');
+const a = css.indexOf(begin), b = css.indexOf(end);
+if ((a < 0) !== (b < 0) || (a >= 0 && b < a)) throw new Error('Ketcher style markers are incomplete');
+if (a >= 0) css = css.slice(0, a) + css.slice(b + end.length).replace(/^\n*/, '');
+const at = css.indexOf(native);
+if (at < 0) throw new Error('native Weaver style marker missing');
+const ketcher = fs.readFileSync('node_modules/ketcher-react/dist/index.css', 'utf8').replace(/\r\n?/g, '\n').replace(/\/\*# sourceMappingURL=.*?\*\//g, '').trim();
+css = css.slice(0, at) + begin + '\n' + ketcher + '\n' + end + '\n\n' + css.slice(at);
+fs.writeFileSync(target, css, 'utf8');

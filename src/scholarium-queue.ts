@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck -- Legacy JavaScript port pending incremental type migration.
 /* global schRuntimeBootstrap, schNativeWeaverHost */
 /* Unified, opt-in queue consumer.  Every action is checked against both this
  * allowlist and the runtime registry, executes non-dry-run with an explicit
