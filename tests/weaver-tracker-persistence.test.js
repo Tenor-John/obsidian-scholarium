@@ -19,10 +19,10 @@ describe("织研者执行追踪器跨页面持久化", () => {
 
   it("switches panels by visibility rather than removing the live iframe", () => {
     const src = source();
-    assert.match(src, /weaverHost\.style\.visibility = "hidden"/);
-    assert.match(src, /weaverHost\.style\.visibility = "visible"/);
-    assert.match(src, /legacyHost\.style\.visibility = "hidden"/);
-    assert.match(src, /legacyHost\.style\.visibility = "visible"/);
+    assert.match(src, /weaverHost\.setCssStyles\(\{\s*visibility: "hidden"\s*\}\)/);
+    assert.match(src, /weaverHost\.setCssStyles\(\{\s*visibility: "visible"\s*\}\)/);
+    assert.match(src, /legacyHost\.setCssStyles\(\{\s*visibility: "hidden"\s*\}\)/);
+    assert.match(src, /legacyHost\.setCssStyles\(\{\s*visibility: "visible"\s*\}\)/);
   });
 
   it("returns a completed manual download to the native Weaver mount", () => {

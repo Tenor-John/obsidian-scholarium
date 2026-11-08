@@ -935,7 +935,7 @@ function schOpenEvidenceReviewer(plugin) {
       opt.title = entry.object.claim || "仅检索候选，尚未形成主张";
     }
     const batch = section1.createEl("details", { cls: "scholarium-evidence-batch" });
-    batch.style.marginTop = "12px";
+    batch.setCssStyles({marginTop: "12px"});
     batch.createEl("summary", { text: "批量驳回（仅用于已审过、同样无关的候选）" });
     batch.createEl("p", {
       text: "确认仍需逐条进行。勾选后可将同一驳回理由应用到多条候选，并会要求再次确认。",
@@ -1004,7 +1004,7 @@ function schOpenEvidenceReviewer(plugin) {
 
     // Status lines (outside sections, inside form padding)
     const status = form.createDiv({ cls: "sch-exp-hint" });
-    status.style.marginTop = "-8px";
+    status.setCssStyles({marginTop: "-8px"});
     const aiStatus = form.createDiv({ cls: "scholarium-ai-review-status sch-exp-hint" });
 
     let aiReview, aiReviewAll, acceptAi;
@@ -1042,7 +1042,7 @@ function schOpenEvidenceReviewer(plugin) {
     // The review form can be much taller than the viewport. Attach the actions
     // to the modal root rather than the scrolling content so submit controls
     // remain visible from the first frame.
-    form.style.paddingBottom = "84px";
+    form.setCssStyles({paddingBottom: "84px"});
     const actions = modal.modalEl.createDiv({ cls: "scholarium-evidence-actions sch-experiment-create__actions scholarium-evidence-reviewer__actions" });
     actions.setCssStyles({
       position: "absolute", bottom: "0", left: "0", right: "0", zIndex: "20",

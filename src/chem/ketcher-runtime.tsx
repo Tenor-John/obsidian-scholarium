@@ -2,7 +2,6 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Editor } from 'ketcher-react';
 import { StandaloneStructServiceProvider } from 'ketcher-standalone';
-import ketcherStyles from 'ketcher-react/dist/index.css';
 
 export interface KetcherApi {
     getSmiles(isExtended?: boolean): Promise<string>;
@@ -24,7 +23,6 @@ export interface MountedKetcher {
 }
 
 export function mountKetcherRuntime(container: HTMLElement, initialSource: string): Promise<MountedKetcher> {
-    ensureKetcherStyle();
     const root = createRoot(container);
     const provider = new StandaloneStructServiceProvider();
     let resolveReady!: (mounted: MountedKetcher) => void;
@@ -85,12 +83,4 @@ export function mountKetcherRuntime(container: HTMLElement, initialSource: strin
     }
 
     return ready;
-}
-
-function ensureKetcherStyle(): void {
-    if (document.querySelector('style[data-scholarium-ketcher-style]')) return;
-    const style = document.createElement('style');
-    style.dataset.scholariumKetcherStyle = 'true';
-    style.textContent = ketcherStyles;
-    document.head.appendChild(style);
 }

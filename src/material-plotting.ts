@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck -- Legacy JavaScript port pending incremental type migration.
 /* global schRuntimeBootstrap, SCHOLARIUM_LOGO_DATA_URL */
 /* Deterministic Material Library normalization and plotting.  The Bridge may
  * run only reviewed Skills; natural-language patches are reduced to a bounded
@@ -127,29 +127,6 @@ const SCH_AGENT_STATE = {
   missing: { text: "未安装", cls: "sch-agent-muted" },
 };
 
-function schAgentEnvStyles() {
-  if (document.getElementById("sch-agent-env-style")) return;
-  const style = document.createElement("style");
-  style.id = "sch-agent-env-style";
-  style.textContent = [
-    ".sch-agent-row{border:1px solid var(--background-modifier-border);border-radius:8px;padding:10px 12px;margin:8px 0;}",
-    ".sch-agent-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}",
-    ".sch-agent-name{font-weight:600;}",
-    ".sch-agent-pill{font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid transparent;}",
-    ".sch-agent-ok{background:var(--color-green);color:#fff;}",
-    ".sch-agent-warn{background:var(--color-yellow);color:#000;}",
-    ".sch-agent-bad{background:var(--color-red);color:#fff;}",
-    ".sch-agent-muted{background:var(--background-modifier-border);color:var(--text-muted);}",
-    ".sch-agent-meta{font-size:12px;color:var(--text-muted);margin-top:4px;line-height:1.6;}",
-    ".sch-agent-meta code{font-size:11px;}",
-    ".sch-agent-problem{font-size:12px;color:var(--text-error);margin-top:6px;white-space:pre-wrap;}",
-    ".sch-agent-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;}",
-    ".sch-agent-actions input{flex:1;min-width:220px;}",
-    ".sch-agent-log{font-family:var(--font-monospace);font-size:11px;white-space:pre-wrap;max-height:160px;overflow:auto;background:var(--background-secondary);padding:6px 8px;border-radius:6px;margin-top:6px;}",
-  ].join("");
-  document.head.appendChild(style);
-}
-
 async function schAgentEnvFetch(plugin, path, options) {
   return schMaterialBridgeJson(plugin, path, options);
 }
@@ -158,21 +135,20 @@ async function schAgentEnvFetch(plugin, path, options) {
    the process that will actually spawn the agent. When it is not running the
    panel says so plainly instead of rendering an empty, falsely-calm table. */
 function schRenderAgentEnvironment(containerEl, plugin) {
-  schAgentEnvStyles();
   new Y.Setting(containerEl).setName("\u{1F916} Agent 环境").setHeading();
   const intro = containerEl.createEl("p", {
     text: "检查本机安装了哪些科研 Agent、它们能否真的运行，以及它们当前指向哪个供应商。密钥由 Agent 自身的配置文件（或 CC Switch）管理，本插件只读不存。",
   });
-  intro.style.color = "var(--text-muted)";
-  intro.style.fontSize = "12px";
+  intro.setCssStyles({color: "var(--text-muted)"});
+  intro.setCssStyles({fontSize: "12px"});
 
   const bar = containerEl.createDiv();
   bar.addClass("sch-agent-actions");
   const refresh = bar.createEl("button", { text: "重新检测" });
   refresh.addClass("mod-cta");
   const hint = bar.createSpan();
-  hint.style.fontSize = "12px";
-  hint.style.color = "var(--text-muted)";
+  hint.setCssStyles({fontSize: "12px"});
+  hint.setCssStyles({color: "var(--text-muted)"});
 
   const body = containerEl.createDiv();
 
@@ -188,8 +164,8 @@ function schRenderAgentEnvironment(containerEl, plugin) {
         text: "无法连接本机 Bridge：" + String(error.message || error)
           + "。请先在织研者面板里连接 Bridge，再回到这里检测。",
       });
-      failed.style.color = "var(--text-error)";
-      failed.style.fontSize = "12px";
+      failed.setCssStyles({color: "var(--text-error)"});
+      failed.setCssStyles({fontSize: "12px"});
       return;
     }
     hint.setText(report.cachedAt ? "上次检测：" + new Date(report.cachedAt).toLocaleString() : "");
@@ -207,8 +183,8 @@ function schRenderAgentEnvironment(containerEl, plugin) {
       pill.addClass(state.cls);
       if (agent.version) {
         const v = head.createSpan({ text: agent.version });
-        v.style.fontSize = "12px";
-        v.style.color = "var(--text-muted)";
+        v.setCssStyles({fontSize: "12px"});
+        v.setCssStyles({color: "var(--text-muted)"});
       }
 
       const meta = row.createDiv();
@@ -231,7 +207,7 @@ function schRenderAgentEnvironment(containerEl, plugin) {
       }
       if (agent.configFile) lines.push("配置文件：" + agent.configFile);
       meta.setText(lines.join("\n"));
-      meta.style.whiteSpace = "pre-wrap";
+      meta.setCssStyles({whiteSpace: "pre-wrap"});
 
       if (agent.problem) {
         const problem = row.createDiv();
@@ -349,7 +325,7 @@ function schRenderCredentials(containerEl, plugin) {
   const box = containerEl.createDiv();
   const head = box.createDiv();
   head.addClass("sch-agent-head");
-  head.style.marginTop = "14px";
+  head.setCssStyles({marginTop: "14px"});
   head.createSpan({ text: "API 密钥" }).addClass("sch-agent-name");
   const refresh = head.createEl("button", { text: "刷新" });
 
@@ -357,9 +333,9 @@ function schRenderCredentials(containerEl, plugin) {
     text: "密钥写入 bridge/.env（权限 0600，已在 .gitignore 中），不会进入 bridge.config.json、命令行参数、索引或运行记录。"
       + "注意：若你在 Obsidian Sync 里开启了「同步插件」，该文件仍会随插件目录同步。",
   });
-  note.style.color = "var(--text-muted)";
-  note.style.fontSize = "12px";
-  note.style.margin = "4px 0 0";
+  note.setCssStyles({color: "var(--text-muted)"});
+  note.setCssStyles({fontSize: "12px"});
+  note.setCssStyles({margin: "4px 0 0"});
 
   const body = box.createDiv();
 
@@ -367,8 +343,8 @@ function schRenderCredentials(containerEl, plugin) {
     body.empty();
     const fail = (message) => {
       const failed = body.createEl("p", { text: "无法读取密钥状态：" + message });
-      failed.style.color = "var(--text-error)";
-      failed.style.fontSize = "12px";
+      failed.setCssStyles({color: "var(--text-error)"});
+      failed.setCssStyles({fontSize: "12px"});
     };
 
     let credentials;
@@ -393,8 +369,8 @@ function schRenderCredentials(containerEl, plugin) {
       const warn = migrateRow.createSpan({
         text: "有密钥仍以明文留在 bridge.config.json 中。",
       });
-      warn.style.fontSize = "12px";
-      warn.style.color = "var(--text-warning)";
+      warn.setCssStyles({fontSize: "12px"});
+      warn.setCssStyles({color: "var(--text-warning)"});
       const migrate = migrateRow.createEl("button", { text: "迁移到 .env" });
       migrate.onclick = async () => {
         migrate.disabled = true;
@@ -426,14 +402,14 @@ function schRenderCredentials(containerEl, plugin) {
 
       if (item.configured && item.masked) {
         const masked = rowHead.createSpan({ text: item.masked });
-        masked.style.fontFamily = "var(--font-monospace)";
-        masked.style.fontSize = "12px";
-        masked.style.color = "var(--text-muted)";
+        masked.setCssStyles({fontFamily: "var(--font-monospace)"});
+        masked.setCssStyles({fontSize: "12px"});
+        masked.setCssStyles({color: "var(--text-muted)"});
       }
 
       const meta = row.createDiv();
       meta.addClass("sch-agent-meta");
-      meta.style.whiteSpace = "pre-wrap";
+      meta.setCssStyles({whiteSpace: "pre-wrap"});
       const source = SCH_CREDENTIAL_SOURCE[item.source] || SCH_CREDENTIAL_SOURCE.missing;
       const lines = ["用途：" + item.purpose];
       if (item.configured) lines.push("来源：" + source.text + (source.hint ? "  ——  " + source.hint : ""));
@@ -473,8 +449,8 @@ function schRenderCredentials(containerEl, plugin) {
 
       if (item.applyUrl) {
         const apply = actions.createEl("a", { text: "去申请 ↗", href: item.applyUrl });
-        apply.style.fontSize = "12px";
-        apply.style.alignSelf = "center";
+        apply.setCssStyles({fontSize: "12px"});
+        apply.setCssStyles({alignSelf: "center"});
         apply.setAttr && apply.setAttr("rel", "noopener");
       }
     }
@@ -511,7 +487,7 @@ function schRenderCcSwitch(container, ccSwitch) {
     lines.push(app + "：" + byApp[app].join("、"));
   }
   meta.setText(lines.join("\n"));
-  meta.style.whiteSpace = "pre-wrap";
+  meta.setCssStyles({whiteSpace: "pre-wrap"});
 }
 
 
@@ -902,7 +878,7 @@ function schPlotSanitizeStylePatch(patch, headers = []) {
       result.style[key] = s[key].trim().slice(0, 60) || null;
       note(result.style[key] ? `${label} → ${result.style[key]}` : `${label} → 恢复默认`);
     } else if (s[key] === null) {
-      result.style[key] = null;
+      Object.assign(result.style, { [key]: null });
       note(`${label} → 恢复默认`);
     }
   }
@@ -1062,7 +1038,7 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
     const header = root.createDiv({ cls: "plt-header" });
     const hLeft = header.createDiv({ cls: "plt-header-left" });
     const hIcon = hLeft.createDiv({ cls: "plt-header-icon" });
-    hIcon.innerHTML = ICONS.chart;
+    hIcon.replaceChildren(De.sanitizeHTMLToDom(String(ICONS.chart ?? "")));
     hLeft.createEl("span", { text: "织研者数据绘图", cls: "plt-title" });
     const hStatus = hLeft.createDiv({ cls: "plt-header-status" });
     hStatus.createEl("span", { cls: "plt-status-dot" });
@@ -1075,7 +1051,7 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
     const skillsBtn = headerActions.createEl("button", { cls: "plt-header-btn", text: "✦ Skills", attr: { title: "调用适用于当前数据的真实 Skill" } });
     const logBtn = headerActions.createEl("button", { cls: "plt-header-btn", text: "☷ 操作日志", attr: { title: "查看此素材的持久化操作日志" } });
     const closeBtn = headerActions.createEl("button", { cls: "plt-close", attr: { "aria-label": "关闭工作台" } });
-    closeBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+    closeBtn.replaceChildren(De.sanitizeHTMLToDom(String('<svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>' ?? "")));
     closeBtn.onclick = () => modal.close();
 
     const skillPopover = root.createDiv({ cls: "plt-skill-popover" });
@@ -1086,7 +1062,7 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
     const config = body.createDiv({ cls: "plt-config" });
     const dsInfo = config.createDiv({ cls: "plt-dataset" });
     const dsIcon = dsInfo.createDiv({ cls: "plt-dataset-icon" });
-    dsIcon.innerHTML = ICONS.file;
+    dsIcon.replaceChildren(De.sanitizeHTMLToDom(String(ICONS.file ?? "")));
     dsInfo.createEl("span", { text: item.path, cls: "plt-dataset-path", attr: { title: item.path } });
 
     const xWrap = config.createDiv({ cls: "plt-field" });
@@ -1190,11 +1166,11 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
     const configActions = config.createDiv({ cls: "plt-config-actions" });
     const profile = configActions.createEl("button", { cls: "plt-btn plt-btn-ghost plt-btn-sm plt-grow" });
     const profileIcon = profile.createEl("span", { cls: "plt-btn-icon" });
-    profileIcon.innerHTML = ICONS.spark;
+    profileIcon.replaceChildren(De.sanitizeHTMLToDom(String(ICONS.spark ?? "")));
     profile.appendChild(document.createTextNode("分析字段"));
     const render = configActions.createEl("button", { cls: "plt-btn plt-btn-primary plt-btn-sm plt-grow" });
     const renderIcon = render.createEl("span", { cls: "plt-btn-icon" });
-    renderIcon.innerHTML = ICONS.chart;
+    renderIcon.replaceChildren(De.sanitizeHTMLToDom(String(ICONS.chart ?? "")));
     const renderLabel = render.createSpan({ cls: "plt-render-label", text: "生成图表" });
 
     const leftResizer = body.createDiv({ cls: "plt-pane-resizer plt-pane-resizer-left", attr: { role: "separator", "aria-label": "拖动调整参数面板宽度", title: "拖动调整参数面板宽度；双击恢复" } });
@@ -1230,7 +1206,7 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
     const roleText = chName.createDiv({ cls: "plt-agent-role", text: "正在读取数据集…" });
     const collapseAgent = chatHeader.createEl("button", { cls: "plt-tool-btn plt-agent-collapse", text: "›", attr: { title: "折叠 Agent" } });
     const historyBtn = chatHeader.createEl("button", { cls: "plt-tool-btn", attr: { title: "版本历史（定位到左侧版本列表）" } });
-    historyBtn.innerHTML = ICONS.clock;
+    historyBtn.replaceChildren(De.sanitizeHTMLToDom(String(ICONS.clock ?? "")));
     historyBtn.onclick = () => versionSelect.focus();
     collapseAgent.onclick = () => {
       root.classList.toggle("plt-agent-collapsed");
@@ -1277,9 +1253,9 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
     const inputRow = inputArea.createDiv({ cls: "plt-input-row" });
     const chatInput = inputRow.createEl("input", { cls: "plt-chat-input", attr: { type: "text", placeholder: "描述你想要的图表调整…" } });
     const sendBtn = inputRow.createEl("button", { cls: "plt-send-btn", attr: { "aria-label": "发送" } });
-    sendBtn.innerHTML = ICONS.send;
+    sendBtn.replaceChildren(De.sanitizeHTMLToDom(String(ICONS.send ?? "")));
     const hint = inputArea.createDiv({ cls: "plt-input-hint" });
-    hint.innerHTML = "<kbd>Enter</kbd> 发送 · 可直接说“换成柱状图”、“线宽改为3”、“图片改成 800×600”、“加完整边框”、“图例放右边”… 其他样式调整会用自然语言交给绘图 Agent 理解";
+    hint.replaceChildren(De.sanitizeHTMLToDom(String("<kbd>Enter</kbd> 发送 · 可直接说“换成柱状图”、“线宽改为3”、“图片改成 800×600”、“加完整边框”、“图例放右边”… 其他样式调整会用自然语言交给绘图 Agent 理解" ?? "")));
 
     // ── Bottom: durable audit log stored with plugin data ──
     const auditDrawer = root.createDiv({ cls: "plt-audit-drawer" });
@@ -1335,10 +1311,10 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
     const addAgent = (html) => {
       const m = messages.createDiv({ cls: "plt-msg-agent" });
       const av = m.createDiv({ cls: "plt-avatar" });
-      av.innerHTML = ICONS.spark;
+      av.replaceChildren(De.sanitizeHTMLToDom(String(ICONS.spark ?? "")));
       const mBody = m.createDiv({ cls: "plt-msg-body" });
       const t = mBody.createDiv({ cls: "plt-msg-text" });
-      t.innerHTML = html;
+      t.replaceChildren(De.sanitizeHTMLToDom(String(html ?? "")));
       scrollChat();
       return mBody;
     };
@@ -1351,7 +1327,7 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
     const addThinking = (text) => {
       const m = messages.createDiv({ cls: "plt-msg-agent" });
       const av = m.createDiv({ cls: "plt-avatar" });
-      av.innerHTML = ICONS.spark;
+      av.replaceChildren(De.sanitizeHTMLToDom(String(ICONS.spark ?? "")));
       const mBody = m.createDiv({ cls: "plt-msg-body" });
       const tk = mBody.createDiv({ cls: "plt-thinking" });
       const dots = tk.createDiv({ cls: "plt-dots" });
@@ -1511,16 +1487,16 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
       previewActions.empty();
       if (svgPath) {
         const zoomBtn = previewActions.createEl("button", { attr: { title: "放大查看" } });
-        zoomBtn.innerHTML = ICONS.zoom;
+        zoomBtn.replaceChildren(De.sanitizeHTMLToDom(String(ICONS.zoom ?? "")));
         zoomBtn.onclick = () => {
           const f = plugin.app.vault.getAbstractFileByPath(svgPath);
           if (f instanceof Eo.TFile) plugin.app.workspace.getLeaf(false).openFile(f);
         };
         const dlBtn = previewActions.createEl("button", { attr: { title: "在系统文件夹中显示 SVG" } });
-        dlBtn.innerHTML = ICONS.download;
+        dlBtn.replaceChildren(De.sanitizeHTMLToDom(String(ICONS.download ?? "")));
         dlBtn.onclick = () => { try { plugin.app.showInFolder(svgPath); } catch (_) { new Eo.Notice(`已保存到 ${svgPath}`); } };
         const editBtn = previewActions.createEl("button", { attr: { title: "把此版本的参数载回左侧配置" } });
-        editBtn.innerHTML = ICONS.edit;
+        editBtn.replaceChildren(De.sanitizeHTMLToDom(String(ICONS.edit ?? "")));
         editBtn.onclick = () => {
           const v = versions.find((entry) => entry.manifest === manifest) || { manifest };
           schMaterialApplyPlotVersion(v, controls, { addAnnRow, renderColorRows, syncStylePanel });
@@ -1532,7 +1508,7 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
       if (svgPath) {
         try {
           const svgText = await plugin.app.vault.adapter.read(svgPath);
-          previewBody.innerHTML = svgText;
+          previewBody.replaceChildren(De.sanitizeHTMLToDom(String(svgText ?? "")));
           preview.removeClass("plt-preview-empty");
         } catch (_) {
           previewBody.setText("（无法内联预览 SVG，可点击上方按钮打开文件）");
@@ -1628,7 +1604,7 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
     {
       const m = messages.createDiv({ cls: "plt-msg-agent" });
       const av = m.createDiv({ cls: "plt-avatar" });
-      av.innerHTML = ICONS.spark;
+      av.replaceChildren(De.sanitizeHTMLToDom(String(ICONS.spark ?? "")));
       const mBody = m.createDiv({ cls: "plt-msg-body" });
       mBody.createDiv({ cls: "plt-msg-text", text: `已打开 ${item.path}。我会先读取表头；你可以点击「分析字段」让我识别数值列，确认字段后点「生成图表」，也可以直接在下方告诉我怎么调。` });
       const steps = mBody.createDiv({ cls: "plt-steps" });
@@ -1653,7 +1629,7 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
       list.forEach((headerText, index) => {
         const row = yList.createDiv({ cls: "plt-y-item", attr: { "data-value": headerText } });
         const box = row.createDiv({ cls: "plt-y-check" });
-        box.innerHTML = ICONS.check;
+        box.replaceChildren(De.sanitizeHTMLToDom(String(ICONS.check ?? "")));
         row.createEl("span", { text: headerText });
         if (numeric.includes(headerText) && index !== 0) row.addClass("plt-selected");
         row.onclick = () => { row.classList.toggle("plt-selected"); renderColorRows(); maybeAutoRender(); };

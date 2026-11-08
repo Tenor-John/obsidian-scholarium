@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck -- Legacy JavaScript port pending incremental type migration.
 /* global schNativeWeaverHost */
 /* Complete Material Library, including generated-plot discovery, folder import,
  * version ownership checks, safe deletion and all reviewed modal surfaces. */
@@ -152,7 +152,7 @@ var Vs = class {
           hero = browser.createDiv({ cls: "mat-hero" }),
           heroLeft = hero.createDiv({ cls: "mat-hero-left" }),
           titleRow = heroLeft.createDiv({ cls: "mat-hero-title" });
-      titleRow.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" style="width:22px;height:22px;min-width:22px;min-height:22px;max-width:22px;max-height:22px;flex-shrink:0;display:inline-block;vertical-align:middle"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>素材库';
+      titleRow.replaceChildren(De.sanitizeHTMLToDom(String('<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" style="width:22px;height:22px;min-width:22px;min-height:22px;max-width:22px;max-height:22px;flex-shrink:0;display:inline-block;vertical-align:middle"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>素材库' ?? "")));
       heroLeft.createEl("div", {
         text: "集中管理 PDF / 图片 / 协议 / 数据文件，随云端同步",
         cls: "mat-hero-sub",
@@ -203,7 +203,7 @@ var Vs = class {
             v.removeClass("active"),
             this.renderGallery(y);
         }),
-        p.createEl("button", { cls: "mat-add-btn" }).innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0"><path d="M12 5v14M5 12h14"/></svg><span>添加素材</span>',
+        p.createEl("button", { cls: "mat-add-btn" }).replaceChildren(De.sanitizeHTMLToDom(String('<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0"><path d="M12 5v14M5 12h14"/></svg><span>添加素材</span>' ?? ""))),
         p.querySelector(".mat-add-btn").onclick = () => this.showImportDialog(),
         p.createEl("button", { cls: "mat-folder-btn", text: "📁 新建文件夹", attr: { title: "在 Vault 与已配置网盘中建立素材文件夹" } }).onclick = () => this.showNewFolderDialog(),
         this.plugin.settings.cloudProvider !== "none")
@@ -385,7 +385,7 @@ var Vs = class {
           archive: '<svg viewBox="0 0 24 24" stroke="' + kindColor + '" fill="none" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>',
           image: '<svg viewBox="0 0 24 24" stroke="' + kindColor + '" fill="none" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
         };
-        iconWrap.innerHTML = svgMap[i] || svgMap.text;
+        iconWrap.replaceChildren(De.sanitizeHTMLToDom(String((svgMap[i] || svgMap.text) ?? "")));
         n.createEl("div", {
           text: Hi(e.path).toUpperCase(),
           cls: "mat-card-file-ext",

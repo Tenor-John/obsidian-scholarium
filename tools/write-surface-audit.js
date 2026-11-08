@@ -55,7 +55,7 @@ function surfaceFor(relativePath) {
   // by a deterministic tool.  It is not an unclassified third-party blob: its
   // Vault writes are reviewed as a separate production surface below.
   if (file.startsWith("vendor/native-weaver/")) return "native-weaver-vendor";
-  if (file === "version-bump.mjs") return "build-tooling";
+  if (file === "version-bump.mjs" || file === "scripts/embed-ketcher-styles.mjs") return "build-tooling";
   if (file.startsWith("agent-canvas-demo/bridge/")) return "bridge-runtime";
   if (file.startsWith("agent-canvas-demo/skills/")) return "skill-runtime";
   if (file.startsWith("agent-canvas-demo/")) return "agent-ui-state";
