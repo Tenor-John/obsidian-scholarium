@@ -1,5 +1,5 @@
 // @ts-nocheck -- Legacy JavaScript port pending incremental type migration.
-/* global schNativeWeaverHost, schCreatePdfDocumentCore */
+/* global schNativeWeaverHost, schCreatePdfDocumentCore -- Bundled Weaver anchors and PDF parser used by the literature board. */
 /* Literature subscriptions, direct search, Zotero, manual capture and radar.
  * The Obsidian API is namespace-imported under its reviewed internal alias. */
 import * as Ne from "obsidian";

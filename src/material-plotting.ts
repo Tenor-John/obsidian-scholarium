@@ -1,5 +1,5 @@
 // @ts-nocheck -- Legacy JavaScript port pending incremental type migration.
-/* global schRuntimeBootstrap, SCHOLARIUM_LOGO_DATA_URL */
+/* global schRuntimeBootstrap, SCHOLARIUM_LOGO_DATA_URL -- Bundled runtime status and embedded logo used by plotting. */
 /* Deterministic Material Library normalization and plotting.  The Bridge may
  * run only reviewed Skills; natural-language patches are reduced to a bounded
  * style schema and never become executable code. */
