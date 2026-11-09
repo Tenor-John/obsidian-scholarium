@@ -1,5 +1,5 @@
 // @ts-nocheck -- Legacy JavaScript port pending incremental type migration.
-/* global SCHOLARIUM_LOGO_DATA_URL, schNativeWeaverHost */
+/* global SCHOLARIUM_LOGO_DATA_URL, schNativeWeaverHost -- Bundled logo and native Weaver host used by the dashboard. */
 /* Persistent native Weaver host and its scope-checked postMessage bridge. */
 import {
   schVaultBridgePorts,

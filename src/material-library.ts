@@ -1,5 +1,5 @@
 // @ts-nocheck -- Legacy JavaScript port pending incremental type migration.
-/* global schNativeWeaverHost */
+/* global schNativeWeaverHost -- Provided by the bundled native Weaver host for material anchors. */
 /* Complete Material Library, including generated-plot discovery, folder import,
  * version ownership checks, safe deletion and all reviewed modal surfaces. */
 import * as De from "obsidian";
