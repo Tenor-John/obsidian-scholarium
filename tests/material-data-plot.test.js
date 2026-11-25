@@ -263,7 +263,7 @@ describe("Material Library deterministic plotting", () => {
     assert.match(css, /object-fit:\s*contain/);
     const { block } = require("./harness");
     const createCard = block("createCard(t, e) {");
-    assert.match(createCard, /e\.discovered && i !== "spreadsheet"/, "only newly discovered, non-spreadsheet files use the direct-open path");
+    assert.match(createCard, /e\.discovered && i\d* !== "spreadsheet"/, "only newly discovered, non-spreadsheet files use the direct-open path");
     assert.eq((createCard.match(/copyFileAddress\(e\.path\)/g) || []).length, 1, "each dataset card should expose one path-copy action");
     assert.noMatch(createCard, /generated:\s*(?:!0|true)/);
     const ensureFolder = block("ensureFolder(t) {");
