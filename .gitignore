@@ -25,6 +25,7 @@ backup-*/
 .playwright-cli/
 output/
 deduction-debug.log
+/*-results.log
 snapshot-source-build-*/
 *.bundle
 
@@ -34,6 +35,8 @@ snapshot-source-build-*/
 # named Research elsewhere in the repository.
 /Research/
 agent-canvas-demo/node_modules/
+node_modules/
+artifacts/
 agent-canvas-demo/.git-history/
 **/__pycache__/
 *.py[cod]

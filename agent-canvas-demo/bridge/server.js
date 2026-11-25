@@ -37,6 +37,8 @@ const {
 } = require('../../tools/prompt-transport.js');
 const agentDetection = require('../../tools/agent-detect.js');
 const graphKeywordTool = require('../../tools/graph-keywords.js');
+const plotToolContract = require('../plot-tool-contract.js');
+const { createPlotToolRuntime } = require('./plot-tool-runtime.js');
 
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.AGENT_BRIDGE_PORT || 4318);
@@ -446,6 +448,28 @@ function scheduleAutoDetection() {
   });
 }
 const tasks = new Map();
+const taskStoreDir = path.join(path.dirname(CONFIG_PATH), 'chat-tasks');
+function persistChatTask(task) {
+  try {
+    fs.mkdirSync(taskStoreDir, { recursive: true });
+    const record = { id: task.id, agentId: task.agentId, cwd: task.cwd, status: task.status, events: task.events, createdAt: task.createdAt, provider: task.provider, sessionId: task.sessionId, conversationId: task.conversationId, resumeFrom: task.resumeFrom, finalMessage: task.finalMessage, failureMessage: task.failureMessage, pid: task.child?.pid || task.pid || null };
+    const file = path.join(taskStoreDir, `${task.id}.json`);
+    const temp = `${file}.tmp`;
+    fs.writeFileSync(temp, JSON.stringify(record), { mode: 0o600 });
+    fs.renameSync(temp, file);
+  } catch (error) { console.error('Could not persist chat task:', error.message); }
+}
+try {
+  for (const name of fs.readdirSync(taskStoreDir)) {
+    if (!/^[0-9a-f-]{36}\.json$/i.test(name)) continue;
+    try {
+      const task = JSON.parse(fs.readFileSync(path.join(taskStoreDir, name), 'utf8'));
+      if (!task || task.id !== name.slice(0, -5) || !Array.isArray(task.events)) continue;
+      if (task.status === 'running' || task.status === 'queued') task.status = 'interrupted';
+      tasks.set(task.id, task);
+    } catch { /* ignore damaged records */ }
+  }
+} catch (error) { if (error.code !== 'ENOENT') console.error('Could not load chat tasks:', error.message); }
 const drafts = new Map();
 const draftBatches = new Map();
 // 发布冲刺（2026-08-27）：experiment.transition 的两阶段预览态，和 draftBatches
@@ -2039,6 +2063,7 @@ function yamlValue(source, key) {
 const SKILL_RUNNERS = {
   'research-source-inventory': { script: 'inventory.py', argsShape: ['root'], timeoutMs: 60000 },
   'literature-search-query-builder': { script: 'build_query.py', argsShape: ['input'], timeoutMs: 45000, forceFileInput: true },
+  'literature-review-workflow': { script: 'inspect_review_pool.py', argsShape: ['root', 'input'], timeoutMs: 60000, forceFileInput: true },
   'research-query-builder': { script: 'build_query.py', argsShape: ['input'], timeoutMs: 45000, forceFileInput: true },
   'open-access-literature': { script: 'openalex_search.py', argsShape: ['root', 'input'], timeoutMs: 90000, forceFileInput: true },
   'nature-academic-search': { script: 'search_openalex.py', argsShape: ['root', 'input'], timeoutMs: 90000, forceFileInput: true },
@@ -2403,6 +2428,114 @@ async function executableSkill(skillId, root, skillInput = '', hooks = {}) {
   }
 }
 function findLocalSkill(name) { return localSkills().find((skill) => skill.name === name); }
+function findBundledPlotSkill(name) {
+  // A runtime may adopt a profile whose skillDirectories still lists an older
+  // installation first. Unified plot tools must execute the reviewed Skill that
+  // ships beside this Bridge, not an unrelated same-named user or stale Skill.
+  const bundledRoot = path.resolve(ROOT, 'skills');
+  return localSkills().find((skill) => skill.name === name
+    && isInsideRoot(bundledRoot, path.resolve(String(skill.origin || '')))) || null;
+}
+
+/* Unified plot-tool host. Only the two reviewed data Skills are reachable;
+ * every manifest read stays below <output_root>/_analysis and every Vault ID
+ * crosses the Node/Python boundary in forward-slash form. */
+function plotAnalysisRoot(workspace, outputRoot) {
+  const relative = plotToolContract.normalizeVaultPath(outputRoot || 'Materials', 'output_root');
+  const target = path.resolve(workspace, relative, '_analysis');
+  if (!isInsideRoot(workspace, target)) throw new Error('plot analysis root is outside the workspace');
+  return target;
+}
+function safePlotManifestFile(workspace, outputRoot, manifestId) {
+  const normalized = plotToolContract.normalizeManifestId(manifestId);
+  const target = path.resolve(workspace, normalized);
+  const analysisRoot = plotAnalysisRoot(workspace, outputRoot);
+  const relative = path.relative(analysisRoot, target);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || path.basename(target) !== 'plot-manifest.json') {
+    throw new Error('target manifest is outside the authorized analysis folder');
+  }
+  return { target, normalized };
+}
+function readPlotManifestFile(workspace, outputRoot, manifestId) {
+  const { target } = safePlotManifestFile(workspace, outputRoot, manifestId);
+  const stat = fs.statSync(target);
+  if (!stat.isFile() || stat.size > 1000000) throw new Error('target manifest is missing or too large');
+  const manifest = JSON.parse(fs.readFileSync(target, 'utf8'));
+  return { manifest };
+}
+function listPlotManifestFiles(workspace, outputRoot) {
+  const analysisRoot = plotAnalysisRoot(workspace, outputRoot);
+  const found = [];
+  function visit(directory) {
+    if (found.length >= 2000 || !fs.existsSync(directory)) return;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (found.length >= 2000) break;
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(target);
+      else if (entry.isFile() && entry.name === 'plot-manifest.json') {
+        try {
+          const manifestId = plotToolContract.normalizeManifestId(path.relative(workspace, target));
+          found.push({ manifest_id: manifestId, manifest: JSON.parse(fs.readFileSync(target, 'utf8')) });
+        } catch { /* Ignore malformed or unrelated artifacts. */ }
+      }
+    }
+  }
+  visit(analysisRoot);
+  return found;
+}
+function decodePlotSample(raw, encoding) {
+  const candidates = /gb18030|gbk/i.test(String(encoding || '')) ? ['gb18030'] : ['utf-8', 'gb18030'];
+  for (const name of candidates) {
+    try { return new TextDecoder(name, { fatal: true }).decode(raw).replace(/^\uFEFF/, ''); }
+    catch { /* Try the next supported lab-export encoding. */ }
+  }
+  throw new Error('dataset encoding is unsupported for sample preview');
+}
+function parsePlotSampleLine(line, delimiter) {
+  const cells = [];
+  let value = '';
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === '"') {
+      if (quoted && line[index + 1] === '"') { value += '"'; index += 1; }
+      else quoted = !quoted;
+    } else if (char === delimiter && !quoted) { cells.push(value); value = ''; }
+    else value += char;
+  }
+  cells.push(value);
+  return cells;
+}
+function readPlotDatasetSample(workspace, datasetPath, sampleRows, input) {
+  const normalized = plotToolContract.normalizeDatasetPath(datasetPath);
+  const target = path.resolve(workspace, normalized);
+  if (!isInsideRoot(workspace, target) || !fs.statSync(target).isFile() || fs.statSync(target).size > 8 * 1024 * 1024) {
+    throw new Error('dataset is outside the workspace or too large for sample preview');
+  }
+  const text = decodePlotSample(fs.readFileSync(target), input.encoding);
+  const delimiter = input.delimiter === 'whitespace' ? '\t' : String(input.delimiter || ',');
+  const lines = text.split(/\r?\n/).filter((line) => line.trim() && !/^\s*(#|%|!|\/\/)/.test(line));
+  if (!lines.length) return [];
+  const headers = parsePlotSampleLine(lines[0], delimiter);
+  return lines.slice(1, sampleRows + 1).map((line) => {
+    const cells = parsePlotSampleLine(line, delimiter);
+    return Object.fromEntries(headers.map((header, index) => [header, cells[index] === undefined ? null : cells[index]]));
+  });
+}
+function plotToolRuntimeFor(context) {
+  const workspace = path.resolve(context.workspace);
+  const outputRoot = context.output_root || 'Materials';
+  return createPlotToolRuntime({
+    runSkill(name, input) {
+      const skill = findBundledPlotSkill(name);
+      if (!skill || !['sch-data-plot', 'sch-data-profile-audit'].includes(name)) throw new Error(`plot tool Skill is unavailable: ${name}`);
+      return executableSkill(skill.id, workspace, JSON.stringify(input));
+    },
+    readManifest(manifestId) { return readPlotManifestFile(workspace, outputRoot, manifestId); },
+    listManifests() { return listPlotManifestFiles(workspace, outputRoot); },
+    readDatasetSample(datasetPath, sampleRows, input) { return readPlotDatasetSample(workspace, datasetPath, sampleRows, input); },
+  });
+}
 
 /* ---------------------------------------------------------------------------
  * Async skill runs (POST /v1/skill-runs + GET /v1/skill-runs/:id).
@@ -2744,7 +2877,7 @@ async function downloadAgentReportedPdf(url, suggestedName, workspace, spec) {
   const { bytes, finalUrl } = await fetchPdfBytes(url);
   return savePdfWithDedup(workspace, folder, agentPdfFilename(suggestedName, finalUrl), bytes, { source_url: finalUrl });
 }
-function event(task, type, text) { task.events.push({ at: new Date().toISOString(), type, text: String(text) }); }
+function event(task, type, text) { task.events.push({ at: new Date().toISOString(), type, text: String(text) }); persistChatTask(task); }
 function actionableFailure(diagnosticSource, code, taskFailure) {
   const diagnostic = String(diagnosticSource || '');
   if (/usage limit|upgrade to pro|purchase more credits|try again at/i.test(diagnostic)) {
@@ -2806,7 +2939,7 @@ function ingestCodexOutput(task, data, flush = false) {
       task.diagnostics = `${task.diagnostics || ''}${line}\n`.slice(-16000);
       continue;
     }
-    if (message.type === 'thread.started') stage(task, 'thread', '已建立 Agent 会话');
+    if (message.type === 'thread.started') { task.sessionId = message.thread_id; stage(task, 'thread', '已建立 Agent 会话'); }
     else if (message.type === 'turn.started') stage(task, 'turn', '正在分析课题任务');
     else if (message.type === 'item.started' && message.item?.type === 'command_execution') {
       const command = String(message.item.command || '').replace(/\s+/g, ' ').slice(0, 200);
@@ -2834,12 +2967,12 @@ function ingestCodexOutput(task, data, flush = false) {
     // 每个 assistant 事件带 message.content 块——text 是模型思考，tool_use 是
     // 一次工具调用。转成 'step' 事件后聊天界面可以像 Claude Code 一样展示
     // "它在想什么、调了什么、看到什么"，而不是盲等。system/init 是流的开头。
-    else if (message.type === 'system' && message.subtype === 'init') stage(task, 'thread', '已建立 Agent 会话');
+    else if (message.type === 'system' && message.subtype === 'init') { task.sessionId = message.session_id; stage(task, 'thread', '已建立 Agent 会话'); }
     else if (message.type === 'assistant') {
       const blocks = message.message?.content || [];
       for (const block of blocks) {
         if (block.type === 'text' && String(block.text || '').trim()) {
-          event(task, 'step', `思考：${String(block.text).trim().replace(/\s+/g, ' ').slice(0, 200)}`);
+          event(task, 'step', `Agent 进展：${String(block.text).trim().replace(/\s+/g, ' ').slice(0, 200)}`);
         } else if (block.type === 'tool_use') {
           const input = block.input || {};
           // Windows 上 Claude Code 的原生 shell 工具叫 PowerShell（不是 Bash），
@@ -2872,7 +3005,8 @@ function ingestCodexOutput(task, data, flush = false) {
   }
 }
 function start(task) {
-  const adapter = config.adapters[task.agentId];
+  let adapter = require('./task-stream').streamTaskAdapter(task.agentId, config.adapters[task.agentId]);
+  if (task.resumeSessionId) adapter = require('./task-stream').resumeTaskAdapter(task.agentId, adapter, task.resumeSessionId);
   const resolved = resolveCommand(adapter.command);
   if (!resolved) { task.status = 'failed'; event(task, 'error', `${adapter.command} is not installed or not on PATH`); return; }
   let transport;
@@ -2912,6 +3046,8 @@ function start(task) {
   }
   task.child = child;
   task.status = 'running';
+  persistChatTask(task);
+  child.stdout.setEncoding('utf8');
   child.stdout.on('data', (data) => ingestCodexOutput(task, data));
   // Codex puts cache and plugin diagnostics on stderr. They are retained by the CLI,
   // but intentionally not shown in the learner-facing workflow view.
@@ -2920,7 +3056,8 @@ function start(task) {
   child.on('close', (code) => {
     if (mcpReadToken) mcpReadCapabilities.delete(mcpReadToken);
     ingestCodexOutput(task, '', true);
-    task.status = code === 0 ? 'completed' : 'failed'; task.exitCode = code; task.child = null;
+    const cancelled = task.status === 'cancelled';
+    task.status = cancelled ? 'cancelled' : (code === 0 && !task.failureMessage ? 'completed' : 'failed'); task.exitCode = code; task.child = null;
     if (researchAudit) {
       try {
         const after = snapshotTree(researchAudit.dir);
@@ -2934,7 +3071,9 @@ function start(task) {
         }
       } catch (error) { event(task, 'error', `快照审计失败（不影响任务结果）：${error.message}`); }
     }
-    if (code === 0) {
+    persistChatTask(task);
+    if (cancelled) return;
+    if (task.status === 'completed') {
       stage(task, 'done', '审计已完成');
       if (task.finalMessage) event(task, 'result', task.finalMessage);
       else if (task.rawStdout?.trim()) event(task, 'result', task.rawStdout.trim());
@@ -3084,6 +3223,27 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { ok: Boolean(config.allowExecution && workspace.isDirectory), executionEnabled: Boolean(config.allowExecution), workspace, agents: agentStatus() });
   }
   if (req.method === 'GET' && url.pathname === '/v1/skills') return send(res, 200, { skills: localSkills(), directories: config.skillDirectories });
+  const plotToolMatch = url.pathname.match(/^\/v1\/plot-tools\/(inspect_dataset|get_plot_context|render_plot|revise_plot)$/);
+  if (req.method === 'POST' && plotToolMatch) {
+    try {
+      const input = await body(req);
+      const context = input.context && typeof input.context === 'object' && !Array.isArray(input.context) ? input.context : {};
+      const root = path.resolve(context.workspace || scholariumConfig().vaultRoot || config.workspaceRoot || ROOT);
+      if (!allowedSkillRoot(root)) return send(res, 403, { error: 'workspace is outside configured allowedRoots' });
+      if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return send(res, 400, { error: 'workspace root does not exist or is not a directory' });
+      const runtime = plotToolRuntimeFor({ ...context, workspace: root });
+      const observation = await runtime.execute({ name: plotToolMatch[1], arguments: input.arguments || {} }, {
+        output_root: context.output_root || 'Materials',
+        active_target_manifest_id: context.active_target_manifest_id,
+        researcher_confirmed: context.researcher_confirmed === true,
+        researcher_save_mode: context.researcher_save_mode === 'overwrite' ? 'overwrite' : 'new_version',
+      });
+      // Tool failures are data, not transport failures. Returning the structured
+      // Observation with HTTP 200 lets every client preserve error.code (notably
+      // VERSION_CONFLICT) instead of reducing it to a generic Bridge error.
+      return send(res, 200, { observation, ...(observation.error ? { error: observation.error.message } : {}) });
+    } catch (error) { return send(res, 400, { error: error.message }); }
+  }
   if (req.method === 'POST' && url.pathname === '/v1/skills/run') {
     try {
       const input = await body(req);
@@ -3960,9 +4120,36 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, workspaceStatus());
     } catch (error) { return send(res, 400, { error: error.message }); }
   }
+  if (req.method === 'GET' && url.pathname === '/v1/chat-tasks/latest') {
+    const conversationId = url.searchParams.get('conversationId');
+    if (!conversationId || conversationId.length > 200) return send(res, 400, { error: 'invalid conversation id' });
+    const latest = [...tasks.values()].filter((task) => task.conversationId === conversationId).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+    return latest ? send(res, 200, { id: latest.id, status: latest.status }) : send(res, 404, { error: 'task not found' });
+  }
   if (req.method === 'GET' && /^\/v1\/tasks\/[\w-]+$/.test(url.pathname)) {
     const task = tasks.get(url.pathname.split('/').pop());
     return task ? send(res, 200, { ...task, child: undefined, stderr: undefined, diagnostics: undefined }) : send(res, 404, { error: 'task not found' });
+  }
+  if (req.method === 'POST' && /^\/v1\/tasks\/[\w-]+\/resume$/.test(url.pathname)) {
+    const original = tasks.get(url.pathname.split('/')[3]);
+    if (!original) return send(res, 404, { error: '未找到原任务记录；旧版本未保存的任务无法恢复。' });
+    if (original.status === 'running' || original.status === 'queued') return send(res, 200, { id: original.id, status: original.status, reattached: true });
+    if (original.status === 'completed') return send(res, 200, { id: original.id, status: original.status, reattached: true });
+    const active = [...tasks.values()].find((item) => item.resumeFrom === original.id && ['queued', 'running'].includes(item.status));
+    if (active) return send(res, 200, { id: active.id, status: active.status, reattached: true });
+    if (original.status === 'interrupted' && original.pid) {
+      try { process.kill(original.pid, 0); return send(res, 409, { error: '原 Agent 进程可能仍在运行，暂不能安全恢复；请先确认原进程已结束。' }); } catch (error) { if (error.code !== 'ESRCH') return send(res, 409, { error: '无法确认原 Agent 进程是否结束，暂不能安全恢复。' }); }
+    }
+    if (!original.sessionId) return send(res, 409, { error: '原任务没有记录 Agent 会话编号，无法从会话恢复；请重新描述任务。' });
+    reloadFullLaneConfig();
+    const adapter = config.adapters[original.agentId];
+    if (!adapter || !config.allowExecution || !allowedRoot(original.cwd) || !(adapter.sandboxed === true || (adapter.lane === 'research' && config.researchLaneEnabled === true))) return send(res, 403, { error: '当前配置不允许恢复此任务。' });
+    try {
+      require('./task-stream').resumeTaskAdapter(original.agentId, adapter, original.sessionId);
+      const task = { id: randomUUID(), agentId: original.agentId, cwd: original.cwd, prompt: '请从上次中断处继续原任务。先检查已完成的工作与现有结果，避免重复执行；完成后给出结果。', status: 'queued', events: [], createdAt: new Date().toISOString(), provider: original.provider, conversationId: original.conversationId, resumeFrom: original.id, resumeSessionId: original.sessionId };
+      tasks.set(task.id, task); start(task);
+      return send(res, 202, { id: task.id, status: task.status, reattached: false });
+    } catch (error) { return send(res, 400, { error: error.message }); }
   }
   if (req.method === 'POST' && url.pathname === '/v1/tasks') {
     try {
@@ -3989,18 +4176,20 @@ const server = http.createServer(async (req, res) => {
       }
       // 科研对话的能力规范位于 prompt 中；截断会把尾部规范整个吃掉，
       // 因而必须原样交给 CLI。上下文节流由提示词组装层分别处理可压缩块。
-      const task = { id: randomUUID(), agentId: input.agentId, cwd: path.resolve(input.cwd || config.workspaceRoot || ROOT), prompt: String(input.prompt || ''), status: 'queued', events: [], createdAt: new Date().toISOString(), provider: currentProviderContext() };
+      const task = { id: randomUUID(), agentId: input.agentId, cwd: path.resolve(input.cwd || config.workspaceRoot || ROOT), prompt: String(input.prompt || ''), conversationId: typeof input.conversationId === 'string' ? input.conversationId.slice(0, 200) : '', status: 'queued', events: [], createdAt: new Date().toISOString(), provider: currentProviderContext() };
       tasks.set(task.id, task); start(task); return send(res, 202, { id: task.id, status: task.status, provider: task.provider });
     } catch (error) { return send(res, 400, { error: error.message }); }
   }
   if (req.method === 'POST' && /^\/v1\/tasks\/[\w-]+\/cancel$/.test(url.pathname)) {
     const task = tasks.get(url.pathname.split('/')[3]);
     if (!task) return send(res, 404, { error: 'task not found' });
+    if (task.status !== 'running' && task.status !== 'queued') return send(res, 409, { error: `task is already ${task.status}` });
+    task.status = 'cancelled'; event(task, 'system', 'Task cancelled by user');
     if (task.child) {
       if (process.platform === 'win32' && task.child.pid) spawnSync('taskkill.exe', ['/pid', String(task.child.pid), '/T', '/F'], { windowsHide: true });
       else task.child.kill('SIGTERM');
     }
-    task.status = 'cancelled'; event(task, 'system', 'Task cancelled by user'); return send(res, 200, { ok: true });
+    return send(res, 200, { ok: true });
   }
   if (req.method === 'POST' && url.pathname === '/v1/drafts') {
     try {

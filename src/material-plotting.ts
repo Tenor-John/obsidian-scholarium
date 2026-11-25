@@ -7,6 +7,8 @@ import * as De from "obsidian";
 import { schMaterialsRoot } from "./folders";
 import { schRuntimeRoot } from "./runtime-manager";
 import { schMaterialBridgeJson, schMaterialRunPlotAgent } from "./material-bridge";
+import { schCreatePlotToolClient } from "./plot-tool-client";
+import { diffStyle as schPlotDiffStyle } from "../agent-canvas-demo/plot-tool-contract.js";
 const Eo = De;
 const Y = De;
 function Ml() {
@@ -729,7 +731,7 @@ async function schMaterialPlotVersions(plugin, sourcePath) {
 // ── Plot style patch plumbing (chat commands + LLM-translated patches) ──
 // Extra visual-only chart_style keys beyond the base panel controls. Every key
 // mirrors the bounded schema in skills/sch-data-plot/scripts/generate_plot.py.
-const SCH_PLOT_EXTRA_STYLE_KEYS = ["fig_size", "spines", "border_width", "title_size", "label_size", "tick_size", "x_label", "y_label", "y_range", "legend", "marker_size", "line_style", "tick_count"];
+const SCH_PLOT_EXTRA_STYLE_KEYS = ["show_peaks", "fig_size", "spines", "border_width", "title_size", "label_size", "tick_size", "x_label", "y_label", "y_range", "legend", "marker_size", "line_style", "tick_count"];
 const SCH_PLOT_HELP_HTML = '我能理解的指令举例：<code>换成柱状图/折线图/散点图</code>、<code>线宽改为3</code>、<code>虚线/实线</code>、<code>显示/隐藏网格</code>、<code>显示数据点</code>、<code>标题为…</code>、<code>深色样式</code>、<code>截取 10 到 20</code>、<code>y轴 0 到 100</code>（视图缩放）、<code>图片改成 800×600</code>、<code>加完整边框 / 去掉上边框</code>、<code>边框宽度改为2</code>、<code>x轴标签为 Time (min)</code>、<code>图例放右边 / 隐藏图例</code>、<code>标题字号 22</code>、<code>在 y=0 加基线</code>、<code>清除标注</code>。也可以用自然语言描述其他样式调整，我会让绘图 Agent 翻译成样式补丁。注意：基线校正/扣背景属于数据处理，需要用派生数据流程，不能在这里做。';
 function schPlotClamp(value, lo, hi) {
   const n = Number(value);
@@ -774,6 +776,7 @@ function schPlotSanitizeStylePatch(patch, headers = []) {
   }
   // 允许平铺或嵌套在 chart_style 下两种写法
   const s = { ...patch, ...(patch.chart_style && typeof patch.chart_style === "object" ? patch.chart_style : {}) };
+  if (typeof s.show_peaks === "boolean") { result.style.show_peaks = s.show_peaks; note(s.show_peaks ? "显示各曲线最高点" : "隐藏最高点标记"); }
   const themeId = String(s.theme || "").toLowerCase();
   if (["publication", "soft", "dark"].includes(themeId)) {
     result.style.theme = themeId;
@@ -1351,6 +1354,8 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
     let hasRendered = false;
     let dataSample = "";
     let currentPreviewManifest = null;
+    let currentPlotObservation = null;
+    const plotTools = schCreatePlotToolClient(plugin);
     const conversationHistory = [];
     const seriesColors = {};
     // Extra visual-only style keys (fig_size, spines, fonts, legend, …) that
@@ -1530,18 +1535,58 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
         addAgent("请选择一个已有图表版本后再覆盖，或把保存方式切换为<strong>保存为新版本</strong>。");
         return;
       }
+      const targetManifest = overwrite ? targetVersion.manifest : currentPreviewManifest;
+      const targetManifestId = overwrite
+        ? String(targetVersion.file).replace(/\\/g, "/")
+        : String((targetManifest?.outputs || []).find((path) => /\/plot-manifest\.json$/i.test(String(path).replace(/\\/g, "/"))) || "").replace(/\\/g, "/");
+      const nextTitle = title.value.trim() || `${ys.join("、")} vs ${xSelect.value}`;
+      const nextStyle = collectStyle();
+      const previousPlot = targetManifest?.plot || null;
+      const recipeChanged = Boolean(previousPlot) && (
+        String(previousPlot.x_column || "") !== xSelect.value
+        || String(previousPlot.kind || "") !== kind.value
+        || JSON.stringify(previousPlot.y_columns || []) !== JSON.stringify(ys)
+      );
+      if (overwrite && recipeChanged) {
+        addAgent("覆盖版本只允许修改标题和视觉样式。你更改了 X/Y 列或图型，请切换为<strong>保存为新版本</strong>，宿主会重新校验数据映射。");
+        return;
+      }
       render.disabled = true;
       activeSkillChip.setText("✦ sch-data-plot");
       recordAudit({ actor: "用户", action: "调用 Skill", detail: `${overwrite ? "覆盖所选版本" : "保存新版本"} · ${KIND_LABEL[kind.value] || kind.value}`, skill: "sch-data-plot", status: "running" });
       const thinking = addThinking(overwrite ? "正在安全覆盖所选图表版本…" : "正在生成可复现 SVG 图表…");
       try {
-        const result = await schMaterialRunAllowedSkill(plugin, "sch-data-plot", {
-          data_path: item.path, x_column: xSelect.value, y_columns: ys, plot_kind: kind.value, title: title.value.trim(),
-          output_root: schMaterialsRoot(plugin),
-          chart_style: collectStyle(),
-          save_mode: overwrite ? "overwrite" : "new",
-          ...(overwrite ? { target_manifest_path: targetVersion.file } : {}),
-        });
+        let observation;
+        if (targetManifestId && previousPlot && !recipeChanged) {
+          const patch = {};
+          const stylePatch = schPlotDiffStyle(previousPlot.chart_style || {}, nextStyle);
+          if (nextTitle !== String(previousPlot.title || "")) patch.title = nextTitle;
+          if (Object.keys(stylePatch).length) patch.chart_style = stylePatch;
+          if (!Object.keys(patch).length) throw new Error("当前配置与目标版本一致，没有需要保存的修改");
+          observation = await plotTools.revise_plot({
+            target_manifest_id: targetManifestId,
+            base_version: Number(targetManifest.plot_contract?.version) || 1,
+            revision_reason: "绘图面板中由研究员确认的增量修改",
+            patch,
+          }, {
+            output_root: schMaterialsRoot(plugin),
+            researcher_confirmed: true,
+            researcher_save_mode: overwrite ? "overwrite" : "new_version",
+          });
+        } else {
+          observation = await plotTools.render_plot({
+            dataset_path: item.path,
+            recipe: { plot_kind: kind.value, title: nextTitle, x_column: xSelect.value, y_columns: ys, chart_style: nextStyle },
+          }, { output_root: schMaterialsRoot(plugin), researcher_confirmed: true });
+        }
+        if (observation.status !== "success") {
+          const detail = observation.error;
+          const error = new Error(detail?.message || "绘图工具未成功执行");
+          error.code = detail?.code;
+          throw error;
+        }
+        currentPlotObservation = observation;
+        const manifest = JSON.parse(await plugin.app.vault.adapter.read(observation.manifest_path));
         thinking.remove();
         hasRendered = true;
         updateRenderButtonLabel();
@@ -1549,18 +1594,21 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
         await refreshVersions();
         render.removeClass("plt-dirty");
         render.removeAttribute("title");
-        const sentStyle = collectStyle();
         const styleBits = [`线宽 ${Number(lineWidth.value)}`, grid.checked ? "网格开" : "网格关", markers.value === "all" ? "数据点全显" : markers.value === "none" ? "无数据点" : "数据点自动"];
-        if (sentStyle.x_range) styleBits.push(`视图 ${sentStyle.x_range[0]}–${sentStyle.x_range[1]}`);
-        if (sentStyle.annotations.length) styleBits.push(`${sentStyle.annotations.length} 条标注线`);
+        if (nextStyle.x_range) styleBits.push(`视图 ${nextStyle.x_range[0]}–${nextStyle.x_range[1]}`);
+        if (nextStyle.annotations.length) styleBits.push(`${nextStyle.annotations.length} 条标注线`);
         addAgent(`${overwrite ? "已覆盖所选版本" : "已生成新版本"}（<strong>${KIND_LABEL[kind.value] || kind.value}</strong> · ${styleBits.join(" · ")}），已更新中央预览。原始数据未改动。`);
-        await updatePreview(result);
-        recordAudit({ actor: "Skill", action: overwrite ? "覆盖图表版本" : "生成图表版本", detail: `${KIND_LABEL[kind.value] || kind.value} · ${styleBits.join(" · ")}`, skill: "sch-data-plot", status: "done", version: overwrite ? "覆盖" : `v${versions.length}` });
+        if (observation.warnings.length) addAgent(`渲染提示：${observation.warnings.map((warning) => warning.message).join("；")}`);
+        await updatePreview({ manifest });
+        recordAudit({ actor: "Skill", action: overwrite ? "覆盖图表版本" : "生成图表版本", detail: `${KIND_LABEL[kind.value] || kind.value} · ${styleBits.join(" · ")}`, skill: "sch-data-plot", status: "done", version: overwrite ? "覆盖" : `v${observation.current_version}` });
         new Eo.Notice(overwrite ? "✅ 所选图表版本已覆盖；原始数据未改动。" : "✅ 图表新版本已生成；原图与原始数据均未覆盖。");
+        return observation;
       } catch (error) {
         thinking.remove();
-        addAgent(`绘图失败：${error.message || error}`);
+        const conflict = error?.code === "VERSION_CONFLICT";
+        addAgent(`${conflict ? "版本冲突" : "绘图失败"}：${error.message || error}${conflict ? "。请重新载入最新版本后再保存。" : ""}`);
         recordAudit({ actor: "Skill", action: "生成图表失败", detail: String(error.message || error), skill: "sch-data-plot", status: "error" });
+        return null;
       } finally {
         render.disabled = false;
       }
@@ -1691,6 +1739,17 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
       // controls, so “为什么散点图没有点？” could never receive an answer.
       const asksQuestion = /[?？]|为什么|为何|怎么|怎样|如何|什么|是否|能否|可不可以|解释|原因|区别|优缺点|建议|看不到|没有显示|不显示|消失|异常|问题|不对|不合理|重叠|失败|报错|出错/.test(text);
       if (!asksQuestion) {
+      if (/(峰值|最高点|最大值)/.test(text) && /(标|画|显示|圈|去掉|取消|隐藏)/.test(text)) {
+        if (/(指定|仅|只有|某一|某条|范围|区间|局部)/.test(text)) {
+          addAgent("目前只能标记当前视图内每条已选曲线的最高点；指定曲线、范围或局部峰值暂不支持，未修改图表。");
+          return;
+        }
+        extraStyle.show_peaks = !/(去掉|取消|隐藏|清除)/.test(text);
+        saveMode.value = "new";
+        addAgent("正在根据当前视图的数据计算各曲线最高点，并保存为新版本。");
+        await doRender();
+        return;
+      }
       if (/柱状/.test(text)) { kind.value = "bar"; changes.push("图表类型 → 柱状图"); }
       else if (/折线/.test(text)) { kind.value = "line"; changes.push("图表类型 → 折线图"); }
       else if (/散点/.test(text)) { kind.value = "scatter"; changes.push("图表类型 → 散点图"); }
@@ -1837,7 +1896,14 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
           `数据列：${headers.join("、")}`,
           `数据只读样本（最多40行）：${dataSample}`,
           `当前配置：${JSON.stringify(current)}`,
-          `当前预览元数据：${JSON.stringify(currentPreviewManifest?.plot || {})}`,
+          `最新绘图 Observation：${JSON.stringify(currentPlotObservation ? {
+            plot_id: currentPlotObservation.plot_id,
+            target_manifest_id: currentPlotObservation.target_manifest_id,
+            current_version: currentPlotObservation.current_version,
+            manifest_summary: currentPlotObservation.manifest_summary,
+            column_mapping: currentPlotObservation.column_mapping,
+            warnings: currentPlotObservation.warnings,
+          } : null)}`,
           `最近对话：${JSON.stringify(conversationHistory.slice(-10, -1))}`,
           `用户指令：${text}`,
           "",
@@ -1945,17 +2011,18 @@ async function schOpenMaterialPlotter(plugin, item, existingVersion = null, moun
         recordAudit({ actor: "用户", action: "调用 Skill", detail: "分析数据字段、缺失值与数值范围", skill: "sch-data-profile-audit", status: "running" });
         renderSteps(["done", "running", ""]);
         thinking = addThinking("织研者正在分析字段（只读）…");
-        const result = await schMaterialRunAllowedSkill(plugin, "sch-data-profile-audit", { data_path: item.path });
+        const observation = await plotTools.inspect_dataset({ dataset_path: item.path, sample_rows: 0 });
+        if (observation.status !== "success") throw new Error(observation.error?.message || "字段画像工具未成功执行");
         thinking.remove();
-        const numeric = (result.manifest?.columns || []).filter((column) => column.inferred_type === "numeric").map((column) => column.name);
-        const all = (result.manifest?.columns || []).map((column) => column.name);
+        const numeric = observation.columns.filter((column) => column.inferred_type === "numeric").map((column) => column.name);
+        const all = observation.columns.map((column) => column.name);
         if (all.length) fillFields(all, numeric);
         schMaterialApplyPlotVersion(existingVersion, controls, { addAnnRow, renderColorRows, syncStylePanel });
         renderQuick();
         renderSteps(["done", "done", hasRendered ? "done" : ""]);
-        const encoding = result.manifest?.input?.encoding ? `，编码 ${result.manifest.input.encoding}` : "";
-        addAgent(`分析完成：共 <strong>${result.manifest?.input?.rows || 0}</strong> 行、${all.length} 列；数值列 <strong>${numeric.length}</strong> 个（${numeric.join("、") || "无"}）${encoding}。已自动勾选数值列作为 Y 轴。`);
-        recordAudit({ actor: "Skill", action: "字段画像完成", detail: `${result.manifest?.input?.rows || 0} 行 · ${all.length} 列 · ${numeric.length} 个数值列`, skill: "sch-data-profile-audit", status: "done" });
+        const encoding = observation.dataset.encoding ? `，编码 ${observation.dataset.encoding}` : "";
+        addAgent(`分析完成：共 <strong>${observation.dataset.rows || 0}</strong> 行、${all.length} 列；数值列 <strong>${numeric.length}</strong> 个（${numeric.join("、") || "无"}）${encoding}。已自动勾选数值列作为 Y 轴。`);
+        recordAudit({ actor: "Skill", action: "字段画像完成", detail: `${observation.dataset.rows || 0} 行 · ${all.length} 列 · ${numeric.length} 个数值列`, skill: "sch-data-profile-audit", status: "done" });
       } catch (error) {
         if (thinking) thinking.remove();
         addAgent(`字段分析失败：${error.message || error}`);

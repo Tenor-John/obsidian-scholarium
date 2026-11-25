@@ -17,6 +17,9 @@ import type { AccentKey, ThemeKey } from './theme/tokens';
 import { registerChemMarkdown } from './chem/chem-markdown';
 import { registerChemInsertionControls } from './chem/chem-controls';
 
+// Supplied by the reviewed native Weaver embed in the release build.
+declare const schNativeWeaverHost: { installSidebar(plugin: Plugin): boolean };
+
 export default class ChemELNPlugin extends Plugin {
     settings: ChemELNSettings;
     syncManager: CloudSyncManager | null = null;
@@ -139,6 +142,7 @@ export default class ChemELNPlugin extends Plugin {
             DASHBOARD_VIEW_TYPE,
             (leaf) => new DashboardView(leaf, this)
         );
+        if (typeof schNativeWeaverHost !== 'undefined') schNativeWeaverHost.installSidebar(this);
         registerChemMarkdown(this);
         registerChemInsertionControls(this);
 

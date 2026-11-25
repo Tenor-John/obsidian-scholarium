@@ -910,17 +910,17 @@
 data_path 必须是 Vault 内相对路径，后缀只能是 .csv/.tsv/.txt/.dat/.xlsx。sheet 只在工作簿有多个可见工作表时必填，且必须是研究员点名或你实际读到的工作表名——不要猜一个填上去。header_row 不确定时整个字段省略，交给 Skill 自动识别，不要编一个行号。formula_mode 默认 cached（读公式格已缓存的值）；研究员明确要求保留公式文本时用 formula_text；要求"有公式就别转"时用 reject。
 绝不要输出 allow_missing_formula_cache：公式格没有缓存值时 Skill 会拒绝，这是对的——那种情况下转换出来的是一整列空白，接着画出的图看着完全正常。只有研究员能在确认卡上自己解除这道闸，你没有办法知道那些公式本该算出什么。
 这条链是两段的，不要合并：规范化完成后面板会告诉研究员产物路径，绘图是另一次明确请求，x/y 列与图型必须由研究员指定。不要在同一条回复里既请求规范化又声称已经画好图。原文件全程只读，转换不清洗、不过滤、不平滑任何数值；你也不得在正文里把转换描述成"数据已整理好"。
-- 研究员指定了数据文件和要画的列之后，输出一个 \`\`\`scholarium-plot 围栏块请求出图（data_path 接受 .csv/.tsv/.txt/.dat；绘图器会嗅探 TXT/DAT 的分隔符、跳过注释行，分隔符有歧义时会拒绝而不是猜。只有 XLSX 工作簿必须先走上面的 normalize）：
-\`\`\`scholarium-plot
-{"data_path":"Materials/_normalized/<哈希>/normalized.csv","x_column":"time","y_columns":["signal"],"plot_kind":"line","title":"信号随时间变化","chart_style":{"theme":"publication"},"reason":"研究员点名 time 对 signal"}
+- 研究员指定了数据文件和要画的列之后，输出一个 \`\`\`scholarium-plot-tool 围栏块调用 render_plot（dataset_path 接受 .csv/.tsv/.txt/.dat；绘图器会嗅探 TXT/DAT 的分隔符、跳过注释行，分隔符有歧义时会拒绝而不是猜。只有 XLSX 工作簿必须先走上面的 normalize）：
+\`\`\`scholarium-plot-tool
+{"name":"render_plot","arguments":{"dataset_path":"Materials/_normalized/<哈希>/normalized.csv","recipe":{"x_column":"time","y_columns":["signal"],"plot_kind":"line","title":"信号随时间变化","chart_style":{"theme":"publication"}}},"reason":"研究员点名 time 对 signal"}
 \`\`\`
 x_column / y_columns 必须是你在该文件表头里实际读到的列名，不得猜测、不得改写大小写或空格。plot_kind 只能是 line/scatter/bar。拿不准画哪一列就先问研究员，不要挑一个看起来合理的填上去——图画出来之后没人会回头核对列名选得对不对。
-- 只改已有图的外观（配色、字号、网格、图例、坐标范围、标注等）时，用 \`\`\`scholarium-plot-revise，指向那张图的 manifest：
-\`\`\`scholarium-plot-revise
-{"target_manifest_path":"Materials/_analysis/<目录>/plot-manifest.json","chart_style":{"theme":"soft","show_grid":false,"series_colors":["#3366cc"]},"reason":"研究员要求去掉网格线"}
+- 只改已有图的外观时，在同一协议中调用 revise_plot。target_manifest_id 与 base_version 必须来自最近一次绘图 Observation 的 target_manifest_id 与 current_version；series_updates 的 id 必须使用 manifest_summary.series_list 返回的完整 id（格式为 series:原始列名）。只提交增量 patch，绝不重写完整 Manifest：
+\`\`\`scholarium-plot-tool
+{"name":"revise_plot","arguments":{"target_manifest_id":"Materials/_analysis/<目录>/plot-manifest.json","base_version":1,"revision_reason":"研究员要求去掉网格并修改 signal 配色","patch":{"chart_style":{"show_grid":false},"series_updates":[{"id":"series:signal","color":"#3366cc"}]}}}
 \`\`\`
-改版块里绝不要写 data_path、x_column、y_columns 或 save_mode——换数据或换列就是另一张图，必须走完整的 scholarium-plot 重新确认；覆盖旧版本只能由研究员在卡片上勾选。整块带了这些字段会被直接拒绝。
-你永远不直接编辑 SVG，只提交渲染参数，由绘图器从源 CSV 确定性重画——这样每一张图都始终能从数据复现。也不要把改样式说成"更新了数据"或"修正了曲线"。
+revise_plot 的 arguments 里绝不要写 dataset_path、x_column、y_columns、plot_kind 或完整 Manifest——换数据、换列或换图型必须走 render_plot 重新确认。save_mode 只能省略或为 new_version；覆盖旧版本只能由研究员在卡片上勾选。渲染后系统会返回精简 Observation，后续改版必须使用其中最新版本与 Series ID，不要凭记忆猜版本。
+你永远不直接编辑 SVG，只提交渲染参数或增量 Patch，由宿主合并后让绘图器从源 CSV 确定性重画——这样每一张图都始终能从数据复现。也不要把改样式说成"更新了数据"或"修正了曲线"。
 - 从最近一次 Pipeline 的指定步骤重跑：
 \`\`\`scholarium-run
 {"operation":"pipeline.rerun","run_id":"latest","from_step":"search","query":"可选：研究员明确给出的新检索式","reason":"研究员要求从检索步骤重新运行"}
@@ -944,6 +944,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
   const parseNormalizeRequests = window.weaverChatActionsCore.parseNormalizeRequests;
   // 绘图与改图都只传可复现的 manifest 参数，不能把模型生成的 SVG 当作数据图。
   // revise 解析器尤其不接受 source/column 字段，防止“改样式”偷换数据配方。
+  const parsePlotToolRequests = window.weaverChatActionsCore.parsePlotToolRequests;
   const parsePlotRequests = window.weaverChatActionsCore.parsePlotRequests;
   const parsePlotRevisionRequests = window.weaverChatActionsCore.parsePlotRevisionRequests;
   const concealMalformedProtocolBlocks = window.weaverChatActionsCore.concealMalformedProtocolBlocks;
@@ -1543,6 +1544,30 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
     return next;
   }
 
+  async function runPlotTool(toolCall, researcherSaveMode = 'new_version') {
+    const { vaultRoot } = await chartSkillContext();
+    const response = await bridgeFetch(`/v1/plot-tools/${toolCall.name}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        arguments: toolCall.arguments,
+        context: {
+          workspace: vaultRoot,
+          output_root: 'Materials',
+          researcher_confirmed: true,
+          researcher_save_mode: researcherSaveMode,
+        },
+      }),
+    });
+    const observation = response?.observation;
+    if (!observation) throw new Error('绘图工具运行时未返回 Observation。');
+    if (observation.status !== 'success') {
+      const error = new Error(observation.error?.message || '绘图工具未成功执行。');
+      error.code = observation.error?.code;
+      throw error;
+    }
+    return observation;
+  }
+
   async function executePlotRequest(flowId, message, index) {
     const request = message.plots?.[index];
     if (!request || request.state === 'running' || request.state === 'completed') return;
@@ -1551,24 +1576,18 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
     markConfirmation(message, 'plot', 'confirmed');
     saveChat(); renderChat();
     try {
-      const input = {
-        data_path: request.data_path, x_column: request.x_column, y_columns: request.y_columns,
-        plot_kind: request.plot_kind, chart_style: request.chart_style, save_mode: 'new',
-      };
-      if (request.title) input.title = request.title;
-      void auditChatTurn(message, 'skill-submission', { kind: 'plot', skill: 'sch-data-plot', input });
-      const response = await runChartRecipe(input);
-      const manifest = response?.manifest || {};
+      const toolCall = request.tool_call || window.schPlotToolContract.legacyRenderToolCall(request);
+      void auditChatTurn(message, 'skill-submission', { kind: 'plot', skill: 'sch-data-plot', tool_call: toolCall });
+      const observation = await runPlotTool(toolCall);
       request.state = 'completed';
-      request.result = {
-        svg_path: chartOutput(manifest, 'plot.svg'),
-        manifest_path: chartOutput(manifest, 'plot-manifest.json'),
-      };
+      request.observation = observation;
+      request.result = window.schPlotToolContract.toLegacyResult(observation);
       appendToChat(flowId, {
         role: 'system',
         text: `绘图完成：${request.result.svg_path || '（未返回 SVG 路径）'}`
           + `${request.result.manifest_path ? `\nmanifest：${request.result.manifest_path}` : ''}`
-          + '\n这是新的可复现图表版本；源数据未被修改。',
+          + '\n这是新的可复现图表版本；源数据未被修改。'
+          + `\nObservation：${JSON.stringify(observation)}`,
         at: new Date().toISOString(),
       });
     } catch (error) {
@@ -1587,41 +1606,26 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
     markConfirmation(message, 'plotRevision', 'confirmed');
     saveChat(); renderChat();
     try {
-      // Source, variables and plot kind are read fresh from the selected
-      // manifest—not from the model's revision block. The plotter rechecks
-      // the target/source relationship before an explicit overwrite.
-      const { manifest: previous, source, plot, yColumns } = await readChartManifest(request.target_manifest_path);
-      const input = {
-        data_path: source, x_column: String(plot.x_column), y_columns: yColumns,
-        plot_kind: String(plot.kind), chart_style: revisedChartStyle(plot.chart_style, request.chart_style),
-        // This flag is deliberately distinct from any model proposal fields.
-        // Only the researcher-operated checkbox below can set it.  In
-        // particular, old persisted `allowOverwrite` values are ignored so a
-        // stale card can never turn a later confirmation into an overwrite.
-        save_mode: request.overwriteConfirmedByResearcher === true ? 'overwrite' : 'new',
-      };
-      if (plot.title) input.title = String(plot.title);
-      // Pass the selected parent in both modes. In new mode the plotter stores
-      // it as immutable lineage and includes it in the artifact identity; in
-      // overwrite mode it also names the only directory that may be replaced.
-      input.target_manifest_path = request.target_manifest_path;
-      void auditChatTurn(message, 'skill-submission', { kind: 'plotRevision', skill: 'sch-data-plot', input });
-      const response = await runChartRecipe(input);
-      const manifest = response?.manifest || {};
+      // Legacy cards did not carry a version. Read it only after the researcher
+      // confirms; the runtime repeats this optimistic check before any write.
+      const { manifest: previous } = await readChartManifest(request.target_manifest_path);
+      const baseVersion = Number(previous?.plot_contract?.version) || 1;
+      const toolCall = request.tool_call || window.schPlotToolContract.legacyReviseToolCall(request, baseVersion);
+      const saveMode = request.overwriteConfirmedByResearcher === true ? 'overwrite' : 'new_version';
+      void auditChatTurn(message, 'skill-submission', { kind: 'plotRevision', skill: 'sch-data-plot', tool_call: toolCall, researcher_save_mode: saveMode });
+      const observation = await runPlotTool(toolCall, saveMode);
       request.state = 'completed';
-      request.result = {
-        svg_path: chartOutput(manifest, 'plot.svg'),
-        manifest_path: chartOutput(manifest, 'plot-manifest.json'),
-        revision_mode: String(manifest?.revision?.mode || input.save_mode),
-        source_path: String(manifest?.source?.path || source),
+      request.observation = observation;
+      request.result = window.schPlotToolContract.toLegacyResult(observation, {
         based_on_created_at: String(previous?.created_at || ''),
-      };
+      });
       appendToChat(flowId, {
         role: 'system',
         text: `图表改版完成：${request.result.svg_path || '（未返回 SVG 路径）'}`
           + `${request.result.manifest_path ? `\nmanifest：${request.result.manifest_path}` : ''}`
           + `\n模式：${request.result.revision_mode === 'overwrite' ? '已覆盖研究员选定版本' : '已生成新的可复现版本'}`
-          + '\n源数据、x/y 列和图型均继承自目标 manifest，未被模型改写。',
+          + '\n源数据、x/y 列和图型均继承自目标 manifest，未被模型改写。'
+          + `\nObservation：${JSON.stringify(observation)}`,
         at: new Date().toISOString(),
       });
     } catch (error) {
@@ -1683,8 +1687,9 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
       const name = document.createElement('b'); name.textContent = request.target_manifest_path;
       const detail = document.createElement('div'); detail.className = 'wv-action-detail'; detail.style.whiteSpace = 'pre-line';
       detail.textContent = [
-        '仅改视觉配方；源数据、x/y 列和图型将从此 manifest 重新读取。',
-        `样式：${Object.keys(request.chart_style || {}).join('、') || '（无）'}`,
+        '仅提交增量视觉 Patch；源数据、x/y 列和图型将从此 manifest 重新读取。',
+        request.base_version ? `基线：v${request.base_version}` : '基线：旧版卡片，确认后由宿主读取当前版本',
+        `Patch：${Object.keys(request.patch || { chart_style: request.chart_style || {} }).join('、') || '（无）'}`,
         `保存：${request.overwriteConfirmedByResearcher === true ? '覆盖目标版本（研究员明确选择）' : '新版本（默认）'}`,
         request.reason ? `理由：${request.reason}` : '', request.result?.svg_path ? `SVG：${request.result.svg_path}` : '', request.error ? `失败：${request.error}` : '',
       ].filter(Boolean).join('\n');
@@ -2168,16 +2173,16 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
           reply.text = normalizeParsed.text;
           reply.normalizations = normalizeParsed.normalizations;
         }
+        const plotToolParsed = parsePlotToolRequests(reply.text);
+        reply.text = plotToolParsed.text;
         const plotParsed = parsePlotRequests(reply.text);
-        if (plotParsed.plots.length) {
-          reply.text = plotParsed.text;
-          reply.plots = plotParsed.plots;
-        }
+        reply.text = plotParsed.text;
+        const allPlots = [...plotToolParsed.plots, ...plotParsed.plots];
+        if (allPlots.length) reply.plots = allPlots;
         const plotRevisionParsed = parsePlotRevisionRequests(reply.text);
-        if (plotRevisionParsed.revisions.length) {
-          reply.text = plotRevisionParsed.text;
-          reply.plotRevisions = plotRevisionParsed.revisions;
-        }
+        reply.text = plotRevisionParsed.text;
+        const allPlotRevisions = [...plotToolParsed.revisions, ...plotRevisionParsed.revisions];
+        if (allPlotRevisions.length) reply.plotRevisions = allPlotRevisions;
         const suggestParsed = parseSuggestReconstructionRequests(reply.text);
         if (suggestParsed.suggestions.length) {
           reply.text = suggestParsed.text;
@@ -2194,6 +2199,7 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
           draft: draftParsed.stats,
           legacyNoteEdit: legacyNoteEditParsed.stats,
           normalize: normalizeParsed.stats,
+          plotTool: plotToolParsed.stats,
           plot: plotParsed.stats,
           plotRevision: plotRevisionParsed.stats,
           suggestReconstruction: suggestParsed.stats,
@@ -2204,14 +2210,14 @@ x_column / y_columns 必须是你在该文件表头里实际读到的列名，�
           draft: draftParsed.drafts.length ? 'pending' : 'none',
           legacyNoteEdit: legacyNoteEditParsed.edits.length ? 'pending' : 'none',
           normalize: normalizeParsed.normalizations.length ? 'pending' : 'none',
-          plot: plotParsed.plots.length ? 'pending' : 'none',
-          plotRevision: plotRevisionParsed.revisions.length ? 'pending' : 'none',
+          plot: allPlots.length ? 'pending' : 'none',
+          plotRevision: allPlotRevisions.length ? 'pending' : 'none',
           suggestReconstruction: suggestParsed.suggestions.length ? 'pending' : 'none',
         };
         reply.protocolAudit = {
           replyLength: rawReply.length,
           blocks: protocolBlocks,
-          renderedCards: [runParsed.runs, parsed.actions, draftParsed.drafts, legacyNoteEditParsed.edits, normalizeParsed.normalizations, plotParsed.plots, plotRevisionParsed.revisions, suggestParsed.suggestions].filter((items) => items.length).length,
+          renderedCards: [runParsed.runs, parsed.actions, draftParsed.drafts, legacyNoteEditParsed.edits, normalizeParsed.normalizations, allPlots, allPlotRevisions, suggestParsed.suggestions].filter((items) => items.length).length,
           writeClaim: detectWriteClaim(rawReply),
         };
       }

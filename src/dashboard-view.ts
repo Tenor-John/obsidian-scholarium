@@ -200,7 +200,15 @@ export class DashboardView extends ItemView {
         } else if (this.activePanel === 'materials') {
             // ── 素材库（全宽）──
             const matPanel = main.createDiv({ cls: 'scholarium-panel mat-full-panel' });
-            if (this.materialLib) this.materialLib.render(matPanel);
+            if (this.materialLib) {
+                const library = this.materialLib;
+                library.render(matPanel);
+                // Bridge/native-chat plots can arrive after the dashboard's initial load.
+                // Rescan on every entry so existing datasets immediately gain their new thumbnails.
+                void library.loadGeneratedImages().then(() => {
+                    if (this.activePanel === 'materials' && matPanel.isConnected) library.render(matPanel);
+                }).catch((error) => console.error('[MaterialLibrary] 刷新生成图表失败:', error));
+            }
         } else if (this.activePanel === 'tools') {
             // ── 科研库（全宽）──
             const toolsPanel = main.createDiv({ cls: 'scholarium-panel rtl-full-panel' });

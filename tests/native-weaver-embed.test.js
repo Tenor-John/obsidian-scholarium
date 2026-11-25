@@ -25,7 +25,7 @@ function count(text, needle) {
 /** A scratch copy of exactly what the tool reads. */
 function scratchRepo() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sch-native-weaver-"));
-  for (const rel of ["main.js", "styles.css", "tools/native-weaver-host.js", "tools/patch-manual-capture-batch.js", "tools/manual-capture-batch-methods.jsfrag", "tools/patch-native-weaver-layout.js", "vendor/native-weaver/SOURCE.json",
+  for (const rel of ["main.js", "styles.css", "tools/native-weaver-host.js", "tools/native-weaver-plot-tools.js", "tools/native-weaver-plot-tools.css", "tools/patch-manual-capture-batch.js", "tools/manual-capture-batch-methods.jsfrag", "tools/patch-native-weaver-layout.js", "agent-canvas-demo/plot-tool-contract.js", "vendor/native-weaver/SOURCE.json",
     "vendor/native-weaver/scholarium-weaver-native.js", "vendor/native-weaver/scholarium-weaver-native.css"]) {
     const target = path.join(dir, rel);
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -37,6 +37,14 @@ function scratchRepo() {
 describe("native 织研者 embed: the shipped files", () => {
   const main = fs.readFileSync(path.join(ROOT, "main.js"), "utf8");
   const styles = fs.readFileSync(path.join(ROOT, "styles.css"), "utf8");
+
+  it("registers the sidebar during plugin load in the source-built release", () => {
+    const entry = fs.readFileSync(path.join(ROOT, "src/main.ts"), "utf8");
+    assert.match(entry, /async onload\(\)[\s\S]*schNativeWeaverHost\.installSidebar\(this\)/);
+    assert.match(main, /schNativeWeaverHost\.installSidebar\(this\)/);
+    assert.match(main, /open-native-weaver-sidebar/);
+    assert.match(main, /在侧边栏打开织研者/);
+  });
 
   it("has each generated region exactly once", () => {
     for (const marker of [tool.JS_BEGIN, tool.JS_END, tool.HOOK_BEGIN, tool.HOOK_END]) assert.equal(count(main, marker), 1, marker);
@@ -75,6 +83,25 @@ describe("native 织研者 embed: the shipped files", () => {
     assert.match(main, /let pdfCandidateUrls = explicitPdf\.length \? \[\.\.\.explicitPdf\] : \[pdfPageUrl\];/);
     assert.match(main, /quick\.kind === "login" \|\| quick\.kind === "challenge"/);
     assert.match(main, /streak >= 3/, "连续三篇验证触发熔断");
+  });
+
+  it("keeps the installed model selector and agent access services alongside plot cards", () => {
+    const page = fs.readFileSync(path.join(ROOT, "vendor/native-weaver/scholarium-weaver-native.js"), "utf8");
+    const host = fs.readFileSync(path.join(ROOT, "tools/native-weaver-host.js"), "utf8");
+    assert.match(page, /if \(field\.key === "agentId" && this\.options\.agentModels\)/);
+    assert.match(page, /modelSection\(doc, agentSelect\)/);
+    assert.match(page, /\.\.\.host\.agentModels \? \{ agentModels: host\.agentModels \}/);
+    assert.match(host, /agentModels: \{/);
+    assert.match(host, /read: async \(agentId\) => readAgentModel/);
+    assert.match(host, /apply: async \(agentId, choice\) => applyAgentModel/);
+    assert.match(host, /scan: async \(\) => scanClaudeModels/);
+    assert.match(host, /agentAccess: \{/);
+    assert.match(host, /plotTools: schNativeWeaverPlotTools,/);
+    assert.ok(!/plotTools: globalThis\.schNativeWeaverPlotTools/.test(host), "不能从浏览器全局读取模块内绘图工厂");
+    assert.match(host, /executePlotTool: \(name, input, options\) => executeNativePlotTool/);
+    const patched = tool.applyPlotToolPatches(page);
+    assert.match(patched, /this\.deps\.plotTools\.renderCard/);
+    assert.match(patched, /GBK\/GB18030 编码本身不是 normalize 的理由/);
   });
 
   it("puts the page after the runtime bootstrap and the hook before the iframe's early return", () => {
@@ -117,21 +144,22 @@ describe("native 织研者 embed: refusals", () => {
 
 /* ----------------------------------------------------------- the glue --- */
 
-function loadGlue({ mount, notices = [] } = {}) {
+function loadGlue({ mount, notices = [], plotTools = { marker: "plot-tools" } } = {}) {
   const src = fs.readFileSync(path.join(ROOT, "tools", "native-weaver-host.js"), "utf8");
   const fakeObsidian = {
+    ItemView: class ItemView { constructor(leaf) { this.leaf = leaf; } },
     Notice: function Notice(text) { notices.push(text); },
     Modal: function Modal() {},
   };
   const nativeWeaver = mount === null ? undefined : { mountResearchWeaver: mount };
   const window = { setTimeout: (fn) => { fn(); return 1; } };
-  const factory = new Function("ScholariumNativeWeaver", "require", "window", `${src}\nreturn schNativeWeaverHost;`);
+  const factory = new Function("ScholariumNativeWeaver", "schNativeWeaverPlotTools", "require", "window", `${src}\nreturn schNativeWeaverHost;`);
   const req = (id) => {
     if (id === "obsidian") return fakeObsidian;
     if (id === "fs" || id === "path") return require(id);
     throw new Error(id);
   };
-  return { host: factory(nativeWeaver, req, window), window, notices };
+  return { host: factory(nativeWeaver, plotTools, req, window), window, notices };
 }
 
 function el(tag = "div") {
@@ -158,6 +186,7 @@ function fakeView(mode) {
     brandBars: 0,
     renderBrandBar(host) { view.brandBars += 1; host.createDiv({ cls: "sch-brandbar" }); },
   };
+  plugin.app = view.app;
   return { view, plugin, saved, commands };
 }
 
@@ -168,6 +197,25 @@ const RUNTIME = {
 };
 
 describe("native 织研者 embed: the host glue", () => {
+  it("registers the sidebar once and reveals the right leaf without dispatching an Agent", async () => {
+    const { host } = loadGlue({ mount: null });
+    const { plugin, commands } = fakeView("native");
+    const registrations = []; const icons = []; const states = [];
+    const leaf = { setViewState: async (state) => states.push(state) };
+    let revealed = null;
+    plugin.app.workspace = { getLeavesOfType: () => [], getRightLeaf: () => leaf, revealLeaf: (value) => { revealed = value; } };
+    plugin.registerView = (id, factory) => registrations.push({ id, factory });
+    plugin.addRibbonIcon = (...args) => icons.push(args);
+    assert.equal(host.installSidebar(plugin), true);
+    assert.equal(host.installSidebar(plugin), false);
+    assert.equal(registrations.length, 1);
+    assert.equal(registrations[0].factory(leaf).getViewType(), host.SIDE_VIEW);
+    assert.equal(icons.length, 1);
+    assert.ok(commands.some((entry) => entry.id === "open-native-weaver-sidebar"));
+    await host.revealSidePanel(plugin);
+    assert.equal(revealed, leaf);
+    assert.equal(states[0].type, host.SIDE_VIEW);
+  });
   it("draws Scholarium's tab row, then the native page under it, and does it once", () => {
     const mounts = [];
     const { host } = loadGlue({ mount: (body, deps) => { mounts.push({ body, deps }); return { destroy() {}, isMounted: () => true }; } });
@@ -200,6 +248,77 @@ describe("native 织研者 embed: the host glue", () => {
     assert.equal(deps.devMode, false, "the formal host default keeps development mode off");
   });
 
+  it("uses the embedded module-local plot factory even when the browser global is absent", async () => {
+    let deps = null;
+    const calls = [];
+    const previousTools = globalThis.schNativeWeaverPlotTools;
+    const previousClient = globalThis.schCreatePlotToolClient;
+    globalThis.schNativeWeaverPlotTools = { marker: "wrong-global-tools" };
+    globalThis.schCreatePlotToolClient = () => ({
+      execute: async (name, input, options) => { calls.push({ name, input, options }); return { status: "success" }; },
+    });
+    try {
+      const moduleTools = { marker: "module-tools" };
+      const { host, window } = loadGlue({
+        plotTools: moduleTools,
+        mount: (body, d) => { deps = d; return { destroy() {}, isMounted: () => true }; },
+      });
+      const { view } = fakeView("native");
+      assert.equal(host.render(view, el(), RUNTIME), true);
+      assert.equal(deps.plotTools, moduleTools, "CommonJS 模块内的工厂不能经 globalThis 获取");
+      assert.equal(calls.length, 0, "mounting the page must not execute a plot");
+      let refreshed = 0;
+      let repainted = 0;
+      window.__scholariumDashboardView = {
+        activePanel: "materials",
+        materialLib: {
+          loadGeneratedImages: async () => { refreshed += 1; },
+          rerender: () => { repainted += 1; },
+        },
+      };
+      const observation = await deps.executePlotTool("render_plot", { dataset_path: "Materials/a.csv" }, { researcher_confirmed: true });
+      assert.equal(observation.status, "success");
+      assert.deepEqual(calls, [{ name: "render_plot", input: { dataset_path: "Materials/a.csv" }, options: { researcher_confirmed: true } }]);
+      assert.equal(refreshed, 1, "原生对话绘图成功后必须重扫素材库生成图表");
+      assert.equal(repainted, 1, "素材库正在显示时必须立即更新数据集缩略图");
+    } finally {
+      if (previousTools === undefined) delete globalThis.schNativeWeaverPlotTools;
+      else globalThis.schNativeWeaverPlotTools = previousTools;
+      if (previousClient === undefined) delete globalThis.schCreatePlotToolClient;
+      else globalThis.schCreatePlotToolClient = previousClient;
+    }
+  });
+
+  it("keeps the plot Bridge contract available in the controlled older installed shell", async () => {
+    let deps = null;
+    const calls = [];
+    const previousClient = globalThis.schCreatePlotToolClient;
+    const previousBridge = globalThis.schMaterialBridgeJson;
+    delete globalThis.schCreatePlotToolClient;
+    globalThis.schMaterialBridgeJson = async (_plugin, route, options) => {
+      calls.push({ route, options });
+      return { observation: { status: "success", tool: "inspect_dataset" } };
+    };
+    try {
+      const { host } = loadGlue({ mount: (body, d) => { deps = d; return { destroy() {}, isMounted: () => true }; } });
+      const { view } = fakeView("native");
+      assert.equal(host.render(view, el(), RUNTIME), true);
+      assert.equal(calls.length, 0);
+      const observation = await deps.executePlotTool("inspect_dataset", { dataset_path: "Materials/a.csv" }, { active_target_manifest_id: "Materials/_analysis/a/plot-manifest.json" });
+      assert.equal(observation.status, "success");
+      assert.equal(calls[0].route, "/v1/plot-tools/inspect_dataset");
+      const body = JSON.parse(calls[0].options.body);
+      assert.equal(body.context.workspace, "D:/vault");
+      assert.equal(body.context.researcher_confirmed, false);
+      assert.equal(body.context.researcher_save_mode, "new_version");
+      assert.equal(body.context.active_target_manifest_id, "Materials/_analysis/a/plot-manifest.json");
+    } finally {
+      if (previousClient !== undefined) globalThis.schCreatePlotToolClient = previousClient;
+      if (previousBridge === undefined) delete globalThis.schMaterialBridgeJson;
+      else globalThis.schMaterialBridgeJson = previousBridge;
+    }
+  });
+
   it("passes Scholarium's explicit development-mode switch into the native page", async () => {
     let deps = null;
     const { host } = loadGlue({ mount: (body, d) => { deps = d; return { destroy() {}, isMounted: () => true }; } });
@@ -224,7 +343,7 @@ describe("native 织研者 embed: the host glue", () => {
     view.app.workspace.openLinkText = async (...args) => { opened.push(args); };
     view.switchTab = (tab) => tabs.push(tab);
     view.rssBoard = {
-      data: {}, setManualDownloadQueue: (items) => queued.push(items), save() {}, rerender() {},
+      data: {}, setManualDownloadQueue: (items) => { queued.push(items); view.rssBoard.manualDownloadQueue = items; }, save() {}, rerender() {},
     };
     assert.equal(host.render(view, el(), RUNTIME), true);
     const count = await deps.publishManualDownloads([

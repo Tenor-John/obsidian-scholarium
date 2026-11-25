@@ -2,6 +2,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { conversationExcerpt, researchQuestionCoachProtocol, buildResearchChatPrompt, projectContextBlock } = require('../research-chat-core.js');
 
+test('literature capture requests require a detailed same-file summary with distinct matrix metadata', () => {
+  const prompt = buildResearchChatPrompt({ message: '抓取这篇论文并生成总结' });
+  for (const field of ['领域基础知识', '研究背景', '作者的问题意识', '研究意义', '研究结论', '对领域的贡献', '未来研究方向提及', '未来研究方向思考']) {
+    assert.ok(prompt.includes(field), field);
+  }
+  assert.match(prompt, /## 文献矩阵 metadata/);
+  assert.match(prompt, /不能代替正文/);
+  assert.match(prompt, /长文分段读取并综合/);
+  assert.match(prompt, /不静默覆盖已有笔记/);
+});
+
 test('conversation excerpt preserves prior turns and removes only the duplicated current turn', () => {
   const messages = [
     { role: 'user', text: '黑色沉淀是什么？' },

@@ -48,6 +48,11 @@ def load_input(value: str) -> dict:
     raise ValueError("input must be JSON or a path to JSON")
 
 
+def vault_id(value: object) -> str:
+    """Return the canonical Vault-relative ID used by Node and Python."""
+    return re.sub(r"/{2,}", "/", str(value or "").strip().replace("\\", "/"))
+
+
 def safe_source(root: Path, value: str) -> Path:
     if not value:
         raise ValueError("data_path is required")
@@ -338,6 +343,7 @@ def chart_style(value: object) -> dict:
     x_label = str(incoming.get("x_label") or "").strip()[:60] or None
     y_label = str(incoming.get("y_label") or "").strip()[:60] or None
     annotations = []
+    annotation_ids = set()
     raw_annotations = incoming.get("annotations")
     if isinstance(raw_annotations, list):
         for entry in raw_annotations[:8]:  # bounded: at most 8 overlay lines
@@ -353,7 +359,11 @@ def chart_style(value: object) -> dict:
             if not math.isfinite(position):
                 continue
             label = str(entry.get("label") or "").strip()[:60]
-            annotations.append({"type": kind, "value": position, "label": label})
+            annotation_id = str(entry.get("id") or f"annotation:{len(annotations) + 1}").strip()[:160]
+            if not annotation_id or annotation_id in annotation_ids:
+                raise ValueError("annotation IDs must be non-empty and unique")
+            annotation_ids.add(annotation_id)
+            annotations.append({"id": annotation_id, "type": kind, "value": position, "label": label})
     series_colors: dict[str, str] = {}
     raw_colors = incoming.get("series_colors")
     if isinstance(raw_colors, dict):
@@ -365,6 +375,7 @@ def chart_style(value: object) -> dict:
         "theme": theme_id,
         "markers": markers,
         "show_grid": bool(incoming.get("show_grid", True)),
+        "show_peaks": incoming.get("show_peaks") is True,
         "line_width": round(min(6.0, max(1.0, line_width)), 1),
         "x_range": x_range,
         "annotations": annotations,
@@ -538,6 +549,9 @@ def svg_chart(rows: list[dict[str, str]], x_key: str, y_keys: list[str], kind: s
             if draw_markers:
                 for x, value in series_points:
                     series_pieces.append(f'<circle cx="{sx(x):.2f}" cy="{sy(value):.2f}" r="{marker_r:g}" fill="{color}"/>')
+        if style.get("show_peaks") and series_points:
+            peak_x, peak_y = max(series_points, key=lambda point: point[1])
+            series_pieces.append(f'<circle class="peak-marker" data-series="{esc(key)}" data-x="{peak_x:g}" data-y="{peak_y:g}" cx="{sx(peak_x):.2f}" cy="{sy(peak_y):.2f}" r="6" fill="{theme["background"]}" stroke="{color}" stroke-width="2.5"><title>{esc(key)}: x={peak_x:g}, y={peak_y:g}</title></circle>')
         legend_items.append((color, key))
     pieces.append(f'<g clip-path="url(#plot-clip)">' + "\n".join(series_pieces) + "</g>")
     if legend != "none":
@@ -605,9 +619,13 @@ def main() -> int:
     save_mode = str(payload.get("save_mode") or "new").lower()
     if save_mode not in {"new", "overwrite"}:
         raise ValueError("save_mode must be new or overwrite")
-    target_manifest_relative = str(payload.get("target_manifest_path") or "").strip().replace("\\", "/") or None
+    requested_contract = payload.get("plot_contract") if isinstance(payload.get("plot_contract"), dict) else {}
+    target_manifest_relative = vault_id(payload.get("target_manifest_path")) or None
     if save_mode == "overwrite" and not target_manifest_relative:
         raise ValueError("target_manifest_path is required for overwrite")
+    previous = None
+    previous_contract = {}
+    previous_version = 1
     if target_manifest_relative:
         target_manifest = (root / target_manifest_relative).resolve()
         try:
@@ -621,9 +639,25 @@ def main() -> int:
             previous = json.loads(previous_bytes.decode("utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise ValueError("overwrite target manifest is unreadable") from error
-        source_relative = str(source.relative_to(root)).replace("\\", "/")
-        if previous.get("skill") != "sch-data-plot" or previous.get("source", {}).get("path") != source_relative:
+        source_relative = vault_id(source.relative_to(root))
+        if previous.get("skill") != "sch-data-plot" or vault_id(previous.get("source", {}).get("path")) != source_relative:
             raise ValueError("overwrite target does not belong to the selected source dataset")
+        previous_contract = previous.get("plot_contract") if isinstance(previous.get("plot_contract"), dict) else {}
+        try:
+            previous_version = int(previous_contract.get("version", 1))
+        except (TypeError, ValueError):
+            previous_version = 1
+        if previous_version < 1:
+            previous_version = 1
+        # The Node runtime performs the primary optimistic check. Repeating it
+        # here closes the read/render/write race and happens before mkdir/write.
+        if requested_contract.get("parent_version") is not None:
+            try:
+                expected_parent = int(requested_contract.get("parent_version"))
+            except (TypeError, ValueError) as error:
+                raise ValueError("plot_contract.parent_version must be an integer") from error
+            if expected_parent != previous_version:
+                raise ValueError(f"version conflict: target is v{previous_version}, request is based on v{expected_parent}")
         if save_mode == "overwrite":
             output = target_manifest.parent
     else:
@@ -642,10 +676,23 @@ def main() -> int:
         output = analysis_root / f"{slug(source.stem)}-{digest[:12]}-{request_digest}"
     output.mkdir(parents=True, exist_ok=True)
     svg_path, report_path, manifest_path = output / "plot.svg", output / "plot-report.md", output / "plot-manifest.json"
+    manifest_relative = vault_id(manifest_path.relative_to(root))
+    plot_id = vault_id(previous_contract.get("plot_id") or target_manifest_relative) if previous is not None else manifest_relative
+    if not plot_id.endswith("/plot-manifest.json") or plot_id.startswith("/") or re.match(r"^[A-Za-z]:", plot_id) or ".." in plot_id.split("/"):
+        raise ValueError("plot lineage ID must be a Vault-relative plot-manifest.json path")
+    plot_contract = {
+        "schema_version": 1,
+        "plot_id": plot_id,
+        "manifest_id": manifest_relative,
+        "version": previous_version if save_mode == "overwrite" else previous_version + 1 if previous is not None else 1,
+        "parent_manifest_id": target_manifest_relative if previous is not None else None,
+        "parent_version": previous_version if previous is not None else None,
+        "revision_reason": str(requested_contract.get("revision_reason") or ("Chart revision" if previous is not None else "Initial render")).strip()[:300],
+    }
     snapshot_path = overwrite_manifest_snapshot(output, previous, previous_bytes) if save_mode == "overwrite" else None
-    snapshot_relative = str(snapshot_path.relative_to(root)).replace("\\", "/") if snapshot_path else None
+    snapshot_relative = vault_id(snapshot_path.relative_to(root)) if snapshot_path else None
     svg, summary = svg_chart(rows, x_key, y_keys, kind, title, style)
-    outputs = [str(item.relative_to(root)).replace("\\", "/") for item in (svg_path, report_path, manifest_path)]
+    outputs = [vault_id(item.relative_to(root)) for item in (svg_path, report_path, manifest_path)]
     extras = ""
     if style["x_range"]:
         extras += f"- X view window: `{style['x_range'][0]:g} – {style['x_range'][1]:g}` (visual zoom; source data unchanged)\n"
@@ -658,7 +705,7 @@ def main() -> int:
     extras += f"- Canvas: `{style['fig_size'][0]}×{style['fig_size'][1]}px`\n- Spines: `{json.dumps(style['spines'])}` (border width {style['border_width']:g})\n- Legend: `{style['legend']}` · Line style: `{style['line_style']}` · Fonts: title {style['title_size']:g} / label {style['label_size']:g} / tick {style['tick_size']:g}\n"
     if style["x_label"] or style["y_label"]:
         extras += f"- Axis labels: x=`{style['x_label'] or ''}` y=`{style['y_label'] or ''}`\n"
-    source_meta = {"path": str(source.relative_to(root)).replace("\\", "/"), "sha256": digest, "bytes": len(raw), "delimiter": delimiter, "encoding": encoding}
+    source_meta = {"path": vault_id(source.relative_to(root)), "sha256": digest, "bytes": len(raw), "delimiter": delimiter, "encoding": encoding}
     if delimiter_source != "extension":
         source_meta["delimiter_source"] = delimiter_source
         source_meta["skipped_lines"] = skipped_lines
@@ -666,7 +713,16 @@ def main() -> int:
         skipped_note = f"; {skipped_lines} leading comment/blank line(s) skipped" if skipped_lines else ""
         extras += f"- Separator: `{detected}` (auto-detected from this {source.suffix.lower()} export{skipped_note})\n"
     writes = [*outputs, *([snapshot_relative] if snapshot_relative else [])]
-    manifest = {"skill": "sch-data-plot", "created_at": datetime.now(timezone.utc).isoformat(), "source": source_meta, "plot": {"kind": kind, "title": title, "x_column": x_key, "y_columns": y_keys, "chart_style": style, **summary}, "revision": {"mode": save_mode, "target_manifest_path": target_manifest_relative, "pre_overwrite_manifest_snapshot": snapshot_relative}, "outputs": outputs, "writes": writes}
+    manifest = {
+        "skill": "sch-data-plot",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "source": source_meta,
+        "plot": {"kind": kind, "title": title, "x_column": x_key, "y_columns": y_keys, "chart_style": style, **summary},
+        "plot_contract": plot_contract,
+        "revision": {"mode": save_mode, "target_manifest_path": target_manifest_relative, "pre_overwrite_manifest_snapshot": snapshot_relative},
+        "outputs": outputs,
+        "writes": writes,
+    }
     report = f"# {title}\n\n- Source: `{manifest['source']['path']}`\n- SHA-256: `{digest}`\n- Plot: `{kind}`\n- X: `{x_key}`\n- Y: `{', '.join(y_keys)}`\n- Theme: `{style['theme']}`\n- Markers: `{style['markers']}`\n- Grid: `{style['show_grid']}`\n- Save mode: `{save_mode}`\n{extras}\n> Reopen this chart from the Material Library to revise it. Choose either a new reproducible version or an explicit overwrite of this selected version. The source dataset is always read-only. Annotations and view ranges are visual only — data processing such as baseline correction must produce derived data with its own record instead.\n\n![[plot.svg]]\n"
     # Snapshot is written only after all validation/rendering succeeds and
     # immediately before any target artifact is replaced.

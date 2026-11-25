@@ -12,7 +12,7 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
 const root = path.join(__dirname, "..");
-const recordName = "release-candidate-3.0.4-2026-11-09.md";
+const recordName = "release-3.0.5-2026-11-25.md";
 
 function sha256(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");

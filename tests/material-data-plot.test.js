@@ -223,6 +223,14 @@ describe("Material Library deterministic plotting", () => {
     assert.match(source, /conversationHistory/);
   });
 
+  it("rescans generated plots every time the Material Library is entered", () => {
+    const dashboard = fs.readFileSync(path.join(root, "src", "dashboard-view.ts"), "utf8");
+    assert.match(dashboard, /const library = this\.materialLib;/);
+    assert.match(dashboard, /void library\.loadGeneratedImages\(\)\.then/);
+    assert.match(dashboard, /this\.activePanel === 'materials' && matPanel\.isConnected/);
+    assert.match(dashboard, /library\.render\(matPanel\)/);
+  });
+
   it("groups generated plots beneath their dataset and supports safe version deletion", () => {
     const source = fs.readFileSync(path.join(root, "main.js"), "utf8");
     const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
@@ -230,7 +238,7 @@ describe("Material Library deterministic plotting", () => {
     assert.match(source, /manifest\d*\.outputs \|\| \[\]/);
     assert.match(source, /getResourcePath\(previewFile\d*\)/);
     assert.match(source, /copyFileAddress\(path\d*\)/);
-    assert.match(source, /allItems\(\) \{\s*return this\.data\.items\.slice\(\)/);
+    assert.match(source, /allItems\(\) \{\s*return this\.data\.items\.filter\(/);
     assert.match(source, /plotsFor\(item\d*\)/);
     assert.match(source, /renderDataPlotPanel\(\)/);
     assert.match(source, /async deleteGeneratedVersion\(\w+, \w+\)/);
@@ -255,7 +263,7 @@ describe("Material Library deterministic plotting", () => {
     assert.match(css, /object-fit:\s*contain/);
     const { block } = require("./harness");
     const createCard = block("createCard(t, e) {");
-    assert.noMatch(createCard, /openFile\(/);
+    assert.match(createCard, /e\.discovered && i\d* !== "spreadsheet"/, "only newly discovered, non-spreadsheet files use the direct-open path");
     assert.eq((createCard.match(/copyFileAddress\(e\.path\)/g) || []).length, 1, "each dataset card should expose one path-copy action");
     assert.noMatch(createCard, /generated:\s*(?:!0|true)/);
     const ensureFolder = block("ensureFolder(t) {");

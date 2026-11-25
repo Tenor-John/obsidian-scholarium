@@ -1,7 +1,7 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { concealMalformedProtocolBlocks, detectWriteClaim, parseActionRequests, parseRunRequests, parseDraftRequests, parseLegacyNoteEditRequests, parseNormalizeRequests, parsePlotRequests, parsePlotRevisionRequests, parseSuggestReconstructionRequests } = require("../chat-actions-core.js");
+const { concealMalformedProtocolBlocks, detectWriteClaim, parseActionRequests, parseRunRequests, parseDraftRequests, parseLegacyNoteEditRequests, parseNormalizeRequests, parsePlotToolRequests, parsePlotRequests, parsePlotRevisionRequests, parseSuggestReconstructionRequests } = require("../chat-actions-core.js");
 
 test("a plot-revise block is not counted as a failed plot attempt", () => {
   // "scholarium-plot" is a prefix of "scholarium-plot-revise", and \b matches
@@ -152,6 +152,55 @@ test("a single-backtick plot revision is concealed, not leaked as prose", () => 
   assert.equal(failures.length, 1);
   assert.equal(failures[0].protocol, "scholarium-plot-revise");
   assert.ok(!text.includes("target_manifest_path"));
+});
+
+const plotToolBlock = (payload) => "```scholarium-plot-tool\n" + JSON.stringify(payload) + "\n```";
+
+test("unified plot-tool protocol preserves exact render and incremental revise calls", () => {
+  const source = [
+    plotToolBlock({
+      name: "render_plot",
+      arguments: {
+        dataset_path: "Materials\\demo.csv",
+        recipe: { plot_kind: "line", title: "Signals", x_column: "Time", y_columns: ["Signal A"], chart_style: { show_grid: true } },
+      },
+      reason: "研究员指定字段",
+    }),
+    plotToolBlock({
+      name: "revise_plot",
+      arguments: {
+        target_manifest_id: "Materials\\_analysis\\demo\\plot-manifest.json",
+        base_version: 2,
+        revision_reason: "只改系列颜色",
+        patch: { series_updates: [{ id: "series:Signal A", color: "#C57300" }] },
+      },
+    }),
+  ].join("\n");
+  const result = parsePlotToolRequests(source);
+  assert.deepEqual(result.stats, { attempted: 2, parsed: 2, rejected: 0 });
+  assert.equal(result.text, "");
+  assert.equal(result.plots[0].data_path, "Materials/demo.csv");
+  assert.equal(result.plots[0].tool_call.name, "render_plot");
+  assert.equal(result.plots[0].tool_call.arguments.recipe.y_columns[0], "Signal A");
+  assert.equal(result.revisions[0].target_manifest_path, "Materials/_analysis/demo/plot-manifest.json");
+  assert.equal(result.revisions[0].base_version, 2);
+  assert.equal(result.revisions[0].tool_call.arguments.save_mode, "new_version");
+  assert.deepEqual(result.revisions[0].patch, { series_updates: [{ id: "series:Signal A", color: "#C57300" }] });
+});
+
+test("unified revise protocol rejects overwrite, full Manifest and data-mapping changes", () => {
+  const rejected = [
+    { name: "revise_plot", arguments: { target_manifest_id: "Materials/_analysis/a/plot-manifest.json", base_version: 1, revision_reason: "x", save_mode: "overwrite", patch: { title: "x" } } },
+    { name: "revise_plot", arguments: { target_manifest_id: "Materials/_analysis/a/plot-manifest.json", base_version: 1, revision_reason: "x", patch: { manifest: { plot: {} } } } },
+    { name: "revise_plot", arguments: { target_manifest_id: "Materials/_analysis/a/plot-manifest.json", base_version: 1, revision_reason: "x", patch: { remove_ids: ["series:Signal A"] } } },
+    { name: "revise_plot", arguments: { target_manifest_id: "Materials/_analysis/a/plot-manifest.json", base_version: 0, revision_reason: "x", patch: { title: "x" } } },
+    { name: "inspect_dataset", arguments: { dataset_path: "Materials/demo.csv" } },
+  ];
+  for (const payload of rejected) {
+    const result = parsePlotToolRequests(plotToolBlock(payload));
+    assert.deepEqual(result.stats, { attempted: 1, parsed: 0, rejected: 1 }, JSON.stringify(payload));
+    assert.ok(result.text.includes("scholarium-plot-tool"));
+  }
 });
 
 test("protocol parsers report attempted, parsed and rejected block counts", () => {

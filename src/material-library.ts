@@ -100,7 +100,7 @@ var Vs = class {
         let t = await this.plugin.loadData();
         if (t != null && t.materialLibrary) {
           let e = t.materialLibrary;
-          this.data = { items: e.items || [], categories: e.categories || [], folders: e.folders || [] };
+          this.data = { items: e.items || [], categories: e.categories || [], folders: e.folders || [], tagsByPath: e.tagsByPath || {} };
         } else this.data = { items: [], categories: [], folders: [] };
         await this.loadGeneratedImages();
       } catch (t) {
@@ -129,7 +129,24 @@ var Vs = class {
       this.generatedItems = Array.from(found.values()).sort((a, b) => String(b.addedAt).localeCompare(String(a.addedAt)));
     }
     allItems() {
-      return this.data.items.slice();
+      return this.data.items.filter(item => this.app.vault.getAbstractFileByPath(item.path) instanceof De.TFile);
+    }
+    folderItems(folder) {
+      const root = this.materialRoot();
+      const dir = this.app.vault.getAbstractFileByPath(folder ? `${root}/${folder}` : root);
+      if (!(dir instanceof De.TFolder)) return [];
+      const registered = new Map(this.data.items.map(item => [item.path, item]));
+      return dir.children.filter(file => file instanceof De.TFile).map(file => registered.get(file.path) || {
+        id: `vault:${file.path}`, path: file.path, name: file.name, category: "", addedAt: new Date(file.stat.mtime).toISOString(), discovered: true
+      });
+    }
+    tagsFor(item) { return (this.data.tagsByPath || {})[item.path] || []; }
+    async editTags(item) {
+      const value = window.prompt("输入标签，用逗号分隔", this.tagsFor(item).join(", "));
+      if (value === null) return;
+      this.data.tagsByPath ||= {};
+      this.data.tagsByPath[item.path] = [...new Set(value.split(/[,，]/).map(tag => tag.trim()).filter(Boolean))];
+      await this.save(); this.rerender();
     }
     plotsFor(item) {
       return item ? this.generatedItems.filter((plot) => plot.sourcePath === item.path) : [];
@@ -269,23 +286,40 @@ var Vs = class {
           c
         );
       };
-      s("\u{1F4C1} \u5168\u90E8", "all", this.allItems().length, 0, () => { this.currentFolder = "all"; this.currentCategory = "all"; });
-      const folders = new Set(this.data.folders || []);
       const root = this.materialRoot();
-      this.data.items.forEach((item) => { const folder = schMaterialFolderFromPath(item.path, root); folder && !folder.startsWith("_analysis") && folders.add(folder); });
-      let folderIndex = 1;
-      for (const folder of Array.from(folders).sort((a, b) => a.localeCompare(b))) {
-        const count = this.data.items.filter((item) => schMaterialFolderFromPath(item.path, root) === folder).length;
-        const row = s(`📁 ${folder}`, `__folder__:${folder}`, count, folderIndex++, () => { this.currentFolder = folder; this.currentCategory = "all"; });
-        row.addEventListener("dragover", (event) => { event.preventDefault(); row.addClass("mat-folder-drop-target"); if (event.dataTransfer) event.dataTransfer.dropEffect = "move"; });
-        row.addEventListener("dragleave", () => row.removeClass("mat-folder-drop-target"));
-        row.addEventListener("drop", async (event) => {
-          event.preventDefault(); event.stopPropagation(); row.removeClass("mat-folder-drop-target");
-          const id = event.dataTransfer?.getData("application/x-scholarium-material");
-          const item = this.data.items.find((entry) => entry.id === id);
-          if (item) await this.moveItemToFolder(item, folder);
-          else for (const file of Array.from(event.dataTransfer?.files || [])) await this.handleDroppedFile(file, folder);
-        });
+      const rootFolder = this.app.vault.getAbstractFileByPath(root);
+      this.expandedFolders ||= new Set();
+      const tree = t.createDiv({ cls: "mat-folder-tree", attr: { role: "tree", "aria-label": "素材文件夹" } });
+      const drawFolder = (folder, parent, isRoot = false) => {
+        const rel = isRoot ? "" : folder.path.slice(root.length + 1);
+        const children = folder instanceof De.TFolder ? folder.children.filter(child => child instanceof De.TFolder && !child.name.startsWith(".") && !["node_modules", "__pycache__", "_analysis"].includes(child.name)).sort((a,b) => a.name.localeCompare(b.name)) : [];
+        const expanded = isRoot || this.expandedFolders.has(rel);
+        const row = parent.createDiv({ cls: "mat-tree-row", attr: { role: "treeitem", tabindex: "0", "aria-selected": String(isRoot ? this.currentFolder === "all" && this.currentCategory === "all" : this.currentFolder === rel), ...(children.length ? { "aria-expanded": String(expanded) } : {}) } });
+        if (isRoot ? this.currentFolder === "all" && this.currentCategory === "all" : this.currentFolder === rel) row.addClass("is-active");
+        const toggle = row.createEl("button", { cls: "mat-tree-toggle", attr: { "aria-label": expanded ? "收起文件夹" : "展开文件夹", type: "button" } });
+        if (children.length && !isRoot) { De.setIcon(toggle, expanded ? "chevron-down" : "chevron-right"); toggle.onclick = event => { event.stopPropagation(); expanded ? this.expandedFolders.delete(rel) : this.expandedFolders.add(rel); this.renderSidebar(t, e); }; }
+        else if (isRoot && children.length) { De.setIcon(toggle, "chevron-down"); toggle.disabled = true; }
+        else { toggle.addClass("is-empty"); toggle.disabled = true; }
+        const icon = row.createSpan({ cls: "mat-tree-icon" }); De.setIcon(icon, "folder");
+        row.createSpan({ cls: "mat-tree-name", text: isRoot ? root.split("/").pop() : folder.name, attr: { title: isRoot ? root : folder.name } });
+        if (!isRoot) row.createSpan({ cls: "mat-tree-count", text: String(folder.children.filter(child => child instanceof De.TFile).length), attr: { title: "此文件夹中的文件数" } });
+        row.onclick = () => { this.currentFolder = isRoot ? "all" : rel; this.currentCategory = "all"; this.renderSidebar(t, e); this.renderGallery(e); };
+        row.onkeydown = event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); row.click(); } };
+        if (expanded && children.length) {
+          const group = parent.createDiv({ cls: "mat-tree-children", attr: { role: "group" } });
+          children.forEach(child => drawFolder(child, group));
+        }
+      };
+      drawFolder(rootFolder, tree, true);
+      const tagCounts = new Map();
+      for (const tags of Object.values(this.data.tagsByPath || {})) for (const tag of tags) tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+      if (tagCounts.size) {
+        t.createDiv({ cls: "mat-sb-section-label", text: "标签（多选取交集）" });
+        this.activeTags ||= new Set();
+        for (const [tag,count] of Array.from(tagCounts).sort((a,b) => a[0].localeCompare(b[0]))) {
+          const button = t.createEl("button", { cls: "mat-sb-add", text: `${this.activeTags.has(tag) ? "✓ " : ""}${tag} ${count}` });
+          button.onclick = () => { this.activeTags.has(tag) ? this.activeTags.delete(tag) : this.activeTags.add(tag); this.renderSidebar(t,e); this.renderGallery(e); };
+        }
       }
       t.createEl("button", { text: "+ 新建文件夹", cls: "mat-sb-add mat-sb-folder-add" }).onclick = () => this.showNewFolderDialog();
       t.createDiv({ cls: "mat-sb-divider" });
@@ -310,7 +344,8 @@ var Vs = class {
     }
     renderGallery(t) {
       t.empty(), t.addClass("mat-gallery");
-      let e = this.allItems();
+      let e = this.currentFolder === "all" ? this.allItems() : this.folderItems(this.currentFolder);
+      if (this.activeTags?.size) e = e.filter(item => [...this.activeTags].every(tag => this.tagsFor(item).includes(tag)));
       if (
         (this.currentFolder !== "all" &&
           (e = e.filter((item) => !item.generated && schMaterialFolderFromPath(item.path, this.materialRoot()) === this.currentFolder)),
@@ -325,7 +360,7 @@ var Vs = class {
           (r) =>
             String(r.name || "").toLowerCase().includes(i) ||
             String(r.category || "").toLowerCase().includes(i) ||
-            String(r.path || "").toLowerCase().includes(i),
+            String(r.path || "").toLowerCase().includes(i) || this.tagsFor(r).some(tag => tag.toLowerCase().includes(i)),
         );
       }
       if (((this.filteredItems = e), this.setupDragDrop(t), e.length === 0)) {
@@ -344,7 +379,10 @@ var Vs = class {
       let s = t.createDiv({
         cls: `mat-grid ${this.viewMode === "grid" ? "mat-grid-mode" : "mat-list-mode"}`,
       });
-      for (let i of e) this.createCard(s, i);
+      let shown = 0;
+      const more = t.createEl("button", { text: "加载更多", cls: "mat-sb-add" });
+      const draw = () => { const end = Math.min(shown + 80, e.length); while (shown < end) this.createCard(s, e[shown++]); if (shown >= e.length) more.remove(); else more.setText(`加载更多（${shown} / ${e.length}）`); };
+      more.onclick = draw; draw();
       this.renderDataPlotPanel();
     }
     createCard(t, e) {
@@ -419,6 +457,9 @@ var Vs = class {
       let copy = l.createEl("button", { text: "⧉", cls: "mat-action-btn", attr: { title: "复制文件地址" } });
       copy.onclick = (event) => { event.stopPropagation(); this.copyFileAddress(e.path); };
       {
+      let tag = l.createEl("button", { text: "🏷", cls: "mat-action-btn", attr: { title: "编辑标签" } });
+      tag.onclick = event => { event.stopPropagation(); void this.editTags(e); };
+      if (!e.discovered) {
       let h = l.createEl("button", {
         text: "\u270F\uFE0F",
         cls: "mat-action-btn",
@@ -444,6 +485,7 @@ var Vs = class {
         g.stopPropagation(), this.deleteItem(e);
       };
       }
+      }
       let u = s.createDiv({ cls: "mat-card-info" });
       u.createEl("div", {
         text: r instanceof De.TFile ? r.name : String(e.path || "").split("/").pop() || e.name,
@@ -460,6 +502,7 @@ var Vs = class {
         let catCol = this.catColor(e.category);
         badge.setCssStyles({ background: "color-mix(in srgb, " + catCol + " 15%, transparent)", color: catCol });
       }
+      for (const label of this.tagsFor(e)) meta.createEl("span", { text: label, cls: "mat-badge" });
       if (e.addedAt) {
         let dt = new Date(e.addedAt);
         let mm = String(dt.getMonth() + 1).padStart(2, "0");
@@ -471,6 +514,7 @@ var Vs = class {
         let szStr = sz < 1024 ? sz + " B" : sz < 1048576 ? (sz / 1024).toFixed(1) + " KB" : (sz / 1048576).toFixed(1) + " MB";
         meta.createEl("span", { text: szStr, cls: "mat-card-size" });
       }
+      if (e.discovered && i !== "spreadsheet" && !schMaterialIsTiff(e)) s.addEventListener("click", (event) => { if (!(event.target instanceof Element && event.target.closest("button")) && r instanceof De.TFile) void this.app.workspace.getLeaf(false).openFile(r); });
       if (i === "spreadsheet") s.addEventListener("click", (event) => {
         const target = event.target instanceof Element ? event.target : null;
         if (!(target && target.closest("button"))) this.selectDataItem(e);
@@ -489,7 +533,7 @@ var Vs = class {
       const host = this.detailHost;
       if (!host) return;
       host.empty();
-      const item = this.data.items.find((entry) => entry.id === this.selectedDataItemId && es(entry.path) === "spreadsheet");
+      const item = [...this.allItems(), ...this.folderItems(this.currentFolder === "all" ? "" : this.currentFolder)].find((entry) => entry.id === this.selectedDataItemId && es(entry.path) === "spreadsheet");
       host.classList.toggle("mat-data-detail-open", !!item);
       if (!item) return;
       const plots = this.plotsFor(item);
