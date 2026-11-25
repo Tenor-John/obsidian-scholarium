@@ -26,9 +26,18 @@
 // schPollScholariumQueue in main.js.
 
 function requireLive(live, dryRun) {
-  if (live && typeof live.runSkill === "function") return live;
+  if (live && (typeof live.runSkill === "function" || live.plotTools)) return live;
   if (dryRun) return null; // dry-run without a live Bridge context: validate input only
   throw new Error("scholarium_live_context_required");
+}
+
+function assertPlotObservation(observation) {
+  if (!observation || observation.status !== "success") {
+    const error = new Error(observation?.error?.message || "plot_tool_execution_failed");
+    error.code = observation?.error?.code || "PLOT_TOOL_ERROR";
+    throw error;
+  }
+  return observation;
 }
 
 async function dataPlot(vault, input, options, live) {
@@ -50,6 +59,23 @@ async function dataPlot(vault, input, options, live) {
   if (input.chart_style && typeof input.chart_style === "object" && !Array.isArray(input.chart_style)) {
     params.chart_style = input.chart_style;
   }
+  if (typeof ctx.plotTools?.render_plot === "function" && params.x_column && params.y_columns.length) {
+    const recipe = {
+      plot_kind: params.plot_kind,
+      x_column: params.x_column,
+      y_columns: params.y_columns,
+      chart_style: params.chart_style || {},
+      ...(params.title ? { title: params.title } : {}),
+    };
+    const observation = assertPlotObservation(await ctx.plotTools.render_plot(
+      { dataset_path: dataPath, recipe },
+      { output_root: "Materials", researcher_confirmed: true },
+    ));
+    return { data_path: dataPath, ...observation };
+  }
+  // Old queue entries could rely on renderer-side column inference. Preserve
+  // that behavior through the legacy host instead of inventing columns here.
+  if (typeof ctx.runSkill !== "function") throw new Error("scholarium_live_context_required");
   const result = await ctx.runSkill("sch-data-plot", params);
   return { data_path: dataPath, ...result };
 }
@@ -59,6 +85,11 @@ async function profileAudit(vault, input, options, live) {
   if (!dataPath) throw new Error("data_path_required");
   const ctx = requireLive(live, options.dryRun);
   if (!ctx) return { data_path: dataPath, mode: "dry_run_no_live_context" };
+  if (typeof ctx.plotTools?.inspect_dataset === "function") {
+    const observation = assertPlotObservation(await ctx.plotTools.inspect_dataset({ dataset_path: dataPath, sample_rows: 0 }));
+    return { data_path: dataPath, ...observation };
+  }
+  if (typeof ctx.runSkill !== "function") throw new Error("scholarium_live_context_required");
   const result = await ctx.runSkill("sch-data-profile-audit", { data_path: dataPath });
   return { data_path: dataPath, ...result };
 }

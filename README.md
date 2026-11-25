@@ -2,7 +2,15 @@
 
 Scholarium is a local-first research workspace for Obsidian. It combines literature management, AI-assisted research workflows, notes, experiment records, and the Research Weaver panel.
 
-## 3.0.1 source-built release candidate
+## 3.0.5 — literature matrix and Weaver sidebar
+
+The 3.0.5 update adds the Research Weaver sidebar to source-built installations. Open it with the messages icon in Obsidian's ribbon or the command **织研者：在侧边栏打开**. Opening the sidebar does not start an Agent task.
+
+The literature matrix supports manual summary notes, concurrent AI summaries with inline stage progress, local saved-fulltext detection, category-colored tags with manual tag entry, and summary cells that fill their table row. Successful tasks disappear from the row; failure details are collapsed and dismissible. No task panels are shown above or below the matrix.
+
+Download `main.js`, `manifest.json`, and `styles.css` together from [GitHub Releases](https://github.com/Tenor-John/obsidian-scholarium/releases). Keep your existing `data.json` when upgrading. The plugin requires desktop Obsidian 1.10.0 or newer. See [the matrix guide](docs/literature-matrix.md) and [the 3.0.5 verification record](docs/audits/release-3.0.5-2026-11-25.md).
+
+## Historical 3.0.1 source-built release candidate
 
 This working branch is a **release candidate, not a published product release**. It reconstructs the installed 3.0.1 functionality in reviewable source and statically bundles the graphical Ketcher editor. It has not been accepted by the Obsidian Community Plugin Directory.
 

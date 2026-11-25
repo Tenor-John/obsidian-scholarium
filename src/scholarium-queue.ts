@@ -6,6 +6,7 @@
 import { RssFeedBoard as Ys } from "./rss-feed-board";
 import { schEvidenceTools } from "./research-evidence-tools";
 import { schMaterialRunSkill } from "./material-plotting";
+import { schCreatePlotToolClient } from "./plot-tool-client";
 import {
   schRuntimeRoot,
   schEnsureRuntimeInstalled,
@@ -89,6 +90,7 @@ async function schPollScholariumQueue() {
                 board: item.action.startsWith("literature.matrix_") && window.__scholariumRssBoard?.plugin === this ? window.__scholariumRssBoard : board,
                 plugin: this,
                 settings: this.settings,
+                plotTools: schCreatePlotToolClient(this),
                 runSkill: (name, input) => schMaterialRunSkill(this, name, input),
               },
             },

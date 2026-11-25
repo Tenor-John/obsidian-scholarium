@@ -81,7 +81,40 @@ border box) and `border_width` (0.5–4) sets its stroke. `title_size` (10–40)
 `right`, or `none`. `marker_size` is the marker radius (1–10), `line_style`
 is `solid`, `dashed`, or `dotted`, and `tick_count` (3–10) sets ticks per
 axis. None of these may smooth, filter, normalize, or otherwise change the
-plotted measurements.
+plotted measurements. Every persisted annotation also has a stable `id`; legacy
+annotations without one are normalized as `annotation:<one-based-index>`.
+
+## Unified plot-tool runtime
+
+The drawing panel, main conversation and operation queue share four host tools:
+`inspect_dataset`, `get_plot_context`, `render_plot`, and `revise_plot`. The
+legacy `data_path`/recipe fields above remain accepted for existing cards and
+queued actions, but new agent calls use the unified tool arguments.
+
+`revise_plot` accepts only `target_manifest_id`, `base_version`,
+`revision_reason`, an incremental `patch`, and the model-visible save mode
+`new_version`. The host reads the target, checks its version, merges the Patch,
+and generates the complete renderer input. An LLM never supplies a full
+replacement Manifest and cannot change the dataset, x/y mapping, or plot kind
+through revision. Researcher-selected overwrite is host context, not an LLM
+field.
+
+Series IDs are deterministic: `series:<original_y_column>`. Therefore a
+`series_updates` ID maps losslessly to the same original column key in
+`chart_style.series_colors`. All Vault-relative path IDs, including `plot_id`,
+`manifest_id`, and parent IDs, use `/` on every operating system. Legacy
+Manifests without `plot_contract` are treated as v1. The first render uses its
+own Manifest path as the stable lineage `plot_id`; new versions increment
+`version`, while an explicit overwrite retains the selected version number and
+the existing pre-overwrite snapshot behavior.
+
+Successful `render_plot` and `revise_plot` calls return a compact Observation
+containing the Manifest summary, column-mapping status, render warnings,
+current version, and legacy `svg_path`/`manifest_path` fields. Contract errors,
+including `VERSION_CONFLICT`, are returned in the same Observation envelope.
+The supported chart types remain `line`, `scatter`, and `bar`; area, box,
+combined line/scatter, logarithmic axes, error bars, and journal presets are
+not advertised by this phase.
 
 Data processing is a different operation and is out of scope here. "Draw a
 baseline at y=0" is a visual annotation and belongs in `annotations`;

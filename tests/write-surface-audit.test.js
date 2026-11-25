@@ -9,18 +9,18 @@ const { scanProductionWrites } = require("../tools/write-surface-audit");
 // `node tools/write-surface-audit.js`, identify every changed site in the
 // write-path matrix, then replace the digest and counts together. The review
 // authorizing this candidate fingerprint is:
-// docs/audits/write-path-matrix-2026-11-05-market-candidate.md
+// docs/audits/release-3.0.5-2026-11-25.md
 const APPROVED = Object.freeze({
-  digest: "cfa0a8e15d4be4705461fcf3b59e818d78e571c1d91a00a9c21880d74c5ba1ba",
-  count: 610,
+  digest: "7231e5ce40faccd8c6bd44d70352047cda155ab4e1db06b8c23c010dbb7815ad",
+  count: 622,
   by_surface: {
     "agent-ui-state": 40,
-    "bridge-runtime": 94,
+    "bridge-runtime": 97,
     "skill-runtime": 46,
-    "generated-main": 166,
+    "generated-main": 169,
     "domain-and-maintenance-tools": 128,
     "native-weaver-vendor": 15,
-    "gated-build-source": 118,
+    "gated-build-source": 124,
     "build-tooling": 3,
   },
 });

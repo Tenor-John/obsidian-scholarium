@@ -16,6 +16,13 @@
  * 浏览器：window.weaverChatActionsCore；Node：module.exports。
  */
 
+// The same side-effect-free contract validates the new chat protocol, the
+// Obsidian workbench and the host runtime. Legacy parsers below remain as a
+// compatibility fallback for already persisted cards and older agents.
+const SCH_PLOT_CONTRACT = typeof module !== "undefined" && module.exports
+  ? require("./plot-tool-contract.js")
+  : (typeof window !== "undefined" ? window.schPlotToolContract : null);
+
 function actionInput(parsed) {
   // 规范键始终是 input；兼容常见 LLM 输出别名，避免一份内容完整的
   // 请求仅因键名漂移被渲染成空载荷确认卡。空对象没有可确认的修改意图，
@@ -54,7 +61,7 @@ function protocolStats(attempted, parsed) {
 const SCHOLARIUM_PROTOCOL_NAMES = new Set([
   "scholarium-action", "scholarium-draft", "scholarium-run",
   "scholarium-note-edit", "scholarium-normalize",
-  "scholarium-plot", "scholarium-plot-revise",
+  "scholarium-plot", "scholarium-plot-revise", "scholarium-plot-tool",
   "scholarium-suggest-reconstruction",
 ]);
 
@@ -514,6 +521,67 @@ function parsePlotStyle(value) {
   return style;
 }
 
+/* Unified plot-tool protocol. The model emits only a tool name and its
+ * arguments; the host adds researcher confirmation and save mode later. The
+ * returned legacy-shaped fields keep existing confirmation/SVG cards working,
+ * while tool_call is the authoritative executable payload. */
+function parsePlotToolRequests(text) {
+  const source = String(text || "");
+  const attempted = protocolAttemptCount(source, "scholarium-plot-tool");
+  const plots = [];
+  const revisions = [];
+  const cleaned = source.replace(/(`{3,})[ \t]*scholarium-plot-tool[ \t]*\r?\n([\s\S]*?)\1/g, (match, fence, body) => {
+    try {
+      if (!SCH_PLOT_CONTRACT) return match;
+      const parsed = JSON.parse(body.trim());
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return match;
+      if (Object.keys(parsed).some((key) => !["name", "arguments", "reason"].includes(key))) return match;
+      const name = String(parsed.name || "");
+      if (!parsed.arguments || typeof parsed.arguments !== "object" || Array.isArray(parsed.arguments)) return match;
+      if (name === "render_plot") {
+        const args = SCH_PLOT_CONTRACT.normalizeRenderInput(parsed.arguments);
+        const recipe = args.recipe;
+        plots.push({
+          data_path: args.dataset_path,
+          x_column: recipe.x_column,
+          y_columns: recipe.y_columns,
+          plot_kind: recipe.plot_kind,
+          ...(recipe.title === undefined ? {} : { title: recipe.title }),
+          chart_style: recipe.chart_style,
+          save_mode: "new",
+          reason: String(parsed.reason || "").trim().slice(0, 300),
+          tool_call: { name, arguments: args },
+        });
+        return "";
+      }
+      if (name === "revise_plot") {
+        const args = SCH_PLOT_CONTRACT.normalizeReviseInput(parsed.arguments);
+        // Validate the Patch shape before creating a confirmation card. Actual
+        // values are still merged only against the host-read target Manifest.
+        const patchColumns = Array.isArray(args.patch?.series_updates)
+          ? args.patch.series_updates.map((entry) => SCH_PLOT_CONTRACT.columnForSeriesId(entry?.id)).filter(Boolean)
+          : [];
+        SCH_PLOT_CONTRACT.applyPlotPatch({
+          plot: { kind: "line", title: "validation", x_column: "x", y_columns: patchColumns, chart_style: {} },
+        }, args.patch);
+        revisions.push({
+          target_manifest_path: args.target_manifest_id,
+          base_version: args.base_version,
+          patch: args.patch,
+          chart_style: args.patch.chart_style || {},
+          save_mode: "new",
+          reason: args.revision_reason,
+          tool_call: { name, arguments: args },
+        });
+        return "";
+      }
+      return match;
+    } catch { return match; }
+  });
+  const parsedCount = plots.length + revisions.length;
+  return { text: cleaned.replace(/\n{3,}/g, "\n\n").trim(), plots, revisions, stats: protocolStats(attempted, parsedCount) };
+}
+
 function parsePlotRequests(text) {
   const source = String(text || "");
   const attempted = protocolAttemptCount(source, "scholarium-plot");
@@ -564,6 +632,6 @@ function parsePlotRevisionRequests(text) {
   return { text: cleaned.replace(/\n{3,}/g, "\n\n").trim(), revisions, stats: protocolStats(attempted, revisions.length) };
 }
 
-const chatActionsApi = { concealMalformedProtocolBlocks, detectWriteClaim, parseActionRequests, parseRunRequests, parseDraftRequests, parseLegacyNoteEditRequests, parseNormalizeRequests, parsePlotRequests, parsePlotRevisionRequests, parseSuggestReconstructionRequests };
+const chatActionsApi = { concealMalformedProtocolBlocks, detectWriteClaim, parseActionRequests, parseRunRequests, parseDraftRequests, parseLegacyNoteEditRequests, parseNormalizeRequests, parsePlotToolRequests, parsePlotRequests, parsePlotRevisionRequests, parseSuggestReconstructionRequests };
 if (typeof module !== "undefined" && module.exports) module.exports = chatActionsApi;
 if (typeof window !== "undefined") window.weaverChatActionsCore = chatActionsApi;

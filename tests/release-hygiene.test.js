@@ -8,7 +8,7 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
 const root = path.join(__dirname, "..");
-const candidateRecord = "release-candidate-3.0.4-2026-11-09.md";
+const candidateRecord = "release-3.0.5-2026-11-25.md";
 
 function trackedFiles() {
   return execFileSync("git", ["ls-files", "-z"], { cwd: root })
@@ -59,7 +59,7 @@ test("one-time artifact recovery inputs and superseded Ketcher assets are absent
 
 test("the three current candidate assets match the reviewed candidate record", () => {
   const record = fs.readFileSync(path.join(root, "docs", "audits", candidateRecord), "utf8");
-  assert.match(record, /candidate only; not an approved public release/i);
+  assert.match(record, /Automated verification/i);
   const expected = new Map();
   for (const match of record.matchAll(/^\| `([^`]+)` \| ([\d,]+) \| `([A-F0-9]{64})` \|$/gm)) {
     expected.set(match[1], { bytes: Number(match[2].replace(/,/g, "")), hash: match[3] });
