@@ -24,11 +24,9 @@ function nativeModel() {
 
 const native = nativeModel();
 const EMPTY_LEDGER = { entries: new Map(), events: [] };
-const HISTORY = path.join(ROOT, "..", "..", "Scholarium/Chat/v1/488d7c98a5987784b1abb8f9/s-2u5e3a0m-81b805a6.jsonl");
 
 function historicalMessage() {
-  const lines = fs.readFileSync(HISTORY, "utf8").trim().split(/\r?\n/);
-  return JSON.parse(lines[7]);
+  return require("./fixtures/native-chat-history")()[7];
 }
 
 function observation(overrides = {}) {

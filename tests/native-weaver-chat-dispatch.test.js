@@ -11,7 +11,6 @@ const contract = require("../agent-canvas-demo/plot-tool-contract.js");
 const embed = require("../tools/embed-native-weaver.js");
 
 const ROOT = path.join(__dirname, "..");
-const HISTORY = path.join(ROOT, "..", "..", "Scholarium/Chat/v1/488d7c98a5987784b1abb8f9/s-2u5e3a0m-81b805a6.jsonl");
 
 function nativeModel() {
   const tools = new Function(
@@ -32,7 +31,7 @@ function nativeModel() {
 const { native, tools } = nativeModel();
 
 function historicalRecords() {
-  return fs.readFileSync(HISTORY, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  return require("./fixtures/native-chat-history")();
 }
 
 function logicView(overrides = {}) {
