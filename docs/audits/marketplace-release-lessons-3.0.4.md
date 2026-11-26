@@ -1,0 +1,14 @@
+# Obsidian marketplace release lessons: 3.0.4
+
+On 2026-11-09 the maintainer reported that Obsidian's review of version 3.0.4, commit `34a06d2078fa7fe5f9f7c9718e5bcb325a1025e3`, showed **Completed**. This records the reported marketplace result; it does not expand the scope of earlier functional acceptance testing.
+
+For future releases:
+
+- On 2026-11-26 the supplied 3.0.5 scan marked the review Failed, with one blocking Error: `obsidianmd/no-static-styles-assignment` at `src/rss-feed-board.ts:3109` (`progress.style.width = "100%"`). Move static sizing into a CSS class. `scripts/check-marketplace-styles.mjs` now checks the actual rule across source files and proves the check with negative and positive controls. Keep it in the production build. Do not call a successfully uploaded GitHub release a successful marketplace approval; verify the later marketplace scan separately. The other findings in that scan were Warning/Recommendation, including the 44 MB bundle and dependency advisories; this correction does not claim to resolve those warnings.
+
+- Keep the existing plugin ID `scholarium`; changing it caused the 3.0.0 review to fail. The GitHub release tag must exactly match `manifest.json`'s version and must not have a `v` prefix.
+- Inspect the entire review and distinguish blocking **Error** entries from warnings and recommendations. In 3.0.3, the error pointed to line 2: five `/* global ... */` directives had no descriptions. `/* global name -- explanation of the bundled global */` passed the `@eslint-community/eslint-comments/require-description` rule. Verify the relevant rule with a failing negative control instead of assuming a neighboring comment fixes the issue.
+- Avoid application-owned dynamic script and style insertion. Bundle required Ketcher assets and retain the graphical editor. Ketcher's third-party Emotion dependencies still insert style elements at runtime, so do not claim all runtime style creation has been eliminated.
+- Build release assets from committed source and the lockfile in CI, check reproducibility and provenance, and attach `main.js`, `manifest.json`, and `styles.css` individually. The 3.0.3 marketplace review verified both the build and artifact attestations. Check the actual release asset hashes before requesting a marketplace rescan.
+- Run relevant local checks and GitHub Actions before tagging, then inspect the release workflow and request a marketplace rescan. A successful GitHub Release alone is not evidence that marketplace review completed.
+- Retain acceptance boundaries: prior tests did not establish visible manual interaction, external AI streaming-stop, second Windows or Linux acceptance. The 44 MB `main.js`, filesystem and shell access, and dependency advisories appeared as warnings in the 3.0.3 review; a completed review does not remove those limitations.

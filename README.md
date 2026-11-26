@@ -2,6 +2,10 @@
 
 Scholarium is a local-first research workspace for Obsidian. It combines literature management, AI-assisted research workflows, notes, experiment records, and the Research Weaver panel.
 
+## 3.0.6 — marketplace style correction
+
+Version 3.0.6 moves the literature summary progress-bar width into a CSS class to address the blocking `obsidianmd/no-static-styles-assignment` finding in the 3.0.5 marketplace scan. Production builds now check that actual rule against all TypeScript sources, including a deliberately failing negative control. All 3.0.5 features remain included. See [the 3.0.6 verification record](docs/audits/release-3.0.6-2026-11-26.md). A successful GitHub release does not establish that marketplace review has completed.
+
 ## 3.0.5 — literature matrix and Weaver sidebar
 
 The 3.0.5 update adds the Research Weaver sidebar to source-built installations. Open it with the messages icon in Obsidian's ribbon or the command **织研者：在侧边栏打开**. Opening the sidebar does not start an Agent task.
