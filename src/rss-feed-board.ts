@@ -3105,8 +3105,7 @@ var ss = "\u672A\u5206\u7EC4",
             const status = actions.createDiv({ cls: "sch-matrix-info" });
             if (active) {
               status.createEl("small", { text: matrixItem.label || "" });
-              const progress = status.createEl("progress", { attr: { max: "100", value: String(matrixItem.progress || 0), "aria-label": "总结阶段进度：" + (matrixItem.label || "") } });
-              progress.style.width = "100%";
+              status.createEl("progress", { cls: "sch-matrix-progress", attr: { max: "100", value: String(matrixItem.progress || 0), "aria-label": "总结阶段进度：" + (matrixItem.label || "") } });
               const cancel = action(status, "取消总结", async () => { matrixItem.cancel_requested = true; matrixItem.label = "正在取消…"; await this.save(); this.rerender(); });
               cancel.disabled = !!matrixItem.cancel_requested;
             } else {

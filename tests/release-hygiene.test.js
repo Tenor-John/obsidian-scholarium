@@ -8,7 +8,7 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
 const root = path.join(__dirname, "..");
-const candidateRecord = "release-3.0.5-2026-11-25.md";
+const candidateRecord = "release-3.0.6-2026-11-26.md";
 
 function trackedFiles() {
   return execFileSync("git", ["ls-files", "-z"], { cwd: root })
